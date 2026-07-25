@@ -1,0 +1,144 @@
+{
+  "project_name": "Lovreski",
+  "app_type": "mobile-first PWA dating app",
+  "theme": "dark_and_light",
+  "language": "ru",
+  "typography": {
+    "primary_heading_font": "Unbounded",
+    "body_font": "Manrope",
+    "hierarchy": {
+      "h1": "text-4xl sm:text-5xl font-black tracking-tight",
+      "h2": "text-3xl sm:text-4xl font-bold tracking-tight",
+      "h3": "text-xl sm:text-2xl font-semibold",
+      "body": "text-base font-normal leading-relaxed",
+      "small": "text-sm font-medium opacity-80",
+      "overline": "text-xs font-bold uppercase tracking-[0.2em]"
+    },
+    "instructions": "Import Unbounded and Manrope from Google Fonts in the index.html or global CSS."
+  },
+  "colors": {
+    "strategy": "Archetype 5: Luxury mixed with Warmth. Avoid generic purple gradients and stereotypical pink. Use a rich Ruby Red/Crimson as primary.",
+    "light_mode": {
+      "background": "#FDFBF7",
+      "surface": "#FFFFFF",
+      "primary": "#D91656",
+      "primary_foreground": "#FFFFFF",
+      "secondary": "#FFE0E9",
+      "secondary_foreground": "#D91656",
+      "accent": "#F2A900",
+      "text_primary": "#1A1A1A",
+      "text_secondary": "#666666",
+      "border": "#E5E0D8"
+    },
+    "dark_mode": {
+      "background": "#0D0F12",
+      "surface": "#1A1D24",
+      "primary": "#F42A6B",
+      "primary_foreground": "#FFFFFF",
+      "secondary": "#2A1E24",
+      "secondary_foreground": "#F42A6B",
+      "accent": "#F5B014",
+      "text_primary": "#FFFFFF",
+      "text_secondary": "#A0A5B1",
+      "border": "#2A2E39"
+    }
+  },
+  "visual_enhancers": {
+    "gradients": "Avoid generic purple. If used, prefer warm, subtle gradients like Ruby Red to Deep Crimson, heavily blurred. Do NOT use dark colors as gradients.",
+    "textures": "Subtle noise overlays (grain) for background surfaces to add premium tactile feel. Use only where appropriate to avoid clutter.",
+    "shadows": "Ambient diffused shadows (e.g., shadow-[0_8px_32px_rgba(217,22,86,0.15)] for primary actions).",
+    "borders": "Soft, 1px nested borders matching parent surface hue. e.g., border-border/40."
+  },
+  "layouts": {
+    "spacing_scale": "p-4, p-6, p-8, p-12. Generous padding for cards and sections.",
+    "bento_grid": "Used for Admin Panel dashboards.",
+    "cards": "Swipe cards in Discover should have max-h-[75vh] to leave room for bottom nav and actions. Use overlapping absolute positioning for swipe stacks.",
+    "bottom_nav": "Fixed bottom, backdrop-blur-xl bg-background/80, z-50. Height h-16 or h-20 with flex justify-around items-center. Active tab color Primary, inactive Text Secondary.",
+    "app_container": "Since it's a mobile-first PWA, wrap the main app routes (excluding Admin) in a max-w-md mx-auto container on desktop to simulate mobile bounds, with a subtle border and shadow."
+  },
+  "motion": {
+    "micro_interactions": "Framer motion scale-up on 'Like', left/right swipe gestures with rotation and opacity mapping.",
+    "page_transitions": "Slide-in from right for deep links (Chats, Settings).",
+    "buttons": "Hover scale 1.02, active scale 0.95. transition-transform duration-200.",
+    "toast": "Use Sonner for all notifications (e.g., 'Подарок отправлен!', 'Новая симпатия!')."
+  },
+  "components": {
+    "swipe_card": "Tinder-like card structure with absolute positioning, framer-motion drag controls. Linear gradient overlay bottom-to-top bg-gradient-to-t from-black/80 to-transparent for text readability.",
+    "profile_header": "Circular avatar, popularity meter SVG circle progress ring.",
+    "chat_bubble": "Sender: rounded-2xl rounded-tr-sm bg-primary text-primary-foreground. Receiver: rounded-2xl rounded-tl-sm bg-surface text-text_primary.",
+    "coin_balance": "Neumorphic or subtle glassmorphism card in Profile. Primary accent color.",
+    "libraries": [
+      "framer-motion",
+      "lucide-react",
+      "sonner",
+      "clsx",
+      "tailwind-merge"
+    ]
+  },
+  "accessibility": {
+    "contrast": "Ensure primary action button text has 4.5:1 ratio against primary color.",
+    "touch_targets": "Minimum 48x48px for all interactive elements, especially Bottom Nav icons and Chat actions.",
+    "aria_roles": "Proper role='button' and aria-label for icon buttons.",
+    "testing": "All interactive and key informational elements MUST include a data-testid attribute to facilitate robust automated testing."
+  },
+  "media": {
+    "image_urls": [
+      {
+        "url": "https://images.unsplash.com/photo-1489278353717-f64c6ee8a4d2",
+        "description": "Woman profile 1 - close up smiling",
+        "category": "home_grid, discover_cards, likes"
+      },
+      {
+        "url": "https://images.unsplash.com/photo-1662850886700-4ec19bd30d11",
+        "description": "Woman profile 2 - hair pulled back",
+        "category": "home_grid, discover_cards, likes"
+      },
+      {
+        "url": "https://images.unsplash.com/photo-1623366302587-b38b1ddaefd9",
+        "description": "Man profile 1 - black shirt",
+        "category": "home_grid, discover_cards, likes"
+      },
+      {
+        "url": "https://images.unsplash.com/photo-1568602471122-7832951cc4c5",
+        "description": "Man profile 2 - with glasses",
+        "category": "home_grid, discover_cards, likes"
+      },
+      {
+        "url": "https://images.pexels.com/photos/33202799/pexels-photo-33202799.jpeg",
+        "description": "Premium red leather gift box",
+        "category": "chat_virtual_gifts"
+      }
+    ],
+    "image_handling": "Always use object-cover for avatars and profile cards. Hero cards must have a max-h-[80vh] on mobile to prevent blocking UI."
+  },
+  "instructions_to_main_agent": [
+    "Design mobile-first. For the PWA user experience, rely heavily on max-w-md mx-auto for desktop container to simulate a mobile app feel for non-admin pages.",
+    "Do NOT use pure #000000 or #FFFFFF for backgrounds. Use the tinted variables defined.",
+    "Install and use framer-motion for swipe cards in the Discover screen.",
+    "Create the Bottom Nav as a reusable layout component wrapping the 5 main tabs.",
+    "Use Lucide-React for all icons.",
+    "Implement Sonner for toast notifications (e.g., matching or sending gifts).",
+    "Use Shadcn UI for standard components like Admin Table, Settings toggles, and Inputs, but build custom swipe cards.",
+    "All text must be in Russian as per requirements (e.g., 'Главная', 'Поиск', 'Лайки', 'Чаты', 'Профиль').",
+    "Apply `data-testid` to all crucial elements like auth buttons, like/pass swipe buttons, bottom nav tabs, etc.",
+    "DO NOT use a fully transparent background on overlays, navbars, or headers. Use backdrop-blur and a semi-transparent surface."
+  ],
+  "UNIVERSAL_GUIDELINES_FOR_MAIN_AGENT": [
+    "You tend to converge toward generic, 'on distribution' outputs. In frontend design, this creates what users call the 'AI slop' aesthetic. Avoid this: make creative, distinctive frontends that surprise and delight.",
+    "Dark colors look good when used independently without gradients. DO NOT use dark colors as gradients.",
+    "Don't make generic centered layouts, simplistic gradients, and uniform styling.",
+    "Create depth through layered design elements with z-index hierarchy.",
+    "Use glass-morphism effects with backdrop filters (12-24px blur).",
+    "You MUST NOT apply universal transition (e.g., transition: all). Always add transitions for specific properties.",
+    "You MUST NOT center align the app container, i.e., do not add .App { text-align: center; }.",
+    "Always use modern button styles like pill-shaped, or sharp button with interaction animations & color relevant to the app style.",
+    "NEVER use AI assistant Emoji characters like 🤖🧠💭💡🔮🎯 etc for icons.",
+    "Every interaction needs micro-animations - hover states, transitions, parallax effects, and entrance animations. Static = dead.",
+    "Use 2-3x more spacing than feels comfortable. Cramped designs look cheap.",
+    "Subtle grain textures, noise overlays, custom cursors, selection states, and loading animations: separates good from extraordinary.",
+    "Main agent relies on these image URLs. Missing categories = placeholder text which is FORBIDDEN.",
+    "Prioritize using pre-existing components from src/components/ui when applicable.",
+    "Use sonner for toasts, located in /app/src/components/ui/sonner.tsx.",
+    "All interactive and key informational elements MUST include a data-testid attribute to facilitate robust automated testing."
+  ]
+}
