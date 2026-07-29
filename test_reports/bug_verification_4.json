@@ -1,0 +1,35 @@
+{
+  "verdict": "fixed",
+  "user_reported_bug": "Please this error fix it (user shared screenshot showing 'Account not found. Please sign up first.' toast on login page). And password section add 👁️ button.",
+  "summary": "Focused verification passed. No relevant testing skill found. Used the custom auth testing playbook as a checklist and tested the real Landing UI: the password eye toggle is visible/right-aligned and toggles password/text with icon/label state changes; nonexistent login now switches to Register, keeps entered email/password, and shows an explanatory toast; fresh register lands on /home; duplicate register and wrong-password login still show the expected toasts. No MOCKED APIs were used.",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/tests/bug_verification_login_eye_playwright.py",
+    "/app/test_reports/bug_verification_4.json",
+    "/app/test_reports/iteration_4.json"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [],
+  "updated_files": [
+    "/app/tests/bug_verification_login_eye_playwright.py",
+    "/app/test_reports/bug_verification_4.json",
+    "/app/test_reports/iteration_4.json"
+  ],
+  "success_rate": {
+    "backend": "100% for auth outcomes exercised through the UI",
+    "frontend": "100%"
+  },
+  "seed_data_creation": "Created fresh test account eyetest_1785347907491@lovreski.ru with password password123 via the UI registration flow.",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Verified on https://lovreski-dating.preview.emergentagent.com/ with Playwright. Browser console contained only expected failed-resource entries for the deliberate /api/auth/login 404, /api/auth/register 409, and /api/auth/login 401 negative checks plus external cdn/font aborts. Backend logs showed expected 404/200/409/401 auth statuses for the tested flow.",
+  "rca_of_the_issue": "The prior user-visible failure was a dead-end login 404 toast. The current frontend handles login 404 by switching mode to register while preserving form.email and form.password, so the user can continue registration; the password field now has a toggle-password eye button. Regression checks for fresh registration, duplicate registration, wrong-password login, and hero H1 all passed."
+}

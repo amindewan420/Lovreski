@@ -2,7 +2,7 @@ import { useState } from "react";
 import { useNavigate, Link } from "react-router-dom";
 import { useAuth } from "@/context/AuthContext";
 import { toast } from "sonner";
-import { Heart, Sparkles } from "lucide-react";
+import { Heart, Sparkles, Eye, EyeOff } from "lucide-react";
 
 export default function Landing() {
   const nav = useNavigate();
@@ -12,6 +12,7 @@ export default function Landing() {
     email: "", password: "", name: "", gender: "female", dob: "1998-01-01",
   });
   const [submitting, setSubmitting] = useState(false);
+  const [showPassword, setShowPassword] = useState(false);
 
   const doGoogle = () => {
     // REMINDER: DO NOT HARDCODE THE URL, OR ADD ANY FALLBACKS OR REDIRECT URLS, THIS BREAKS THE AUTH
@@ -39,7 +40,11 @@ export default function Landing() {
       // Map to specific, user-friendly messages
       if (mode === "register" && status === 409) msg = "Email already exists";
       else if (mode === "login" && status === 401) msg = "Incorrect password";
-      else if (mode === "login" && status === 404) msg = "Account not found. Please sign up first.";
+      else if (mode === "login" && status === 404) {
+        // Auto-switch to Register tab and preserve the email so the user can sign up in one click
+        msg = "Account not found — переключаем на регистрацию";
+        setMode("register");
+      }
       toast.error(msg);
     } finally {
       setSubmitting(false);
@@ -114,12 +119,23 @@ export default function Landing() {
               value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })}
               className="w-full px-4 py-3 rounded-xl bg-muted border border-transparent focus:border-primary focus:bg-card outline-none transition-colors duration-200"
             />
-            <input
-              data-testid="input-password"
-              type="password" required placeholder="Пароль (мин. 6 символов)"
-              value={form.password} onChange={(e) => setForm({ ...form, password: e.target.value })}
-              className="w-full px-4 py-3 rounded-xl bg-muted border border-transparent focus:border-primary focus:bg-card outline-none transition-colors duration-200"
-            />
+            <div className="relative">
+              <input
+                data-testid="input-password"
+                type={showPassword ? "text" : "password"} required placeholder="Пароль (мин. 6 символов)"
+                value={form.password} onChange={(e) => setForm({ ...form, password: e.target.value })}
+                className="w-full px-4 py-3 pr-12 rounded-xl bg-muted border border-transparent focus:border-primary focus:bg-card outline-none transition-colors duration-200"
+              />
+              <button
+                type="button"
+                data-testid="toggle-password"
+                onClick={() => setShowPassword((v) => !v)}
+                className="absolute right-3 top-1/2 -translate-y-1/2 p-1 text-muted-foreground hover:text-foreground transition-colors duration-200"
+                aria-label={showPassword ? "Скрыть пароль" : "Показать пароль"}
+              >
+                {showPassword ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}
+              </button>
+            </div>
             <button
               data-testid="submit-auth"
               disabled={submitting} type="submit"
