@@ -1,0 +1,25 @@
+{
+  "summary": "Tested forgot-password OTP reset flow end-to-end. Backend: 6/6 pytest cases passed (known-email OTP, unknown-email null OTP, invalid OTP 400, valid OTP resets password + old password 401 + login with new works, OTP one-time-use, rate-limit 4th request 429). Frontend: full modal flow passed (open modal, auto-fill email from login form, auto-fill dev_otp, eye toggle, submit → success toast → modal closes → login form auto-filled → login → redirect to /home).",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [
+      {"component": "Landing.jsx", "issue": "The 'Forgot password?' trigger link with data-testid='forgot-password' was MISSING from the login form JSX. openForgot() handler, modal, state and all sub-elements existed but no element invoked openForgot. Nothing could open the modal. FIXED by adding a 'Забыли пароль?' button below data-testid='submit-auth' visible only in login mode.", "selector": "[data-testid=\"forgot-password\"]", "priority": "HIGH (fixed)"}
+    ],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": ["/app/backend/tests/test_forgot_reset.py", "/app/test_reports/pytest/forgot_reset_results.xml"],
+  "action_items": ["Confirm the added 'Забыли пароль?' link styling/copy is acceptable (currently a small primary-colored link centered under the submit button, only shown in login mode)."],
+  "critical_code_review_comments": [
+    "Landing.jsx was missing the trigger element for its own openForgot() handler — feature was 100% non-functional from UI until fixed by testing agent. Add a lint/UI smoke check for orphan handlers.",
+    "server.py forgot_password uses ISO-string comparison for created_at rate-limit ($gte with iso string); works only because ISO-8601 UTC strings sort lexicographically. Consider storing datetime objects for correctness/portability.",
+    "server.py is ~920 lines; consider splitting auth/reset flows into a dedicated router module."
+  ],
+  "updated_files": ["/app/frontend/src/pages/Landing.jsx (added forgot-password trigger link)", "/app/backend/tests/test_forgot_reset.py (new pytest file)"],
+  "success_rate": {"backend": "100% (6/6)", "frontend": "100% (all listed flows)"},
+  "test_credentials": "Registered fresh users per run: reset_<ts>@lovreski.ru / password123 (then reset to newpass456/newpass789).",
+  "seed_data_creation": "None beyond ephemeral test users created via /api/auth/register.",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Backend forgot/reset endpoints fully verified. If retesting rate-limit, always use a fresh email since counts persist 15 minutes. The forgot-password link was added by the testing agent — if the main agent restyles it, keep data-testid='forgot-password' and ensure it only renders when mode==='login'."
+}

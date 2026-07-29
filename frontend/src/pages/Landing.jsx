@@ -1,8 +1,9 @@
 import { useState } from "react";
 import { useNavigate, Link } from "react-router-dom";
 import { useAuth } from "@/context/AuthContext";
+import { api } from "@/lib/api";
 import { toast } from "sonner";
-import { Heart, Sparkles, Eye, EyeOff } from "lucide-react";
+import { Heart, Sparkles, Eye, EyeOff, KeyRound, X } from "lucide-react";
 
 export default function Landing() {
   const nav = useNavigate();
@@ -13,6 +14,53 @@ export default function Landing() {
   });
   const [submitting, setSubmitting] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
+  // Forgot-password state
+  const [forgotOpen, setForgotOpen] = useState(false);
+  const [forgotStep, setForgotStep] = useState(1); // 1: enter email → 2: OTP + new password
+  const [forgot, setForgot] = useState({ email: "", otp: "", newPassword: "" });
+  const [forgotShowPw, setForgotShowPw] = useState(false);
+  const [forgotBusy, setForgotBusy] = useState(false);
+
+  const openForgot = () => {
+    // Auto-fill the email that was already typed on the login form
+    setForgot({ email: form.email || "", otp: "", newPassword: "" });
+    setForgotStep(1);
+    setForgotOpen(true);
+  };
+
+  const requestOtp = async () => {
+    if (!forgot.email) return toast.error("Введите email");
+    setForgotBusy(true);
+    try {
+      const { data } = await api.post("/auth/forgot", { email: forgot.email });
+      // MOCKED delivery: dev_otp is returned so we auto-fill it
+      if (data.dev_otp) {
+        setForgot((f) => ({ ...f, otp: data.dev_otp }));
+        toast.success(`Код отправлен и авто-заполнен: ${data.dev_otp}`);
+      } else {
+        toast.success("Если аккаунт существует, код отправлен");
+      }
+      setForgotStep(2);
+    } catch (err) {
+      const status = err.response?.status;
+      if (status === 429) toast.error("Слишком много запросов. Попробуйте через 15 минут");
+      else toast.error(err.response?.data?.detail || "Ошибка");
+    } finally { setForgotBusy(false); }
+  };
+
+  const doReset = async () => {
+    if (!forgot.otp || forgot.newPassword.length < 6) return toast.error("Введите код и новый пароль (мин. 6 символов)");
+    setForgotBusy(true);
+    try {
+      await api.post("/auth/reset", { email: forgot.email, otp: forgot.otp, new_password: forgot.newPassword });
+      toast.success("Пароль обновлён! Войдите с новым паролем.");
+      // Auto-fill login form with the new credentials for one-tap sign-in
+      setForm((f) => ({ ...f, email: forgot.email, password: forgot.newPassword }));
+      setForgotOpen(false);
+    } catch (err) {
+      toast.error(err.response?.data?.detail || "Ошибка сброса");
+    } finally { setForgotBusy(false); }
+  };
 
   const doGoogle = () => {
     // REMINDER: DO NOT HARDCODE THE URL, OR ADD ANY FALLBACKS OR REDIRECT URLS, THIS BREAKS THE AUTH
@@ -143,6 +191,18 @@ export default function Landing() {
             >
               {submitting ? "..." : mode === "login" ? "Войти" : "Создать аккаунт"}
             </button>
+            {mode === "login" && (
+              <div className="text-center pt-1">
+                <button
+                  type="button"
+                  data-testid="forgot-password"
+                  onClick={openForgot}
+                  className="text-sm text-primary hover:underline font-semibold"
+                >
+                  Забыли пароль?
+                </button>
+              </div>
+            )}
           </form>
 
           <div className="flex items-center gap-3 my-5">
@@ -165,6 +225,107 @@ export default function Landing() {
           </p>
         </div>
       </div>
+
+      {/* Forgot password modal */}
+      {forgotOpen && (
+        <div
+          data-testid="forgot-modal"
+          className="fixed inset-0 z-[60] flex items-end sm:items-center justify-center bg-black/60 backdrop-blur-sm"
+          onClick={() => !forgotBusy && setForgotOpen(false)}
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            className="w-full sm:max-w-md bg-card border-t sm:border sm:rounded-2xl border-border shadow-2xl p-6 rounded-t-3xl animate-in slide-in-from-bottom duration-200"
+          >
+            <div className="flex items-center justify-between mb-4">
+              <div className="flex items-center gap-2">
+                <div className="w-10 h-10 rounded-full bg-primary/15 flex items-center justify-center">
+                  <KeyRound className="w-5 h-5 text-primary" />
+                </div>
+                <div>
+                  <h3 className="font-display font-black text-lg">Сброс пароля</h3>
+                  <p className="text-xs text-muted-foreground">{forgotStep === 1 ? "Введите ваш email" : "Введите код и новый пароль"}</p>
+                </div>
+              </div>
+              <button
+                data-testid="forgot-close"
+                onClick={() => !forgotBusy && setForgotOpen(false)}
+                className="p-1 rounded-full hover:bg-muted"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {forgotStep === 1 ? (
+              <div className="space-y-3">
+                <input
+                  data-testid="forgot-email"
+                  type="email"
+                  placeholder="Email"
+                  value={forgot.email}
+                  onChange={(e) => setForgot({ ...forgot, email: e.target.value })}
+                  className="w-full px-4 py-3 rounded-xl bg-muted border border-transparent focus:border-primary focus:bg-background outline-none transition-colors duration-200"
+                />
+                <button
+                  data-testid="forgot-request"
+                  disabled={forgotBusy}
+                  onClick={requestOtp}
+                  className="w-full btn-pill bg-primary text-primary-foreground disabled:opacity-60"
+                >
+                  {forgotBusy ? "..." : "Отправить код"}
+                </button>
+                <p className="text-[11px] text-muted-foreground text-center">
+                  Служба доставки email в этой сборке МОКИРОВАНА — код будет показан на экране и авто-заполнен.
+                </p>
+              </div>
+            ) : (
+              <div className="space-y-3">
+                <div className="text-xs px-3 py-2 rounded-lg bg-secondary text-secondary-foreground">
+                  Код для <b>{forgot.email}</b>. Не пришёл?{" "}
+                  <button onClick={() => setForgotStep(1)} className="underline font-semibold">Отправить снова</button>
+                </div>
+                <input
+                  data-testid="forgot-otp"
+                  inputMode="numeric"
+                  pattern="\d*"
+                  maxLength={6}
+                  placeholder="Код из 6 цифр"
+                  value={forgot.otp}
+                  onChange={(e) => setForgot({ ...forgot, otp: e.target.value.replace(/\D/g, "") })}
+                  className="w-full px-4 py-3 rounded-xl bg-muted border border-transparent focus:border-primary focus:bg-background outline-none text-center tracking-[0.5em] font-display font-bold text-lg transition-colors duration-200"
+                />
+                <div className="relative">
+                  <input
+                    data-testid="forgot-new-password"
+                    type={forgotShowPw ? "text" : "password"}
+                    placeholder="Новый пароль (мин. 6)"
+                    value={forgot.newPassword}
+                    onChange={(e) => setForgot({ ...forgot, newPassword: e.target.value })}
+                    className="w-full px-4 py-3 pr-12 rounded-xl bg-muted border border-transparent focus:border-primary focus:bg-background outline-none transition-colors duration-200"
+                  />
+                  <button
+                    type="button"
+                    data-testid="forgot-toggle-password"
+                    onClick={() => setForgotShowPw((v) => !v)}
+                    className="absolute right-3 top-1/2 -translate-y-1/2 p-1 text-muted-foreground hover:text-foreground"
+                    aria-label={forgotShowPw ? "Скрыть пароль" : "Показать пароль"}
+                  >
+                    {forgotShowPw ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}
+                  </button>
+                </div>
+                <button
+                  data-testid="forgot-submit"
+                  disabled={forgotBusy}
+                  onClick={doReset}
+                  className="w-full btn-pill bg-primary text-primary-foreground disabled:opacity-60"
+                >
+                  {forgotBusy ? "..." : "Установить новый пароль"}
+                </button>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
     </div>
   );
 }

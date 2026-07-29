@@ -175,6 +175,14 @@ class TranslateBody(BaseModel):
     text: str
     target: str = 'ru'
 
+class ForgotBody(BaseModel):
+    email: EmailStr
+
+class ResetBody(BaseModel):
+    email: EmailStr
+    otp: str
+    new_password: str = Field(min_length=6)
+
 # ────────────────────────────── Constants ──────────────────────────────
 COIN_PACKAGES = [
     {"id": "p10", "coins": 10, "price": 300},
@@ -300,6 +308,64 @@ async def login(body: LoginBody):
     token = make_jwt(user['user_id'], is_admin=user.get('is_admin', False))
     user.pop('password_hash', None); user.pop('_id', None)
     return {"token": token, "user": user}
+
+# ─────────── Password reset (OTP) ───────────
+# NOTE: No email service is configured — the OTP is returned in the response as
+# `dev_otp` so the frontend can auto-fill it (MOCKED delivery). Swap to Resend/
+# SendGrid when a mail API key is provided.
+import secrets
+
+@api.post("/auth/forgot")
+async def forgot_password(body: ForgotBody):
+    email = body.email.lower()
+    user = await db.users.find_one({"email": email}, {"_id": 0, "user_id": 1})
+    # Rate limit: max 3 OTP requests per email per 15 minutes
+    since = now_utc() - timedelta(minutes=15)
+    recent = await db.password_reset_otps.count_documents({
+        "email": email, "created_at": {"$gte": iso(since)},
+    })
+    if recent >= 3:
+        raise HTTPException(status_code=429, detail="Too many reset requests. Try again in 15 minutes.")
+    # Always generate an OTP even if user is missing to avoid email enumeration,
+    # but only persist when the user exists.
+    otp = f"{secrets.randbelow(1000000):06d}"
+    if user:
+        await db.password_reset_otps.insert_one({
+            "email": email,
+            "otp": otp,
+            "used": False,
+            "created_at": iso(now_utc()),
+            "expires_at": iso(now_utc() + timedelta(minutes=10)),
+        })
+    # MOCKED: no email sending — return OTP directly so the UI can auto-fill it.
+    return {"ok": True, "dev_otp": otp if user else None, "message": "OTP отправлен (в этой сборке возвращается в ответе для авто-заполнения)"}
+
+@api.post("/auth/reset")
+async def reset_password(body: ResetBody):
+    email = body.email.lower()
+    rec = await db.password_reset_otps.find_one(
+        {"email": email, "otp": body.otp, "used": False},
+        sort=[("created_at", -1)],
+    )
+    if not rec:
+        raise HTTPException(status_code=400, detail="Invalid OTP")
+    exp = rec.get('expires_at')
+    if isinstance(exp, str):
+        try:
+            exp_dt = datetime.fromisoformat(exp)
+            if exp_dt.tzinfo is None:
+                exp_dt = exp_dt.replace(tzinfo=timezone.utc)
+            if exp_dt < now_utc():
+                raise HTTPException(status_code=400, detail="OTP expired. Request a new one.")
+        except ValueError:
+            raise HTTPException(status_code=400, detail="OTP expired. Request a new one.")
+    # Update password and invalidate OTP (one-time-use)
+    new_hash = hash_pw(body.new_password)
+    result = await db.users.update_one({"email": email}, {"$set": {"password_hash": new_hash}})
+    if result.matched_count == 0:
+        raise HTTPException(status_code=404, detail="Account not found")
+    await db.password_reset_otps.update_one({"_id": rec['_id']}, {"$set": {"used": True, "used_at": iso(now_utc())}})
+    return {"ok": True}
 
 @api.post("/auth/session")
 async def exchange_session(body: SessionExchange, response: Response):
