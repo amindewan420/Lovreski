@@ -1,0 +1,20 @@
+{
+  "frontend_url": "https://lovreski-dating.preview.emergentagent.com",
+  "mocked_api": "/api/auth/session",
+  "mocked_api_reason": "No real one-time Google/Emergent session_id is available to the testing agent; this covers the real Landing.jsx redirect path /home#session_id=... with a mocked successful exchange.",
+  "entry_url": "/home#session_id=fake_session_homehash",
+  "session_exchange_call_count": 1,
+  "calls": [
+    {
+      "post_data": "{\"session_id\":\"fake_session_homehash\"}",
+      "url_at_request": "https://lovreski-dating.preview.emergentagent.com/home"
+    }
+  ],
+  "hash_during_pending_exchange": "",
+  "final_url": "https://lovreski-dating.preview.emergentagent.com/home",
+  "stored_token": "mock_session_token_homehash",
+  "google_error_visible": false,
+  "specific_error_selector_text": "",
+  "downstream_note": "Home feed showed a separate load-feed toast because the MOCKED session token is not a real backend session; this is expected for the mocked callback diagnostic and is not the Google OAuth failure toast.",
+  "passed": true
+}

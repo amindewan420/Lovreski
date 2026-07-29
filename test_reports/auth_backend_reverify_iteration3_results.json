@@ -1,0 +1,162 @@
+{
+  "base_url": "https://lovreski-dating.preview.emergentagent.com/api",
+  "created_email": "bugretest_1785347467_7281@lovreski.ru",
+  "checks": [
+    {
+      "name": "register_new_user",
+      "status": 200,
+      "expected_status": 200,
+      "body": {
+        "token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VyX2lkIjoidXNlcl8yNzNkOWI3YmI5ODgiLCJpc19hZG1pbiI6ZmFsc2UsImV4cCI6MTc4NzkzOTQ2OH0.Mc8cf-wzCMwnjqigWQSstl8D6HjYhXbgNmei59-YoQk",
+        "user": {
+          "user_id": "user_273d9b7bb988",
+          "email": "bugretest_1785347467_7281@lovreski.ru",
+          "name": "Bug Retest",
+          "gender": "male",
+          "dob": "1998-05-15",
+          "photos": [],
+          "interests": [],
+          "coins": 5,
+          "is_premium": false,
+          "verified": false,
+          "is_admin": false,
+          "show_me": "female",
+          "age_min": 18,
+          "age_max": 60,
+          "distance_mode": "unlimited",
+          "auto_translate": false,
+          "created_at": "2026-07-29T17:51:07.999220+00:00",
+          "last_active": "2026-07-29T17:51:07.999237+00:00",
+          "popularity": "medium",
+          "notif_push": {
+            "messages": true,
+            "likes": true,
+            "matches": true,
+            "visits": false,
+            "who_liked": false
+          },
+          "notif_email": {
+            "messages": false,
+            "likes": false,
+            "matches": true
+          }
+        }
+      },
+      "expected_detail": null,
+      "passed": true
+    },
+    {
+      "name": "duplicate_register",
+      "status": 409,
+      "expected_status": 409,
+      "body": {
+        "detail": "Email already exists"
+      },
+      "expected_detail": "Email already exists",
+      "passed": true
+    },
+    {
+      "name": "login_correct_password",
+      "status": 200,
+      "expected_status": 200,
+      "body": {
+        "token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VyX2lkIjoidXNlcl8yNzNkOWI3YmI5ODgiLCJpc19hZG1pbiI6ZmFsc2UsImV4cCI6MTc4NzkzOTQ2OH0.Mc8cf-wzCMwnjqigWQSstl8D6HjYhXbgNmei59-YoQk",
+        "user": {
+          "user_id": "user_273d9b7bb988",
+          "email": "bugretest_1785347467_7281@lovreski.ru",
+          "name": "Bug Retest",
+          "gender": "male",
+          "dob": "1998-05-15",
+          "photos": [],
+          "interests": [],
+          "coins": 5,
+          "is_premium": false,
+          "verified": false,
+          "is_admin": false,
+          "show_me": "female",
+          "age_min": 18,
+          "age_max": 60,
+          "distance_mode": "unlimited",
+          "auto_translate": false,
+          "created_at": "2026-07-29T17:51:07.999220+00:00",
+          "last_active": "2026-07-29T17:51:07.999237+00:00",
+          "popularity": "medium",
+          "notif_push": {
+            "messages": true,
+            "likes": true,
+            "matches": true,
+            "visits": false,
+            "who_liked": false
+          },
+          "notif_email": {
+            "messages": false,
+            "likes": false,
+            "matches": true
+          }
+        }
+      },
+      "expected_detail": null,
+      "passed": true
+    },
+    {
+      "name": "login_wrong_password",
+      "status": 401,
+      "expected_status": 401,
+      "body": {
+        "detail": "Incorrect password"
+      },
+      "expected_detail": "Incorrect password",
+      "passed": true
+    },
+    {
+      "name": "login_unknown_email",
+      "status": 404,
+      "expected_status": 404,
+      "body": {
+        "detail": "Account not found. Please sign up first."
+      },
+      "expected_detail": "Account not found. Please sign up first.",
+      "passed": true
+    },
+    {
+      "name": "auth_me_with_login_token",
+      "status": 200,
+      "expected_status": 200,
+      "body": {
+        "user_id": "user_273d9b7bb988",
+        "email": "bugretest_1785347467_7281@lovreski.ru",
+        "name": "Bug Retest",
+        "gender": "male",
+        "dob": "1998-05-15",
+        "photos": [],
+        "interests": [],
+        "coins": 5,
+        "is_premium": false,
+        "verified": false,
+        "is_admin": false,
+        "show_me": "female",
+        "age_min": 18,
+        "age_max": 60,
+        "distance_mode": "unlimited",
+        "auto_translate": false,
+        "created_at": "2026-07-29T17:51:07.999220+00:00",
+        "last_active": "2026-07-29T17:51:08.478615+00:00",
+        "popularity": "medium",
+        "notif_push": {
+          "messages": true,
+          "likes": true,
+          "matches": true,
+          "visits": false,
+          "who_liked": false
+        },
+        "notif_email": {
+          "messages": false,
+          "likes": false,
+          "matches": true
+        }
+      },
+      "passed": true
+    }
+  ],
+  "all_passed": true
+}

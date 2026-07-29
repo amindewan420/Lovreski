@@ -1,0 +1,23 @@
+{
+  "frontend_url": "https://lovreski-dating.preview.emergentagent.com",
+  "mocked_api": "/api/auth/session",
+  "mocked_api_reason": "No real one-time Google/Emergent session_id is available to the testing agent; the mock proves frontend callback exchange call count and success handling under React.StrictMode.",
+  "entry_url": "/#session_id=fake_session_iteration3_mcp",
+  "session_exchange_call_count": 1,
+  "calls": [
+    {
+      "post_data": "{\"session_id\":\"fake_session_iteration3_mcp\"}",
+      "url_at_request": "https://lovreski-dating.preview.emergentagent.com/"
+    }
+  ],
+  "hash_during_pending_exchange": "",
+  "url_during_pending_exchange": "https://lovreski-dating.preview.emergentagent.com/",
+  "navigated_to_home_after_exchange": true,
+  "home_url_observed": "https://lovreski-dating.preview.emergentagent.com/home",
+  "stored_token": "mock_session_token_iteration3_mcp",
+  "google_error_visible": false,
+  "specific_error_selector_text": "",
+  "landing_h1_texts": ["Lovreski"],
+  "landing_h1_exact_lovreski_only": true,
+  "passed": true
+}

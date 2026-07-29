@@ -1,0 +1,51 @@
+{
+  "verdict": "fixed",
+  "user_reported_bug": "Also fix Google Sign-in so it works without errors. (part of larger auth fix bug — verify Google OAuth callback no longer double-exchanges the session_id under React.StrictMode)",
+  "summary": "No relevant testing skill found. Focused retest passed: under React.StrictMode, /#session_id=fake_session produced exactly one MOCKED POST /api/auth/session, cleared the hash before the mocked exchange completed, stored the returned token, navigated to /home, and did not show the Google failure toast. Backend auth regressions and Landing H1 also passed.",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/test_reports/auth_backend_reverify_iteration3.py",
+    "/app/test_reports/auth_backend_reverify_iteration3_results.json",
+    "/app/test_reports/auth_callback_strictmode_retest_iteration3.py",
+    "/app/test_reports/auth_callback_strictmode_mcp_iteration3.py",
+    "/app/test_reports/auth_callback_strictmode_retest_iteration3_results.json",
+    "/app/test_reports/auth_callback_homehash_retest_iteration3_results.json",
+    "/app/test_reports/bug_verification_3.json",
+    "/app/test_reports/iteration_3.json"
+  ],
+  "action_items": [
+    "No code fix required for this reported bug. Optional: perform a real Google OAuth smoke test with a real Google account/session_id in an environment where those credentials are available; callback diagnostics here used a MOCKED /api/auth/session as requested."
+  ],
+  "critical_code_review_comments": [
+    "AuthCallback.jsx now uses a useRef hasProcessed guard set synchronously before the async /auth/session POST; this matches the Emergent OAuth playbook guidance for React.StrictMode one-time exchanges.",
+    "AuthCallback.jsx clears window.location.hash via history.replaceState immediately after reading session_id, before the async exchange resolves.",
+    "AppRouter reads useLocation().hash and AuthContext skips /auth/me when session_id is present, which avoids callback/auth-check races."
+  ],
+  "updated_files": [
+    "/app/test_reports/auth_backend_reverify_iteration3.py",
+    "/app/test_reports/auth_backend_reverify_iteration3_results.json",
+    "/app/test_reports/auth_callback_strictmode_retest_iteration3.py",
+    "/app/test_reports/auth_callback_strictmode_mcp_iteration3.py",
+    "/app/test_reports/auth_callback_strictmode_retest_iteration3_results.json",
+    "/app/test_reports/auth_callback_homehash_retest_iteration3_results.json",
+    "/app/test_reports/bug_verification_3.json",
+    "/app/test_reports/iteration_3.json"
+  ],
+  "success_rate": {
+    "backend": "100%",
+    "frontend": "100%"
+  },
+  "seed_data_creation": "Created backend API test user bugretest_1785347467_7281@lovreski.ru with password password123; it remains in MongoDB as registration/login persistence evidence.",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Exact bug retested with the requested MOCKED /api/auth/session diagnostic. /#session_id=fake_session_iteration3_mcp and /home#session_id=fake_session_homehash each made exactly one exchange call, hash was empty while the exchange was still pending, token was stored, /home navigation occurred, and no 'Не удалось войти через Google' text appeared. Backend register/duplicate/login/wrong-password/unknown-email/auth-me checks all passed with exact statuses and details. Landing H1 texts were exactly ['Lovreski'].",
+  "rca_of_the_issue": "Previous failure was React.StrictMode re-running the AuthCallback effect and posting the one-time OAuth session_id twice. The current code prevents that by setting hasProcessed.current = true before any async work and stripping the hash immediately after reading session_id. Runtime evidence showed one POST only. The /api/auth/session response was MOCKED because no real Google/Emergent one-time session_id was available."
+}

@@ -1,4 +1,4 @@
-import { useEffect } from "react";
+import { useEffect, useRef } from "react";
 import { useNavigate } from "react-router-dom";
 import { api, setToken } from "@/lib/api";
 import { useAuth } from "@/context/AuthContext";
@@ -8,12 +8,22 @@ import { toast } from "sonner";
 export default function AuthCallback() {
   const nav = useNavigate();
   const { setUser } = useAuth();
+  // StrictMode-safe guard: set synchronously before the async call so the
+  // one-time OAuth session_id is exchanged only once (Emergent OAuth playbook).
+  const hasProcessed = useRef(false);
 
   useEffect(() => {
+    if (hasProcessed.current) return;
+    hasProcessed.current = true;
+
     const hash = window.location.hash || "";
     const match = hash.match(/session_id=([^&]+)/);
     if (!match) { nav("/"); return; }
     const sid = match[1];
+    // Clear the hash immediately so the same session_id cannot be re-submitted
+    // (defense-in-depth beyond the ref guard).
+    window.history.replaceState(null, "", window.location.pathname + window.location.search);
+
     (async () => {
       try {
         const { data } = await api.post("/auth/session", { session_id: sid });
