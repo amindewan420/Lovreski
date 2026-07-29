@@ -1,55 +1,61 @@
-import { useEffect } from "react";
 import "@/App.css";
-import { BrowserRouter, Routes, Route } from "react-router-dom";
-import axios from "axios";
-import { HOME } from "@/constants/testIds";
+import { BrowserRouter, Routes, Route, Navigate, useLocation } from "react-router-dom";
+import { AuthProvider, useAuth } from "@/context/AuthContext";
+import { ThemeProvider } from "@/context/ThemeContext";
+import { Toaster } from "sonner";
+import Landing from "@/pages/Landing";
+import AuthCallback from "@/pages/AuthCallback";
+import HomePage from "@/pages/HomePage";
+import DiscoverPage from "@/pages/DiscoverPage";
+import LikesPage from "@/pages/LikesPage";
+import ChatsListPage from "@/pages/ChatsListPage";
+import ChatRoomPage from "@/pages/ChatRoomPage";
+import ProfilePage from "@/pages/ProfilePage";
+import OtherProfilePage from "@/pages/OtherProfilePage";
+import PremiumPage from "@/pages/PremiumPage";
+import SettingsPage from "@/pages/SettingsPage";
+import AdminPage from "@/pages/AdminPage";
 
-const BACKEND_URL = process.env.REACT_APP_BACKEND_URL;
-const API = `${BACKEND_URL}/api`;
+const Protected = ({ children }) => {
+  const { user, loading } = useAuth();
+  if (loading) return <div className="min-h-screen flex items-center justify-center text-muted-foreground">Загрузка...</div>;
+  if (!user) return <Navigate to="/" replace />;
+  return children;
+};
 
-const Home = () => {
-  const helloWorldApi = async () => {
-    try {
-      const response = await axios.get(`${API}/`);
-      console.log(response.data.message);
-    } catch (e) {
-      console.error(e, `errored out requesting / api`);
-    }
-  };
-
-  useEffect(() => {
-    helloWorldApi();
-  }, []);
-
+const AppRouter = () => {
+  const location = useLocation();
+  // Handle Emergent OAuth callback synchronously during render
+  if (location.hash?.includes("session_id=")) return <AuthCallback />;
   return (
-    <div>
-      <header className="App-header">
-        <a
-          data-testid={HOME.emergentLink}
-          className="App-link"
-          href="https://emergent.sh"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <img src="https://avatars.githubusercontent.com/in/1201222?s=120&u=2686cf91179bbafbc7a71bfbc43004cf9ae1acea&v=4" />
-        </a>
-        <p className="mt-5">Building something incredible ~!</p>
-      </header>
-    </div>
+    <Routes>
+      <Route path="/" element={<Landing />} />
+      <Route path="/home" element={<Protected><HomePage /></Protected>} />
+      <Route path="/discover" element={<Protected><DiscoverPage /></Protected>} />
+      <Route path="/likes" element={<Protected><LikesPage /></Protected>} />
+      <Route path="/chats" element={<Protected><ChatsListPage /></Protected>} />
+      <Route path="/chats/:id" element={<Protected><ChatRoomPage /></Protected>} />
+      <Route path="/profile" element={<Protected><ProfilePage /></Protected>} />
+      <Route path="/profile/:id" element={<Protected><OtherProfilePage /></Protected>} />
+      <Route path="/premium" element={<Protected><PremiumPage /></Protected>} />
+      <Route path="/settings" element={<Protected><SettingsPage /></Protected>} />
+      <Route path="/settings/discovery" element={<Protected><SettingsPage /></Protected>} />
+      <Route path="/admin" element={<Protected><AdminPage /></Protected>} />
+      <Route path="*" element={<Navigate to="/" replace />} />
+    </Routes>
   );
 };
 
 function App() {
   return (
-    <div className="App">
-      <BrowserRouter>
-        <Routes>
-          <Route path="/" element={<Home />}>
-            <Route index element={<Home />} />
-          </Route>
-        </Routes>
-      </BrowserRouter>
-    </div>
+    <ThemeProvider>
+      <AuthProvider>
+        <BrowserRouter>
+          <AppRouter />
+          <Toaster position="top-center" richColors />
+        </BrowserRouter>
+      </AuthProvider>
+    </ThemeProvider>
   );
 }
 

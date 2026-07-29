@@ -1,0 +1,18 @@
+{
+  "short_name": "Lovreski",
+  "name": "Lovreski — Dating",
+  "icons": [
+    {
+      "src": "https://api.dicebear.com/9.x/shapes/svg?seed=lovreski&backgroundColor=D91656",
+      "type": "image/svg+xml",
+      "sizes": "192x192 512x512",
+      "purpose": "any maskable"
+    }
+  ],
+  "start_url": "/",
+  "display": "standalone",
+  "theme_color": "#D91656",
+  "background_color": "#FDFBF7",
+  "orientation": "portrait",
+  "lang": "ru"
+}
