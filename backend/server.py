@@ -242,7 +242,7 @@ def user_public(u: dict, viewer: Optional[dict] = None) -> dict:
 async def register(body: RegisterBody):
     existing = await db.users.find_one({"email": body.email.lower()})
     if existing:
-        raise HTTPException(status_code=400, detail="Email уже зарегистрирован")
+        raise HTTPException(status_code=409, detail="Email already exists")
     user_id = f"user_{uuid.uuid4().hex[:12]}"
     doc = {
         "user_id": user_id,
@@ -292,8 +292,10 @@ async def login(body: LoginBody):
         admin.pop('password_hash', None); admin.pop('_id', None)
         return {"token": token, "user": admin}
     user = await db.users.find_one({"email": body.email.lower()})
-    if not user or not check_pw(body.password, user.get('password_hash', '')):
-        raise HTTPException(status_code=401, detail="Неверный email или пароль")
+    if not user:
+        raise HTTPException(status_code=404, detail="Account not found. Please sign up first.")
+    if not check_pw(body.password, user.get('password_hash', '')):
+        raise HTTPException(status_code=401, detail="Incorrect password")
     await db.users.update_one({"user_id": user['user_id']}, {"$set": {"last_active": iso(now_utc())}})
     token = make_jwt(user['user_id'], is_admin=user.get('is_admin', False))
     user.pop('password_hash', None); user.pop('_id', None)

@@ -1,0 +1,53 @@
+{
+  "verdict": "not_fixed",
+  "user_reported_bug": "Fix the email registration & login system completely. - New users should be able to register with email & password without any error. - Show specific errors: 'Email already exists' for duplicate sign-up, and 'Incorrect password' for wrong login. - Do NOT show generic 'wrong email or password' for new registrations. - Make sure user data is saved properly in the database after registration. - Also fix Google Sign-in so it works without errors. HOMEPAGE - FIRST PAGE REDESIGN: Redesign the hero/first section of the homepage with this content: Headline: only 'Lovreski'  Subheadline: 'no subheadline'",
+  "summary": "No relevant testing skill found. Email/password registration, persistence, duplicate signup, correct login, wrong-password login, unknown-email login, homepage H1, and UI toast flows passed. Google OAuth redirect button passed, but Google sign-in is still not fully fixed: AuthCallback exchanges the same OAuth session_id twice under React StrictMode, which can turn a one-time OAuth session into an error.",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [
+      {
+        "flow": "Emergent Google OAuth callback",
+        "issue": "AuthCallback.jsx lacks a StrictMode-safe processed guard; a simulated OAuth return to /#session_id=fake_session_id produced 2 POST /api/auth/session calls and then displayed the Google login failure toast. Because Emergent OAuth session_id values are one-time use, this can break real Google sign-in. This diagnostic used a MOCKED /api/auth/session response because real Google credentials/session_id were unavailable.",
+        "affected_selectors": ["data-testid='google-auth'"]
+      }
+    ],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/test_reports/auth_backend_verification.py",
+    "/app/test_reports/auth_backend_results.json",
+    "/app/test_reports/auth_frontend_playwright.py",
+    "/app/test_reports/auth_callback_strictmode_playwright.py",
+    "/app/test_reports/bug_verification_2.json",
+    "/app/test_reports/iteration_2.json"
+  ],
+  "action_items": [
+    "Make AuthCallback StrictMode-safe by using a useRef processed guard set synchronously before the async /auth/session exchange, and/or clear/replace the URL hash before exchanging so the same session_id cannot be submitted twice.",
+    "Retest Google OAuth callback end-to-end after the guard is added."
+  ],
+  "critical_code_review_comments": [
+    "AuthCallback.jsx currently uses useEffect without a processed guard while the app is rendered inside React.StrictMode in index.js. The Emergent auth playbook warns this exact pattern can cause duplicate one-time session exchange requests.",
+    "Landing.jsx Google redirect construction is correct: window.location.origin + '/home' encoded in https://auth.emergentagent.com/?redirect=."
+  ],
+  "updated_files": [
+    "/app/test_reports/auth_backend_verification.py",
+    "/app/test_reports/auth_backend_results.json",
+    "/app/test_reports/auth_frontend_playwright.py",
+    "/app/test_reports/auth_callback_strictmode_playwright.py",
+    "/app/test_reports/bug_verification_2.json",
+    "/app/test_reports/iteration_2.json"
+  ],
+  "success_rate": {
+    "backend": "100%",
+    "frontend": "89%"
+  },
+  "seed_data_creation": "Created random test users via API/UI, including bugtest_1785346998_7344@lovreski.ru and additional bugui_<timestamp>@lovreski.ru accounts; they remain in MongoDB as evidence of persistence.",
+  "retest_needed": true,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "Backend auth endpoints passed exact status/detail checks and MongoDB persistence. UI auth toasts and hero H1 passed. Recheck only the Google OAuth callback after fixing duplicate /api/auth/session calls; the current diagnostic MOCKED /api/auth/session and observed two calls under React.StrictMode.",
+  "rca_of_the_issue": "React.StrictMode mounts/effects twice in development. AuthCallback.jsx posts the OAuth session_id inside useEffect without a useRef hasProcessed guard. A Playwright diagnostic returning to /#session_id=fake_session_id with a MOCKED one-time /api/auth/session route showed two exchange calls and the second failure caused the user-visible Google auth error toast."
+}

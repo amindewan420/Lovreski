@@ -33,7 +33,14 @@ export default function Landing() {
         nav("/home");
       }
     } catch (err) {
-      toast.error(err.response?.data?.detail || "Ошибка");
+      const status = err.response?.status;
+      const detail = err.response?.data?.detail;
+      let msg = detail || "Ошибка";
+      // Map to specific, user-friendly messages
+      if (mode === "register" && status === 409) msg = "Email already exists";
+      else if (mode === "login" && status === 401) msg = "Incorrect password";
+      else if (mode === "login" && status === 404) msg = "Account not found. Please sign up first.";
+      toast.error(msg);
     } finally {
       setSubmitting(false);
     }
@@ -51,12 +58,9 @@ export default function Landing() {
             </div>
             <span className="font-display font-black text-2xl tracking-tight">Lovreski</span>
           </div>
-          <h1 className="font-display text-4xl sm:text-5xl font-black leading-[1.05] tracking-tight mt-8">
-            Настоящие<br />знакомства.<br /><span className="text-primary">Без масок.</span>
+          <h1 className="font-display text-6xl sm:text-7xl font-black leading-[1.05] tracking-tight mt-8">
+            <span className="text-primary">Lovreski</span>
           </h1>
-          <p className="text-muted-foreground mt-4 leading-relaxed">
-            Умный подбор, честные фото, живое общение с автоматическим переводом. Присоединяйтесь бесплатно.
-          </p>
         </div>
 
         <div className="relative bg-card rounded-t-[2rem] p-6 border-t border-border shadow-2xl">

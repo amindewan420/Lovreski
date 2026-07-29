@@ -1,0 +1,145 @@
+{
+  "api_base": "https://lovreski-dating.preview.emergentagent.com/api",
+  "email": "bugtest_1785346998_7344@lovreski.ru",
+  "checks": [
+    {
+      "name": "new_registration",
+      "status": 200,
+      "body": {
+        "token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VyX2lkIjoidXNlcl8yMzQwYTc1MWQxYWEiLCJpc19hZG1pbiI6ZmFsc2UsImV4cCI6MTc4NzkzODk5OH0.UJiWYuvHm5bZpHUjHQYnTCO4sU65hjVHi263sDwgbVQ",
+        "user": {
+          "user_id": "user_2340a751d1aa",
+          "email": "bugtest_1785346998_7344@lovreski.ru",
+          "name": "Bug Test User",
+          "gender": "female",
+          "dob": "1998-05-15",
+          "photos": [],
+          "interests": [],
+          "coins": 5,
+          "is_premium": false,
+          "verified": false,
+          "is_admin": false,
+          "show_me": "male",
+          "age_min": 18,
+          "age_max": 60,
+          "distance_mode": "unlimited",
+          "auto_translate": false,
+          "created_at": "2026-07-29T17:43:18.680666+00:00",
+          "last_active": "2026-07-29T17:43:18.680681+00:00",
+          "popularity": "medium",
+          "notif_push": {
+            "messages": true,
+            "likes": true,
+            "matches": true,
+            "visits": false,
+            "who_liked": false
+          },
+          "notif_email": {
+            "messages": false,
+            "likes": false,
+            "matches": true
+          }
+        }
+      }
+    },
+    {
+      "name": "mongo_persistence",
+      "found": true,
+      "doc": {
+        "user_id": "user_2340a751d1aa",
+        "email": "bugtest_1785346998_7344@lovreski.ru",
+        "password_hash": "<present>",
+        "name": "Bug Test User",
+        "gender": "female",
+        "dob": "1998-05-15",
+        "photos": [],
+        "interests": [],
+        "coins": 5,
+        "is_premium": false,
+        "verified": false,
+        "is_admin": false,
+        "show_me": "male",
+        "age_min": 18,
+        "age_max": 60,
+        "distance_mode": "unlimited",
+        "auto_translate": false,
+        "created_at": "2026-07-29T17:43:18.680666+00:00",
+        "last_active": "2026-07-29T17:43:18.680681+00:00",
+        "popularity": "medium",
+        "notif_push": {
+          "messages": true,
+          "likes": true,
+          "matches": true,
+          "visits": false,
+          "who_liked": false
+        },
+        "notif_email": {
+          "messages": false,
+          "likes": false,
+          "matches": true
+        }
+      }
+    },
+    {
+      "name": "duplicate_registration",
+      "status": 409,
+      "body": {
+        "detail": "Email already exists"
+      }
+    },
+    {
+      "name": "correct_login",
+      "status": 200,
+      "body": {
+        "token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VyX2lkIjoidXNlcl8yMzQwYTc1MWQxYWEiLCJpc19hZG1pbiI6ZmFsc2UsImV4cCI6MTc4NzkzODk5OX0.jErEmqzO8f4VVZRQbSPFj62_UXLi1tkq4sroY_6t6CY",
+        "user": {
+          "user_id": "user_2340a751d1aa",
+          "email": "bugtest_1785346998_7344@lovreski.ru",
+          "name": "Bug Test User",
+          "gender": "female",
+          "dob": "1998-05-15",
+          "photos": [],
+          "interests": [],
+          "coins": 5,
+          "is_premium": false,
+          "verified": false,
+          "is_admin": false,
+          "show_me": "male",
+          "age_min": 18,
+          "age_max": 60,
+          "distance_mode": "unlimited",
+          "auto_translate": false,
+          "created_at": "2026-07-29T17:43:18.680666+00:00",
+          "last_active": "2026-07-29T17:43:18.680681+00:00",
+          "popularity": "medium",
+          "notif_push": {
+            "messages": true,
+            "likes": true,
+            "matches": true,
+            "visits": false,
+            "who_liked": false
+          },
+          "notif_email": {
+            "messages": false,
+            "likes": false,
+            "matches": true
+          }
+        }
+      }
+    },
+    {
+      "name": "wrong_password",
+      "status": 401,
+      "body": {
+        "detail": "Incorrect password"
+      }
+    },
+    {
+      "name": "unknown_email",
+      "status": 404,
+      "body": {
+        "detail": "Account not found. Please sign up first."
+      }
+    }
+  ]
+}
