@@ -386,7 +386,7 @@ async def _filter_feed(user: dict, limit: int, skip: int = 0):
         la = u.get('last_active')
         if isinstance(la, str):
             try: la = datetime.fromisoformat(la)
-            except: la = None
+            except Exception: la = None
         if la and la.tzinfo is None: la = la.replace(tzinfo=timezone.utc)
         online_bonus = 0
         if la:
