@@ -18,11 +18,11 @@ export default function HomePage() {
   useEffect(() => {
     (async () => {
       try {
-        // Attempt geo
-        if (navigator.geolocation && !user?.lat) {
+        // Refresh location on every app open (per profile spec section 5)
+        if (navigator.geolocation) {
           navigator.geolocation.getCurrentPosition(async (pos) => {
             try {
-              await api.put("/profile", { lat: pos.coords.latitude, lng: pos.coords.longitude });
+              await api.put("/profile/location", { lat: pos.coords.latitude, lng: pos.coords.longitude });
             } catch {}
             load();
           }, () => load(), { timeout: 5000 });

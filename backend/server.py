@@ -145,7 +145,7 @@ class RegisterBody(BaseModel):
     email: EmailStr
     password: str = Field(min_length=6)
     name: str
-    gender: Literal['male', 'female']
+    gender: Literal['male', 'female', 'non_binary', 'prefer_not']
     dob: str  # YYYY-MM-DD
 
 class LoginBody(BaseModel):
@@ -452,10 +452,116 @@ async def update_profile(body: ProfileUpdate, user: dict = Depends(get_current_u
         raise HTTPException(status_code=400, detail="Максимум 10 интересов")
     if 'photos' in update and len(update['photos']) > 4:
         raise HTTPException(status_code=400, detail="Максимум 4 фотографии")
+    # DOB → must be 18+
+    if 'dob' in update:
+        age = calc_age(update['dob'])
+        if age < 18:
+            raise HTTPException(status_code=400, detail="Возраст должен быть 18+")
     update['last_active'] = iso(now_utc())
     await db.users.update_one({"user_id": user['user_id']}, {"$set": update})
     fresh = await db.users.find_one({"user_id": user['user_id']}, {"_id": 0, "password_hash": 0})
     return fresh
+
+class PhotoBody(BaseModel):
+    data_url: str  # base64 data URL like data:image/jpeg;base64,...
+
+@api.post("/profile/photo")
+async def upload_photo(body: PhotoBody, user: dict = Depends(get_current_user)):
+    """Accept a base64 data URL from the browser (from FileReader). Enforce max 4 total.
+    Cloudinary integration deferred — storing as data URL directly on the user doc
+    keeps the flow self-contained until keys are provided."""
+    if not body.data_url.startswith("data:image/"):
+        raise HTTPException(status_code=400, detail="Invalid image format")
+    # Enforce max 1.5 MB per photo to keep documents lean
+    if len(body.data_url) > 2_000_000:
+        raise HTTPException(status_code=413, detail="Image too large (max ~1.5 MB)")
+    fresh = await db.users.find_one({"user_id": user['user_id']}, {"_id": 0, "photos": 1})
+    photos = (fresh or {}).get('photos') or []
+    if len(photos) >= 4:
+        raise HTTPException(status_code=400, detail="Максимум 4 фотографии")
+    photos.append(body.data_url)
+    await db.users.update_one({"user_id": user['user_id']}, {"$set": {"photos": photos, "last_active": iso(now_utc())}})
+    return {"photos": photos}
+
+class PhotosReorderBody(BaseModel):
+    photos: List[str]  # full list in new order (max 4)
+
+@api.put("/profile/photos")
+async def reorder_photos(body: PhotosReorderBody, user: dict = Depends(get_current_user)):
+    if len(body.photos) > 4:
+        raise HTTPException(status_code=400, detail="Максимум 4 фотографии")
+    await db.users.update_one({"user_id": user['user_id']}, {"$set": {"photos": body.photos}})
+    return {"photos": body.photos}
+
+@api.delete("/profile/photo/{index}")
+async def delete_photo(index: int, user: dict = Depends(get_current_user)):
+    fresh = await db.users.find_one({"user_id": user['user_id']}, {"_id": 0, "photos": 1})
+    photos = (fresh or {}).get('photos') or []
+    if index < 0 or index >= len(photos):
+        raise HTTPException(status_code=404, detail="Photo not found")
+    photos.pop(index)
+    await db.users.update_one({"user_id": user['user_id']}, {"$set": {"photos": photos}})
+    return {"photos": photos}
+
+def _profile_completion(u: dict) -> int:
+    """Percent completion — used to nudge users to fill the profile."""
+    checks = [
+        bool(u.get('photos')),
+        bool(u.get('about')),
+        bool(u.get('job')),
+        bool(u.get('education')),
+        bool(u.get('language')),
+        bool(u.get('height')),
+        bool(u.get('goal')),
+        bool(u.get('relationship')),
+        bool(u.get('kids')),
+        bool(u.get('smoking') and u.get('alcohol')),
+        bool(u.get('interests') and len(u['interests']) >= 3),
+        bool(u.get('lat')),
+    ]
+    return int(round(100 * sum(1 for c in checks if c) / len(checks)))
+
+@api.get("/profile/me/stats")
+async def profile_stats(user: dict = Depends(get_current_user)):
+    """Return popularity (based on likes received), polarity, and completion."""
+    fresh = await db.users.find_one({"user_id": user['user_id']}, {"_id": 0, "password_hash": 0})
+    if not fresh:
+        raise HTTPException(status_code=404, detail="User not found")
+    likes_received = await db.likes.count_documents({"to_user": user['user_id'], "type": "like"})
+    # Popularity thresholds
+    if likes_received >= 20: popularity = "high"
+    elif likes_received >= 5: popularity = "medium"
+    else: popularity = "low"
+    # Polarity: derived from interest count (more social interests → extrovert)
+    social_interests = {"Друзья", "Клубы", "Караоке", "Танцы", "Путешествия", "Караоке",
+                        "Meeting with Friends", "Partying and Clubbing", "Dancing", "Karaoke", "Travel"}
+    quiet_interests = {"Книги", "Медитация", "Йога", "Meditation", "Yoga", "Books",
+                       "Fan Fiction", "Deep conversations", "Psychology"}
+    interests = set(fresh.get('interests') or [])
+    social_hits = len(interests & social_interests)
+    quiet_hits = len(interests & quiet_interests)
+    total = max(1, social_hits + quiet_hits)
+    # 0 = introvert, 100 = extrovert; default 50
+    polarity = int(round(50 + (social_hits - quiet_hits) / total * 50)) if (social_hits + quiet_hits) else 50
+    return {
+        "popularity": popularity,
+        "likes_received": likes_received,
+        "polarity": max(0, min(100, polarity)),
+        "completion": _profile_completion(fresh),
+        "photo_count": len(fresh.get('photos') or []),
+        "interest_count": len(fresh.get('interests') or []),
+    }
+
+@api.put("/profile/location")
+async def update_location(body: dict, user: dict = Depends(get_current_user)):
+    """Called on app open to refresh user coordinates."""
+    lat = body.get('lat'); lng = body.get('lng'); city = body.get('city')
+    if lat is not None and lng is not None:
+        await db.users.update_one({"user_id": user['user_id']}, {"$set": {"lat": float(lat), "lng": float(lng), "city": city, "last_active": iso(now_utc())}})
+    elif city:
+        await db.users.update_one({"user_id": user['user_id']}, {"$set": {"city": city, "last_active": iso(now_utc())}})
+    return {"ok": True}
+
 
 @api.get("/profile/{user_id}")
 async def get_profile(user_id: str, user: dict = Depends(get_current_user)):

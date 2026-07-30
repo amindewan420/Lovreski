@@ -1,0 +1,44 @@
+{
+  "summary": "Backend + frontend testing of the new Lovreski USER PROFILE (7-section rewrite). Wrote /app/backend/tests/test_profile.py with 15 pytest cases covering /profile/me/stats, photo upload / oversize / non-image / max-4 cap, reorder, delete + 404, /profile/location, interests cap (10/11), new gender values (non_binary, prefer_not), and age gate. 14/15 passed. Frontend: registered a fresh user via API, injected lovreski_token, drove /profile via Playwright — all 23 required data-testids are present; height sheet slider + save persists to DB; goal sheet with 4 opts + opt-goal-friendship works; interests sheet renders 58 chips across 8 categories, counter updates live; view/edit toggle works both directions; name field auto-save persists on blur; photo upload via input then delete via btn-delete-photo-0 works (0→1→0); coin-card navigates to /premium; completion% displays and matches backend /profile/me/stats.",
+  "backend_issues": {
+    "critical": [
+      {"endpoint": "PUT /api/profile", "issue": "Age-gate check on lines 456-459 of server.py is DEAD CODE — ProfileUpdate Pydantic model (lines 158-179) does not include a `dob` field, so `if 'dob' in update` is always false. Submitting dob for a 12-year-old returns 200 instead of 400. Fix: add `dob: Optional[str] = None` to ProfileUpdate.", "priority": "HIGH"}
+    ],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [
+      {"component": "ProfilePage completion bar", "issue": "Completion% is fetched only on mount (useEffect deps=[user?.user_id]). After auto-saves via saveField/refresh, the completion-pct value does NOT refresh — user must reload the page to see progress. Fix: re-fetch /profile/me/stats after each saveField, or add form dependency to the effect.", "selector": "[data-testid='completion-pct']", "priority": "MEDIUM"}
+    ],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "ProfilePage", "issues": ["photo-slot delete button uses opacity-0 group-hover:opacity-100 which is unreachable on touch devices (mobile-only app). Consider always-visible small trash overlay on mobile."]}
+    ]
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_profile.py",
+    "/app/test_reports/pytest/profile_results.xml"
+  ],
+  "action_items": [
+    "HIGH: Add `dob: Optional[str] = None` to ProfileUpdate model in server.py so the age-18+ gate actually triggers.",
+    "MEDIUM: Refresh /profile/me/stats after auto-save so completion% updates live without reload.",
+    "LOW: Make photo-slot trash button visible on tap (opacity-0 group-hover only works on hover-capable devices)."
+  ],
+  "critical_code_review_comments": [
+    "server.py ProfileUpdate lacks `dob`; the calc_age(update['dob']) branch never executes → 18+ enforcement bypass for existing users.",
+    "ProfilePage.jsx line 42-49: /profile/me/stats fetched only on user_id change; edits don't retrigger. Consider useEffect deps=[user] or explicit refetch after saveField.",
+    "server.py delete_photo uses `find_one` + in-memory pop + `update_one $set photos` — not atomic under concurrent deletes. Consider `$pull` by index, or optimistic concurrency.",
+    "server.py upload_photo max-4 check is not atomic (read-modify-write). Two concurrent uploads could exceed 4. Consider `$push` with `$position/$slice` or a compare-and-set.",
+    "ProfilePage.jsx line 118: age = new Date().getFullYear() - year — ignores month/day so off by 1 for people whose birthday hasn't happened yet."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_profile.py (new)"
+  ],
+  "success_rate": {"backend": "93% (14/15)", "frontend": "100% (all 23 testids + all 8 interaction flows verified)"},
+  "test_credentials": "Fresh users registered on demand: profiletest_<uuid>@lovreski.ru / password123, gender=female, dob=1998-05-15",
+  "seed_data_creation": "None (each test registers its own throwaway user).",
+  "retest_needed": true,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "Backend URL: REACT_APP_BACKEND_URL from /app/frontend/.env. Auth token localStorage key = 'lovreski_token'. To bypass Landing signup UI, register via POST /api/auth/register and inject the token into localStorage before navigating to /profile. Profile testids are all present and stable. The only backend failure is dob age-gate (see action item #1). Playwright interests-sheet backdrop intercepts pointer events for subsequent clicks — always close the sheet (Escape doesn't close it; click the X button or backdrop) before interacting with other controls.",
+  "rca of the issue": "Age-gate bypass: `PUT /api/profile` accepts a JSON body validated by `ProfileUpdate`. That Pydantic model omits `dob`, so `body.model_dump(exclude_unset=True)` never contains 'dob'. The guard `if 'dob' in update: ... if age < 18: raise 400` is unreachable. Repro: PUT /api/profile with {\"dob\":\"2015-01-01\"} → 200. Fix: add `dob: Optional[str] = None` to the ProfileUpdate class."
+}

@@ -151,6 +151,8 @@ export default function Landing() {
                   >
                     <option value="female">Женский</option>
                     <option value="male">Мужской</option>
+                    <option value="non_binary">Небинарный</option>
+                    <option value="prefer_not">Не указывать</option>
                   </select>
                   <input
                     data-testid="input-dob"
