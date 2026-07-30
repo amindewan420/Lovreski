@@ -798,7 +798,11 @@ async def coins_webhook(payload: dict, request: Request):
       - status must be 'success', else mark failed
     Only crediting happens here; no client can call this without the secret."""
     secret = request.headers.get('X-Webhook-Secret')
-    if secret != os.environ.get('JWT_SECRET'):  # reuse jwt secret for now
+    expected = os.environ.get('SBP_WEBHOOK_SECRET')
+    if not expected:
+        # Fail closed: no fallback to JWT_SECRET — misconfiguration must not silently accept
+        raise HTTPException(status_code=503, detail="Webhook secret not configured")
+    if secret != expected:
         raise HTTPException(status_code=401, detail="Invalid webhook secret")
     tx_id = payload.get('tx_id')
     tx = await db.transactions.find_one({"tx_id": tx_id}, {"_id": 0})

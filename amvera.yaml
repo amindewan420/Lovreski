@@ -29,5 +29,9 @@ env:
     required: true
   - name: SBP_PHONE
     required: true
+  - name: SBP_ENCRYPT_KEY
+    required: true
+  - name: SBP_WEBHOOK_SECRET
+    required: true
   - name: CORS_ORIGINS
     required: true
