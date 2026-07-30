@@ -1,0 +1,38 @@
+version: "3.9"
+services:
+  mongo:
+    image: mongo:7
+    restart: unless-stopped
+    volumes:
+      - mongo_data:/data/db
+    ports: ["27017:27017"]
+
+  backend:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    environment:
+      MONGO_URL: mongodb://mongo:27017
+      DB_NAME: lovreski
+      JWT_SECRET: ${JWT_SECRET:-dev-secret-change-me}
+      EMERGENT_LLM_KEY: ${EMERGENT_LLM_KEY:-}
+      ADMIN_EMAIL: ${ADMIN_EMAIL:-admin@lovreski.ru}
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD:-LovreskiAdmin2026!}
+      SBP_PHONE: ${SBP_PHONE:-+79780369381}
+      CORS_ORIGINS: ${CORS_ORIGINS:-*}
+    depends_on: [mongo]
+    ports: ["8001:8001"]
+
+  frontend:
+    build:
+      context: .
+      dockerfile: Dockerfile.frontend
+      args:
+        REACT_APP_BACKEND_URL: ${REACT_APP_BACKEND_URL:-http://localhost:8001}
+    restart: unless-stopped
+    ports: ["3000:80"]
+    depends_on: [backend]
+
+volumes:
+  mongo_data:

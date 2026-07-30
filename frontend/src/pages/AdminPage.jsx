@@ -16,6 +16,7 @@ export default function AdminPage() {
   const [users, setUsers] = useState([]);
   const [period, setPeriod] = useState("daily");
   const [mode, setMode] = useState("revenue");
+  const [sbpPhoneInput, setSbpPhoneInput] = useState("");
 
   useEffect(() => {
     if (!user) return;
@@ -25,14 +26,22 @@ export default function AdminPage() {
 
   const load = async () => {
     try {
-      const [s, p, r, u] = await Promise.all([
+      const [s, p, r, u, cfg] = await Promise.all([
         api.get("/admin/stats"),
         api.get("/admin/payments"),
         api.get("/admin/reports"),
         api.get("/admin/users"),
+        api.get("/admin/settings"),
       ]);
       setStats(s.data); setPayments(p.data); setReports(r.data); setUsers(u.data);
+      setSbpPhoneInput(cfg.data?.sbp_phone || "");
     } catch (e) { toast.error("Требуются права администратора"); nav("/home"); }
+  };
+
+  const saveSbpPhone = async () => {
+    if (!/^\+?\d{10,15}$/.test(sbpPhoneInput.replace(/\s/g, ""))) return toast.error("Неверный формат телефона");
+    await api.put("/admin/settings", { sbp_phone: sbpPhoneInput.trim() });
+    toast.success("SBP номер обновлён");
   };
 
   const act = async (tx_id, action) => {
@@ -66,7 +75,7 @@ export default function AdminPage() {
 
       <div className="max-w-6xl mx-auto p-6">
         <div className="flex gap-2 mb-6 bg-muted p-1 rounded-full w-fit">
-          {[{k:"dashboard",l:"Дашборд"},{k:"payments",l:"Платежи"},{k:"reports",l:"Жалобы"},{k:"users",l:"Пользователи"}].map(t => (
+          {[{k:"dashboard",l:"Дашборд"},{k:"payments",l:"Платежи"},{k:"reports",l:"Жалобы"},{k:"users",l:"Пользователи"},{k:"settings",l:"Настройки"}].map(t => (
             <button key={t.k} data-testid={`admin-tab-${t.k}`} onClick={() => setTab(t.k)} className={`px-5 py-2 rounded-full font-semibold text-sm ${tab === t.k ? "bg-card shadow" : "text-muted-foreground"}`}>{t.l}</button>
           ))}
         </div>
@@ -175,6 +184,25 @@ export default function AdminPage() {
                 <button onClick={() => deactivate(u.user_id)} className="mt-2 text-xs text-rose-500">Удалить</button>
               </div>
             ))}
+          </div>
+        )}
+
+        {tab === "settings" && (
+          <div className="max-w-lg space-y-6">
+            <div className="p-5 rounded-2xl bg-card border border-border">
+              <h3 className="font-display font-bold mb-1">SBP номер (Сбербанк)</h3>
+              <p className="text-xs text-muted-foreground mb-3">Этот номер отображается пользователям на странице Premium. Только Сбербанк принимает оплату — другие банки скрыты.</p>
+              <div className="flex gap-2">
+                <input
+                  data-testid="admin-sbp-phone"
+                  value={sbpPhoneInput}
+                  onChange={(e) => setSbpPhoneInput(e.target.value)}
+                  placeholder="+79780369381"
+                  className="flex-1 px-3 py-2 rounded-xl bg-muted outline-none border border-transparent focus:border-primary"
+                />
+                <button data-testid="admin-save-sbp" onClick={saveSbpPhone} className="btn-pill bg-primary text-primary-foreground">Сохранить</button>
+              </div>
+            </div>
           </div>
         )}
       </div>

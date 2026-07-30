@@ -31,6 +31,15 @@ export const AuthProvider = ({ children }) => {
     }
   }, [refresh]);
 
+  // Global real-time listener: poll /auth/me every 15s while logged in so
+  // Premium/coin state unlocks instantly across the whole app when admin
+  // approves a payment (no restart needed).
+  useEffect(() => {
+    if (!user) return;
+    const t = setInterval(() => { refresh(); }, 15000);
+    return () => clearInterval(t);
+  }, [user?.user_id, refresh]); // eslint-disable-line
+
   const login = async (email, password) => {
     const { data } = await api.post("/auth/login", { email, password });
     setToken(data.token);

@@ -166,6 +166,7 @@ class ReportBody(BaseModel):
 class PurchaseBody(BaseModel):
     package_id: str
     phone: str
+    sbp_balance: Optional[float] = None  # client-declared SBP balance for the mock balance check
 
 class AdminPaymentAction(BaseModel):
     action: Literal['approve', 'reject']
@@ -623,13 +624,22 @@ async def delete_message(message_id: str, user: dict = Depends(get_current_user)
 # ────────────────────────────── Premium & Coins ──────────────────────────────
 @api.get("/coins/packages")
 async def coin_packages():
-    return {"packages": COIN_PACKAGES, "sbp_phone": os.environ.get('SBP_PHONE', '')}
+    # Allow admin to override packages + SBP phone via settings
+    s = await db.settings.find_one({"key": "app"}, {"_id": 0}) or {}
+    packages = s.get('packages') or COIN_PACKAGES
+    sbp_phone = s.get('sbp_phone') or os.environ.get('SBP_PHONE', '')
+    return {"packages": packages, "sbp_phone": sbp_phone, "bank": "Sberbank"}
 
 @api.post("/coins/purchase")
 async def purchase(body: PurchaseBody, user: dict = Depends(get_current_user)):
-    pkg = next((p for p in COIN_PACKAGES if p['id'] == body.package_id), None)
+    s = await db.settings.find_one({"key": "app"}, {"_id": 0}) or {}
+    packages = s.get('packages') or COIN_PACKAGES
+    pkg = next((p for p in packages if p['id'] == body.package_id), None)
     if not pkg:
         raise HTTPException(status_code=400, detail="Пакет не найден")
+    # Mock SBP balance check: if the client reports a numeric balance, enforce it
+    if body.sbp_balance is not None and body.sbp_balance < pkg['price']:
+        raise HTTPException(status_code=402, detail=f"Insufficient Balance! Please top up your SBP account first. Требуется {pkg['price']} ₽")
     tx = {
         "tx_id": f"tx_{uuid.uuid4().hex[:12]}",
         "user_id": user['user_id'],
@@ -639,6 +649,7 @@ async def purchase(body: PurchaseBody, user: dict = Depends(get_current_user)):
         "coins": pkg['coins'],
         "amount_rub": pkg['price'],
         "phone": body.phone,
+        "payment_method": "SBP (Sberbank)",
         "status": "pending",
         "created_at": iso(now_utc()),
     }

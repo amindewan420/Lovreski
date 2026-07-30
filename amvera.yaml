@@ -1,0 +1,33 @@
+# Amvera.cloud manifest — Lovreski backend
+# Docs: https://docs.amvera.ru/
+meta:
+  environment: python
+  toolchain:
+    name: pip
+    version: "3.11"
+build:
+  requirementsPath: backend/requirements.txt
+run:
+  scriptName: backend/server.py
+  persistenceMount: /data
+  containerPort: 8001
+  command: "uvicorn server:app --host 0.0.0.0 --port 8001 --proxy-headers --forwarded-allow-ips=*"
+  workingDirectory: /app/backend
+env:
+  # These must be set in the amvera dashboard (Secrets):
+  - name: MONGO_URL
+    required: true
+  - name: DB_NAME
+    required: true
+  - name: JWT_SECRET
+    required: true
+  - name: EMERGENT_LLM_KEY
+    required: false
+  - name: ADMIN_EMAIL
+    required: true
+  - name: ADMIN_PASSWORD
+    required: true
+  - name: SBP_PHONE
+    required: true
+  - name: CORS_ORIGINS
+    required: true
