@@ -17,6 +17,8 @@ export default function AdminPage() {
   const [period, setPeriod] = useState("daily");
   const [mode, setMode] = useState("revenue");
   const [sbpPhoneInput, setSbpPhoneInput] = useState("");
+  const [sbpMasked, setSbpMasked] = useState("");
+  const [sbpRevealed, setSbpRevealed] = useState(null);
 
   useEffect(() => {
     if (!user) return;
@@ -34,14 +36,28 @@ export default function AdminPage() {
         api.get("/admin/settings"),
       ]);
       setStats(s.data); setPayments(p.data); setReports(r.data); setUsers(u.data);
-      setSbpPhoneInput(cfg.data?.sbp_phone || "");
+      setSbpMasked(cfg.data?.sbp_phone_masked || "");
+      setSbpPhoneInput(""); // empty by default — admin types new value; never pre-fill full phone
+      setSbpRevealed(null);
     } catch (e) { toast.error("Требуются права администратора"); nav("/home"); }
   };
 
+  const revealSbp = async () => {
+    if (!window.confirm("Показать полный SBP номер? Это действие будет зарегистрировано в логах аудита.")) return;
+    try {
+      const { data } = await api.get("/admin/settings/reveal");
+      setSbpRevealed(data.sbp_phone);
+      // Auto-hide after 15 seconds for shoulder-surfing protection
+      setTimeout(() => setSbpRevealed(null), 15000);
+    } catch { toast.error("Не удалось получить номер"); }
+  };
+
   const saveSbpPhone = async () => {
-    if (!/^\+?\d{10,15}$/.test(sbpPhoneInput.replace(/\s/g, ""))) return toast.error("Неверный формат телефона");
+    if (!/^\+?\d{10,15}$/.test(sbpPhoneInput.replace(/[\s()-]/g, ""))) return toast.error("Неверный формат телефона");
     await api.put("/admin/settings", { sbp_phone: sbpPhoneInput.trim() });
-    toast.success("SBP номер обновлён");
+    toast.success("SBP номер обновлён — изменения применятся ко всем будущим платежам");
+    setSbpPhoneInput("");
+    load();
   };
 
   const act = async (tx_id, action) => {
@@ -191,16 +207,44 @@ export default function AdminPage() {
           <div className="max-w-lg space-y-6">
             <div className="p-5 rounded-2xl bg-card border border-border">
               <h3 className="font-display font-bold mb-1">SBP номер (Сбербанк)</h3>
-              <p className="text-xs text-muted-foreground mb-3">Этот номер отображается пользователям на странице Premium. Только Сбербанк принимает оплату — другие банки скрыты.</p>
-              <div className="flex gap-2">
-                <input
-                  data-testid="admin-sbp-phone"
-                  value={sbpPhoneInput}
-                  onChange={(e) => setSbpPhoneInput(e.target.value)}
-                  placeholder="+79780369381"
-                  className="flex-1 px-3 py-2 rounded-xl bg-muted outline-none border border-transparent focus:border-primary"
-                />
-                <button data-testid="admin-save-sbp" onClick={saveSbpPhone} className="btn-pill bg-primary text-primary-foreground">Сохранить</button>
+              <p className="text-xs text-muted-foreground mb-3">
+                Этот номер используется для приёма платежей через СБП. Он <b>зашифрован в базе данных</b> и никогда не отображается пользователям — ни на странице оплаты, ни в исходном коде.
+                Пользователи оплачивают из <b>любого банка</b>, а деньги приходят только на Сбербанк по этому номеру.
+              </p>
+
+              {/* Current — masked, with explicit reveal */}
+              <div className="p-3 rounded-xl bg-muted flex items-center justify-between">
+                <div>
+                  <p className="text-[10px] uppercase tracking-widest text-muted-foreground">Текущий номер</p>
+                  <p data-testid="admin-sbp-current" className="font-display font-bold text-lg mt-1">
+                    {sbpRevealed || sbpMasked || "—"}
+                  </p>
+                </div>
+                <button
+                  data-testid="admin-sbp-reveal"
+                  onClick={revealSbp}
+                  className="text-xs px-3 py-1.5 rounded-full bg-background border border-border hover:bg-muted"
+                >
+                  {sbpRevealed ? "Скрыть" : "👁 Показать"}
+                </button>
+              </div>
+
+              {/* Update form */}
+              <div className="mt-4">
+                <label className="text-xs font-semibold text-muted-foreground">Новый номер</label>
+                <div className="flex gap-2 mt-1">
+                  <input
+                    data-testid="admin-sbp-phone"
+                    value={sbpPhoneInput}
+                    onChange={(e) => setSbpPhoneInput(e.target.value)}
+                    placeholder="+79780369381"
+                    className="flex-1 px-3 py-2 rounded-xl bg-muted outline-none border border-transparent focus:border-primary"
+                  />
+                  <button data-testid="admin-save-sbp" onClick={saveSbpPhone} disabled={!sbpPhoneInput.trim()} className="btn-pill bg-primary text-primary-foreground disabled:opacity-50">Сохранить</button>
+                </div>
+                <p className="text-[11px] text-muted-foreground mt-2">
+                  ✅ Изменение применяется мгновенно ко всем будущим платежам. Перезапуск не требуется.
+                </p>
               </div>
             </div>
           </div>

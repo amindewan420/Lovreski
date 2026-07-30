@@ -13,6 +13,7 @@ import ChatRoomPage from "@/pages/ChatRoomPage";
 import ProfilePage from "@/pages/ProfilePage";
 import OtherProfilePage from "@/pages/OtherProfilePage";
 import PremiumPage from "@/pages/PremiumPage";
+import PurchaseHistoryPage from "@/pages/PurchaseHistoryPage";
 import SettingsPage from "@/pages/SettingsPage";
 import AdminPage from "@/pages/AdminPage";
 
@@ -38,6 +39,7 @@ const AppRouter = () => {
       <Route path="/profile" element={<Protected><ProfilePage /></Protected>} />
       <Route path="/profile/:id" element={<Protected><OtherProfilePage /></Protected>} />
       <Route path="/premium" element={<Protected><PremiumPage /></Protected>} />
+      <Route path="/purchase-history" element={<Protected><PurchaseHistoryPage /></Protected>} />
       <Route path="/settings" element={<Protected><SettingsPage /></Protected>} />
       <Route path="/settings/discovery" element={<Protected><SettingsPage /></Protected>} />
       <Route path="/admin" element={<Protected><AdminPage /></Protected>} />

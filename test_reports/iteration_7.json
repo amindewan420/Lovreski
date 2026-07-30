@@ -1,0 +1,37 @@
+{
+  "summary": "Full backend + frontend regression of the rebuilt Lovreski coin/premium SBP payment system. Backend (9/9 pytest passing): coin packages public endpoint has NO phone leak & popular flag on p50, /coins/checkout returns tx_id + sbp_link (qr.nspk.ru with sum=<price>00) + qr_png (base64 PNG) with NO phone anywhere in response, /coins/status transitions pending→success after ~8s mocked auto-confirm and atomically credits (verified no double credit on repeated polling), rate-limit 5/hour enforced (6th returns 429), /admin/settings returns masked phone + last4 (no raw), /admin/settings/reveal returns raw for admin, PUT persists new phone and reflected in subsequent checkout without leaking plaintext, non-admin gets 403, webhook without X-Webhook-Secret returns 401. Frontend: PremiumPage user flow works end-to-end — pkg-p25 click opens pay-modal with base64 QR + open-bank + copy-link + status='Ожидание оплаты...', modal HTML contains no admin phone, within ~15s pay-success overlay shows '🎊 Payment Successful! +25 🪙 монет' with success-explore button, coin-balance updates 5→30 after reload, PurchaseHistoryPage lists transactions correctly with 'Успешно' pill and total spent 700₽. AdminPage Settings tab shows masked '+7 (***) ***-**-81' current number, reveal button (via confirm dialog) unmasks to real phone, saving new number persists and after reload displays new last4 correctly. CRITICAL LEAK FOUND: admin phone '+79780369381' is present in /static/js/bundle.js as a placeholder attribute in AdminPage.jsx line 240 — violates the spec 'must NOT be found (backend-only)'.",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [
+      {"component": "AdminPage.jsx (line 240)", "issue": "Admin SBP phone '+79780369381' is hard-coded as the input placeholder attribute — it therefore ships in the compiled JS bundle at /static/js/bundle.js and is visible to ANY user (not just admin) who downloads the frontend. Violates the security requirement that the phone must never appear in source code or user-facing bundles.", "selector": "[data-testid='admin-sbp-phone']", "priority": "HIGH"}
+    ],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_coins_payment.py",
+    "/app/test_reports/pytest/coins_payment.xml"
+  ],
+  "action_items": [
+    "In /app/frontend/src/pages/AdminPage.jsx line 240, replace the hard-coded placeholder '+79780369381' with a generic value like '+7XXXXXXXXXX' or 'Введите новый номер' so the real admin phone no longer ships in the JS bundle. Verify afterwards with: curl -s <BACKEND_URL>/static/js/bundle.js | grep -c '79780369381' → must be 0."
+  ],
+  "critical_code_review_comments": [
+    "server.py is 1141 lines — recommend splitting coins/premium routes into a separate router module for maintainability.",
+    "Webhook secret reuses JWT_SECRET (comment acknowledges 'reuse jwt secret for now') — in prod, use a dedicated SBP_WEBHOOK_SECRET env var to allow key rotation independently.",
+    "sbp_link_hash uses Python's built-in hash() which is non-deterministic across process restarts (PYTHONHASHSEED). Not a security issue since it's not used for verification, but consider hashlib.sha256 for consistency across restarts.",
+    "The admin phone leak in JS bundle (placeholder) — critical priority."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_coins_payment.py (created)"
+  ],
+  "success_rate": {"backend": "100% (9/9)", "frontend": "95% (1 security leak in JS bundle)"},
+  "test_credentials": "Admin: admin@lovreski.ru / LovreskiAdmin2026!  |  Test users created dynamically as premtest_<ts>@lovreski.ru / password123",
+  "seed_data_creation": "Two fresh users registered by tests; one purchase p25 completed leaving balance=30 coins for the last test user; admin phone restored to +79780369381 after mutation tests.",
+  "retest_needed": true,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "The single blocker is the placeholder string in AdminPage.jsx line 240. All other spec requirements (masking, encryption, rate-limit, atomic credit, no-double-credit, popular flag, QR generation, purchase history, reveal dialog UX, non-admin 403, webhook 401) are green. After the placeholder fix, re-run: (1) `curl -s <URL>/static/js/bundle.js | grep -c 79780369381` → 0, (2) `pytest /app/backend/tests/test_coins_payment.py` → 9 passed.",
+  "rca_of_the_issue": "AdminPage.jsx line 240 uses placeholder=\"+79780369381\" (the actual current admin phone). React inlines placeholder as a literal string in the JSX, which after Babel/Webpack compilation appears verbatim in the bundle.js chunk served to ALL clients. Even though the admin UI is gated by is_admin, static assets are unconditionally public. Mitigation: change to a non-sensitive placeholder like '+7XXXXXXXXXX'."
+}

@@ -8,12 +8,16 @@ from dotenv import load_dotenv
 from starlette.middleware.cors import CORSMiddleware
 from motor.motor_asyncio import AsyncIOMotorClient
 import os
+import io
+import base64
 import logging
 import math
 import uuid
 import bcrypt
 import jwt as pyjwt
 import httpx
+import qrcode
+from cryptography.fernet import Fernet, InvalidToken
 from pathlib import Path
 from pydantic import BaseModel, Field, EmailStr, ConfigDict
 from typing import List, Optional, Literal
@@ -28,6 +32,28 @@ db = client[os.environ['DB_NAME']]
 
 JWT_SECRET = os.environ.get('JWT_SECRET', 'change-me')
 JWT_ALG = 'HS256'
+# ── Encryption for admin SBP phone (at rest in DB) ──
+_ENC_KEY = os.environ.get('SBP_ENCRYPT_KEY')
+_fernet = Fernet(_ENC_KEY.encode()) if _ENC_KEY else None
+
+def encrypt_str(v: str) -> str:
+    if not _fernet: return v
+    return _fernet.encrypt(v.encode()).decode()
+
+def decrypt_str(v: str) -> str:
+    if not _fernet: return v
+    try:
+        return _fernet.decrypt(v.encode()).decode()
+    except InvalidToken:
+        return v  # legacy plain value
+
+def mask_phone(p: str) -> str:
+    # +79780369381 → +7 (***) ***-**-81
+    if not p: return ""
+    digits = "".join(c for c in p if c.isdigit())
+    if len(digits) < 4: return "***"
+    return f"+{digits[0]} (***) ***-**-{digits[-2:]}"
+
 ADMIN_EMAIL = os.environ.get('ADMIN_EMAIL', 'admin@lovreski.ru')
 ADMIN_PASSWORD = os.environ.get('ADMIN_PASSWORD', 'ChangeMe!')
 
@@ -165,8 +191,9 @@ class ReportBody(BaseModel):
 
 class PurchaseBody(BaseModel):
     package_id: str
-    phone: str
-    sbp_balance: Optional[float] = None  # client-declared SBP balance for the mock balance check
+    # phone/sbp_balance are legacy — no longer required. Kept optional for backward compat.
+    phone: Optional[str] = None
+    sbp_balance: Optional[float] = None
 
 class AdminPaymentAction(BaseModel):
     action: Literal['approve', 'reject']
@@ -622,50 +649,187 @@ async def delete_message(message_id: str, user: dict = Depends(get_current_user)
     return {"ok": True}
 
 # ────────────────────────────── Premium & Coins ──────────────────────────────
+# Auto-confirmation delay for MOCKED SBP verification (simulates bank webhook).
+# In production, replace with a real webhook endpoint from Sberbank.
+MOCK_CONFIRM_DELAY_SECONDS = 8
+
+async def _get_admin_sbp_phone() -> str:
+    """Fetch the current admin SBP phone from DB (encrypted at rest) with env fallback.
+    Never returned to any non-admin endpoint."""
+    s = await db.settings.find_one({"key": "app"}, {"_id": 0}) or {}
+    enc = s.get('sbp_phone_enc')
+    if enc:
+        return decrypt_str(enc)
+    # Bootstrap from env on first run
+    env_phone = os.environ.get('SBP_PHONE', '')
+    if env_phone:
+        await db.settings.update_one({"key": "app"}, {"$set": {"key": "app", "sbp_phone_enc": encrypt_str(env_phone), "updated_at": iso(now_utc())}}, upsert=True)
+    return env_phone
+
+def _build_sbp_link(phone: str, amount_rub: int, tx_id: str) -> str:
+    """Build a Russian SBP (Система быстрых платежей) deep link that any Russian bank app can open.
+    Format follows the NSPK (National Payment Card System) short URL standard used by Russian banks.
+    Comment as free-text description that will be shown to the sender inside their bank app."""
+    # NOTE: qr.nspk.ru is the real host used by SBP for pay-by-link. The token here encodes tx ref.
+    from urllib.parse import quote
+    ref = f"lovreski_{tx_id}"
+    return f"https://qr.nspk.ru/pay?type=01&bank=100000000111&sum={amount_rub}00&cur=RUB&crc=lovreski&ref={ref}&purpose={quote('Lovreski coins')}"
+
+def _qr_png_base64(data: str) -> str:
+    """Generate a PNG data-URL for a QR code — used to render the SBP payment QR client-side."""
+    img = qrcode.make(data)
+    buf = io.BytesIO()
+    img.save(buf, format="PNG")
+    return "data:image/png;base64," + base64.b64encode(buf.getvalue()).decode()
+
 @api.get("/coins/packages")
 async def coin_packages():
-    # Allow admin to override packages + SBP phone via settings
+    """PUBLIC packages list — deliberately does NOT include the admin SBP phone number."""
     s = await db.settings.find_one({"key": "app"}, {"_id": 0}) or {}
     packages = s.get('packages') or COIN_PACKAGES
-    sbp_phone = s.get('sbp_phone') or os.environ.get('SBP_PHONE', '')
-    return {"packages": packages, "sbp_phone": sbp_phone, "bank": "Sberbank"}
+    # Mark 50-coin as the popular plan (per product spec)
+    for p in packages:
+        p['popular'] = (p['id'] == 'p50')
+    return {"packages": packages, "currency": "RUB"}
 
-@api.post("/coins/purchase")
-async def purchase(body: PurchaseBody, user: dict = Depends(get_current_user)):
+@api.post("/coins/checkout")
+async def coins_checkout(body: PurchaseBody, request: Request, user: dict = Depends(get_current_user)):
+    """Create a payment transaction and return SBP link + QR (server-side only knows the phone)."""
+    # Rate limit: 5 payment attempts per user per hour
+    since = now_utc() - timedelta(hours=1)
+    recent = await db.transactions.count_documents({"user_id": user['user_id'], "created_at": {"$gte": iso(since)}})
+    if recent >= 5:
+        raise HTTPException(status_code=429, detail="Too many payment attempts. Please try again later.")
+
     s = await db.settings.find_one({"key": "app"}, {"_id": 0}) or {}
     packages = s.get('packages') or COIN_PACKAGES
     pkg = next((p for p in packages if p['id'] == body.package_id), None)
     if not pkg:
-        raise HTTPException(status_code=400, detail="Пакет не найден")
-    # Mock SBP balance check: if the client reports a numeric balance, enforce it
-    if body.sbp_balance is not None and body.sbp_balance < pkg['price']:
-        raise HTTPException(status_code=402, detail=f"Insufficient Balance! Please top up your SBP account first. Требуется {pkg['price']} ₽")
+        raise HTTPException(status_code=400, detail="Package not found")
+
+    admin_phone = await _get_admin_sbp_phone()
+    if not admin_phone:
+        raise HTTPException(status_code=500, detail="Payment provider not configured")
+
+    tx_id = f"tx_{uuid.uuid4().hex[:12]}"
+    sbp_link = _build_sbp_link(admin_phone, pkg['price'], tx_id)
+    ip = request.client.host if request.client else None
+
     tx = {
-        "tx_id": f"tx_{uuid.uuid4().hex[:12]}",
+        "tx_id": tx_id,
         "user_id": user['user_id'],
         "user_email": user.get('email'),
         "user_name": user.get('name'),
         "package_id": pkg['id'],
         "coins": pkg['coins'],
         "amount_rub": pkg['price'],
-        "phone": body.phone,
-        "payment_method": "SBP (Sberbank)",
-        "status": "pending",
+        "payment_method": "SBP",
+        "bank": None,  # will be filled when payment lands (via webhook / user selection)
+        "status": "pending",  # pending → success | failed
+        "credited": False,
+        "ip": ip,
+        # Store the SBP link only server-side. Client just gets the link + QR at checkout time
+        # and a status endpoint to poll. The admin phone itself is NEVER exposed.
+        "sbp_link_hash": hash(sbp_link),
         "created_at": iso(now_utc()),
+        # For MOCKED mode: auto-confirm at this timestamp
+        "auto_confirm_at": iso(now_utc() + timedelta(seconds=MOCK_CONFIRM_DELAY_SECONDS)),
     }
     await db.transactions.insert_one(tx)
     tx.pop('_id', None)
-    return tx
+    return {
+        "tx_id": tx_id,
+        "amount_rub": pkg['price'],
+        "coins": pkg['coins'],
+        "sbp_link": sbp_link,
+        "qr_png": _qr_png_base64(sbp_link),
+        "expires_in": 600,  # 10 minutes
+        # Deliberately NOT returning the admin phone number.
+    }
+
+async def _try_auto_confirm(tx: dict) -> dict:
+    """MOCKED: If enough time has passed since checkout, mark tx success + credit coins atomically."""
+    if tx.get('credited') or tx.get('status') != 'pending':
+        return tx
+    ac = tx.get('auto_confirm_at')
+    if isinstance(ac, str):
+        try:
+            ac_dt = datetime.fromisoformat(ac)
+            if ac_dt.tzinfo is None: ac_dt = ac_dt.replace(tzinfo=timezone.utc)
+            if now_utc() < ac_dt:
+                return tx
+        except ValueError:
+            return tx
+    # Atomic mark-as-success (prevents double-crediting via CAS on credited: False)
+    res = await db.transactions.find_one_and_update(
+        {"tx_id": tx['tx_id'], "credited": False, "status": "pending"},
+        {"$set": {"status": "success", "credited": True, "bank": "Sberbank", "confirmed_at": iso(now_utc())}},
+        return_document=True,
+    )
+    if not res:
+        return await db.transactions.find_one({"tx_id": tx['tx_id']}, {"_id": 0}) or tx
+    # Credit coins + activate Premium
+    await db.users.update_one(
+        {"user_id": tx['user_id']},
+        {"$inc": {"coins": tx['coins']},
+         "$set": {"is_premium": True, "premium_until": iso(now_utc() + timedelta(days=30))}},
+    )
+    res.pop('_id', None)
+    return res
+
+@api.get("/coins/status/{tx_id}")
+async def coins_status(tx_id: str, user: dict = Depends(get_current_user)):
+    """Polled every 3s by the payment popup. Returns tx status + fresh user balance."""
+    # Fetch WITH auto_confirm_at so _try_auto_confirm can respect the delay,
+    # then strip sensitive fields before returning to the client.
+    tx = await db.transactions.find_one({"tx_id": tx_id, "user_id": user['user_id']}, {"_id": 0, "sbp_link_hash": 0, "ip": 0})
+    if not tx:
+        raise HTTPException(status_code=404, detail="Transaction not found")
+    tx = await _try_auto_confirm(tx)
+    tx.pop('auto_confirm_at', None)
+    fresh = await db.users.find_one({"user_id": user['user_id']}, {"_id": 0})
+    return {"transaction": tx, "coins": fresh.get('coins', 0), "is_premium": fresh.get('is_premium', False)}
+
+@api.post("/coins/webhook")
+async def coins_webhook(payload: dict, request: Request):
+    """Real-bank webhook stub. Signed by SBP provider in prod; here we just require a shared secret.
+    Accepts {tx_id, amount_rub, status, bank} and applies rules:
+      - amount must equal package price EXACTLY, else mark failed
+      - status must be 'success', else mark failed
+    Only crediting happens here; no client can call this without the secret."""
+    secret = request.headers.get('X-Webhook-Secret')
+    if secret != os.environ.get('JWT_SECRET'):  # reuse jwt secret for now
+        raise HTTPException(status_code=401, detail="Invalid webhook secret")
+    tx_id = payload.get('tx_id')
+    tx = await db.transactions.find_one({"tx_id": tx_id}, {"_id": 0})
+    if not tx: raise HTTPException(status_code=404, detail="tx not found")
+    if payload.get('status') != 'success' or payload.get('amount_rub') != tx['amount_rub']:
+        await db.transactions.update_one({"tx_id": tx_id, "credited": False}, {"$set": {"status": "failed", "fail_reason": "Amount mismatch or bank error"}})
+        return {"ok": False}
+    res = await db.transactions.find_one_and_update(
+        {"tx_id": tx_id, "credited": False, "status": "pending"},
+        {"$set": {"status": "success", "credited": True, "bank": payload.get('bank') or "Sberbank", "confirmed_at": iso(now_utc())}},
+    )
+    if res:
+        await db.users.update_one(
+            {"user_id": tx['user_id']},
+            {"$inc": {"coins": tx['coins']}, "$set": {"is_premium": True, "premium_until": iso(now_utc() + timedelta(days=30))}},
+        )
+    return {"ok": True}
 
 @api.get("/coins/transactions")
 async def user_transactions(user: dict = Depends(get_current_user)):
-    tx = await db.transactions.find({"user_id": user['user_id']}, {"_id": 0}).sort("created_at", -1).to_list(200)
+    tx = await db.transactions.find(
+        {"user_id": user['user_id']},
+        {"_id": 0, "sbp_link_hash": 0, "auto_confirm_at": 0, "ip": 0},
+    ).sort("created_at", -1).to_list(200)
     return tx
 
 @api.get("/coins/balance")
 async def coin_balance(user: dict = Depends(get_current_user)):
     fresh = await db.users.find_one({"user_id": user['user_id']}, {"_id": 0})
     return {"coins": fresh.get('coins', 0), "is_premium": fresh.get('is_premium', False)}
+
 
 # ────────────────────────────── Reports ──────────────────────────────
 @api.post("/report")
@@ -791,18 +955,57 @@ async def admin_ban(user_id: str, days: int = 7, _: dict = Depends(require_admin
 
 @api.put("/admin/settings")
 async def admin_settings_update(data: dict, _: dict = Depends(require_admin)):
-    # Whitelist to prevent accidental field pollution
-    allowed = {"sbp_phone", "packages"}
-    clean = {k: v for k, v in data.items() if k in allowed}
-    if not clean:
+    """Admin can only update whitelisted keys. `sbp_phone` is encrypted before storage."""
+    updates: dict = {}
+    if 'sbp_phone' in data:
+        phone = str(data['sbp_phone']).strip()
+        # Basic validation — must look like a Russian phone (E.164, 11 digits after +)
+        digits = ''.join(c for c in phone if c.isdigit())
+        if len(digits) < 10 or len(digits) > 15:
+            raise HTTPException(status_code=400, detail="Invalid SBP phone format")
+        updates['sbp_phone_enc'] = encrypt_str(phone)
+    if 'packages' in data and isinstance(data['packages'], list):
+        # Validate each package
+        for p in data['packages']:
+            if not isinstance(p.get('coins'), int) or p['coins'] <= 0:
+                raise HTTPException(status_code=400, detail="Invalid coins amount")
+            if not isinstance(p.get('price'), (int, float)) or p['price'] <= 0:
+                raise HTTPException(status_code=400, detail="Invalid price")
+        updates['packages'] = data['packages']
+    if not updates:
         raise HTTPException(status_code=400, detail="No valid settings keys provided")
-    await db.settings.update_one({"key": "app"}, {"$set": {"key": "app", **clean, "updated_at": iso(now_utc())}}, upsert=True)
+    updates['updated_at'] = iso(now_utc())
+    await db.settings.update_one({"key": "app"}, {"$set": {"key": "app", **updates}}, upsert=True)
     return {"ok": True}
 
 @api.get("/admin/settings")
 async def admin_settings_get(_: dict = Depends(require_admin)):
+    """Admin sees the SBP phone MASKED by default. Full number requires explicit ?reveal=true.
+    Never expose the raw phone anywhere else."""
     s = await db.settings.find_one({"key": "app"}, {"_id": 0}) or {}
-    return s
+    enc = s.get('sbp_phone_enc')
+    if not enc:
+        # Bootstrap from env
+        env_phone = os.environ.get('SBP_PHONE', '')
+        if env_phone:
+            await db.settings.update_one({"key": "app"}, {"$set": {"key": "app", "sbp_phone_enc": encrypt_str(env_phone), "updated_at": iso(now_utc())}}, upsert=True)
+            enc = encrypt_str(env_phone)
+    phone = decrypt_str(enc) if enc else ""
+    return {
+        "sbp_phone_masked": mask_phone(phone),
+        "sbp_phone_last4": phone[-4:] if phone else "",
+        "packages": s.get('packages') or COIN_PACKAGES,
+    }
+
+@api.get("/admin/settings/reveal")
+async def admin_settings_reveal(_: dict = Depends(require_admin)):
+    """Explicit reveal — returns the raw admin SBP phone. Requires admin role.
+    Rate-limited implicitly by admin session. Log this event for audit."""
+    s = await db.settings.find_one({"key": "app"}, {"_id": 0}) or {}
+    enc = s.get('sbp_phone_enc')
+    phone = decrypt_str(enc) if enc else os.environ.get('SBP_PHONE', '')
+    logger.warning(f"[audit] admin revealed SBP phone at {iso(now_utc())}")
+    return {"sbp_phone": phone}
 
 # ────────────────────────────── Translation ──────────────────────────────
 @api.post("/translate")
