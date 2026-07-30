@@ -791,7 +791,12 @@ async def admin_ban(user_id: str, days: int = 7, _: dict = Depends(require_admin
 
 @api.put("/admin/settings")
 async def admin_settings_update(data: dict, _: dict = Depends(require_admin)):
-    await db.settings.update_one({"key": "app"}, {"$set": {"key": "app", **data, "updated_at": iso(now_utc())}}, upsert=True)
+    # Whitelist to prevent accidental field pollution
+    allowed = {"sbp_phone", "packages"}
+    clean = {k: v for k, v in data.items() if k in allowed}
+    if not clean:
+        raise HTTPException(status_code=400, detail="No valid settings keys provided")
+    await db.settings.update_one({"key": "app"}, {"$set": {"key": "app", **clean, "updated_at": iso(now_utc())}}, upsert=True)
     return {"ok": True}
 
 @api.get("/admin/settings")
