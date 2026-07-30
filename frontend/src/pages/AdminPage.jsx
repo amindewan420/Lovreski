@@ -237,7 +237,7 @@ export default function AdminPage() {
                     data-testid="admin-sbp-phone"
                     value={sbpPhoneInput}
                     onChange={(e) => setSbpPhoneInput(e.target.value)}
-                    placeholder="+79780369381"
+                    placeholder="+7XXXXXXXXXX"
                     className="flex-1 px-3 py-2 rounded-xl bg-muted outline-none border border-transparent focus:border-primary"
                   />
                   <button data-testid="admin-save-sbp" onClick={saveSbpPhone} disabled={!sbpPhoneInput.trim()} className="btn-pill bg-primary text-primary-foreground disabled:opacity-50">Сохранить</button>

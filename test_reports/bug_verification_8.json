@@ -1,0 +1,44 @@
+{
+  "verdict": "fixed",
+  "user_reported_bug": "Redesign and rebuild the entire coin/premium payment system: hide admin SBP phone from users on any page/source code; one-click payment popup with QR + open-bank + copy-link; user pays from ANY bank but admin receives on Sberbank; instant coin credit via 3s polling with 🎊 confetti success; admin can update SBP number from admin panel without coding (masked view + explicit reveal); redesigned coin package cards with 🪙 and 'Popular' badge on 50-coin plan; post-payment success screen with 'Start Exploring' + Purchase History page; server-side verification + encrypted admin phone + rate limit + IP log. Previous test iteration flagged ONE critical leak: the string '+79780369381' was hard-coded as a placeholder attribute in AdminPage.jsx and therefore shipped in /static/js/bundle.js — the frontend has now been changed to use placeholder='+7XXXXXXXXXX'.",
+  "summary": "No relevant testing skill found. Focused regression verified: /static/js/bundle.js and fetched /static/js/*.js assets no longer contain '+79780369381' or '79780369381'; PremiumPage rendered page.content() and payment modal have no raw phone; APIs do not leak the raw phone while still returning SBP link + QR; Admin Settings placeholder is exactly '+7XXXXXXXXXX'. Backend payment regression suite passed 9/9. UI one-click payment opens QR/open-bank/copy-link modal, auto-confirms via MOCKED SBP polling, shows success with Start Exploring, updates balance, and Purchase History displays the successful transaction.",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_coins_payment.py",
+    "/app/test_reports/pytest/coins_payment_iteration8.xml",
+    "/app/test_reports/scripts/iteration8_api_bundle_verification.py",
+    "/app/test_reports/scripts/iteration8_api_results.json",
+    "/app/test_reports/scripts/iteration8_ui_verification.py"
+  ],
+  "action_items": [
+    "No fix required for the reported leak/regression. Production should replace the MOCKED /api/coins/status auto-confirmation with a real signed bank webhook before going live."
+  ],
+  "critical_code_review_comments": [
+    "AdminPage.jsx data-testid='admin-sbp-phone' now uses non-sensitive placeholder '+7XXXXXXXXXX'. Raw phone remains only in backend environment/test fixtures, not in fetched frontend bundle, rendered user pages, or public payment API responses."
+  ],
+  "updated_files": [
+    "/app/test_reports/scripts/iteration8_api_bundle_verification.py",
+    "/app/test_reports/scripts/iteration8_api_results.json",
+    "/app/test_reports/scripts/iteration8_ui_verification.py",
+    "/app/test_reports/pytest/coins_payment_iteration8.xml",
+    "/app/test_reports/iteration_8.json",
+    "/app/test_reports/bug_verification_8.json"
+  ],
+  "success_rate": {
+    "backend": "100%",
+    "frontend": "100%"
+  },
+  "seed_data_creation": "Created fresh test users leaktest_api_*, leaktest_rate_*, leaktest_ui_*, and leaktest_history_*; generated successful p10/p25 payment transactions and rate-limit pending attempts for isolated verification.",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Iteration 8 focused on the previous critical leak plus payment regressions. Evidence: pytest /app/backend/tests/test_coins_payment.py passed 9/9; custom API/bundle script passed; browser UI scripts verified PremiumPage payment modal/success, Admin Settings placeholder, and Purchase History. The SBP auto-confirm behavior remains MOCKED by design in preview.",
+  "rca_of_the_issue": "Previous leak was caused by React compiling the literal placeholder '+79780369381' from AdminPage.jsx into /static/js/bundle.js. The placeholder is now generic, and fetched frontend JS plus rendered pages no longer contain the raw number. End-to-end payment flow remains functional: checkout returns tx_id, qr.nspk.ru SBP link, base64 QR; status transitions pending to success after ~8-10s MOCKED polling; repeated status polling did not double-credit coins; rate limit returned 429 on 6th checkout attempt; admin-only reveal returned raw phone while non-admin admin routes returned 403 and webhook without secret returned 401."
+}

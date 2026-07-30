@@ -1,0 +1,46 @@
+{
+  "base_url": "https://lovreski-dating.preview.emergentagent.com",
+  "checks": [
+    {
+      "name": "static_js_bundle_no_raw_phone",
+      "ok": true,
+      "detail": [
+        {
+          "url": "https://lovreski-dating.preview.emergentagent.com/static/js/bundle.js",
+          "bytes": 5204071
+        },
+        {
+          "url": "https://lovreski-dating.preview.emergentagent.com/static/js/main.chunk.js",
+          "bytes": 1908
+        },
+        {
+          "url": "https://lovreski-dating.preview.emergentagent.com/static/js/vendors~main.chunk.js",
+          "bytes": 1908
+        }
+      ]
+    },
+    {
+      "name": "payment_api_regression",
+      "ok": true,
+      "detail": {
+        "registered_user": "leaktest_api_1785393039293_2533@lovreski.ru",
+        "status_tx_id": "tx_67e1e074035a",
+        "rate_limit_codes": [
+          200,
+          200,
+          200,
+          200,
+          200,
+          429
+        ],
+        "db": {
+          "settings_encrypted": true,
+          "tx_ip_logged": true,
+          "tx_id": "tx_0da98c5b4980"
+        }
+      }
+    }
+  ],
+  "ok": true,
+  "failures": []
+}
