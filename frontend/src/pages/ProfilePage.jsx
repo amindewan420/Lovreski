@@ -56,6 +56,8 @@ export default function ProfilePage() {
       setSavedField(firstKey);
       setTimeout(() => setSavedField(null), 1500);
       await refresh();
+      // Refresh stats so completion% updates live after every edit
+      try { const { data } = await api.get("/profile/me/stats"); setStats(data); } catch {}
     } catch (e) {
       toast.error(e.response?.data?.detail || "Не удалось сохранить");
     }
@@ -272,7 +274,7 @@ export default function ProfilePage() {
                     <button
                       data-testid={`btn-delete-photo-${i}`}
                       onClick={(e) => { e.stopPropagation(); deletePhoto(i); }}
-                      className="absolute top-1 right-1 w-6 h-6 rounded-full bg-black/70 text-white flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity duration-200"
+                      className="absolute top-1 right-1 w-6 h-6 rounded-full bg-black/70 text-white flex items-center justify-center opacity-100 sm:opacity-0 sm:group-hover:opacity-100 transition-opacity duration-200"
                     >
                       <Trash2 className="w-3 h-3" />
                     </button>

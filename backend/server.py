@@ -157,6 +157,8 @@ class SessionExchange(BaseModel):
 
 class ProfileUpdate(BaseModel):
     name: Optional[str] = None
+    dob: Optional[str] = None
+    gender: Optional[str] = None
     about: Optional[str] = None
     job: Optional[str] = None
     education: Optional[str] = None

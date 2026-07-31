@@ -1,0 +1,37 @@
+{
+  "verdict": "fixed",
+  "user_reported_bug": "Follow-up on Iteration 9 profile testing: (1) HIGH — PUT /api/profile age-gate was dead code because ProfileUpdate model did not include a `dob` field, so 18+ validation was bypassed. (2) MEDIUM — Profile completion% did not refresh after auto-save (only fetched on mount).",
+  "summary": "No relevant testing skill found. Focused retest verified the exact profile age-gate and live completion% bugs. Code review confirmed ProfileUpdate now includes dob/gender and ProfilePage saveField refetches /profile/me/stats. Backend API tests passed for under-18 DOB rejection, valid DOB update, 17-year-old rejection, and partial update without dob. Existing iteration-9 backend pytest profile suite also passed (15/15). Frontend Playwright verified completion-pct updated in-session from 0% to 8% after About Me blur and then to 17% after selecting 3 interests, with 4 profile PUTs and 6 stats GETs observed and no page reload.",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/test_reports/verify_profile_bug_backend.py",
+    "/app/test_reports/verify_profile_bug_frontend_playwright.py",
+    "/app/test_reports/pytest/profile_bug_retest.xml",
+    "/app/backend/tests/test_profile.py"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [],
+  "updated_files": [
+    "/app/test_reports/verify_profile_bug_backend.py",
+    "/app/test_reports/verify_profile_bug_frontend_playwright.py",
+    "/app/test_reports/bug_verification_10.json",
+    "/app/test_reports/iteration_10.json"
+  ],
+  "success_rate": {
+    "backend": "100% (custom age-gate script passed; iteration-9 profile pytest 15/15 passed)",
+    "frontend": "100% (focused live completion auto-save flow passed)"
+  },
+  "seed_data_creation": "Fresh throwaway users registered: profiletest_bugfix_1785467625077@lovreski.ru and profiletest_ui_bugfix_1785467750289@lovreski.ru / password123.",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Focused test plan: verify PUT /api/profile dob validation and ProfilePage completion-pct live refresh. Inspected uncommitted changes in /app/backend/server.py and /app/frontend/src/pages/ProfilePage.jsx after git status/log (last commit ba2c6cd). Direct proof collected: HTTP 400 with exact detail 'Возраст должен быть 18+' for 2015-01-01 and 2009-01-01; HTTP 200 for valid 1998-05-15 and partial update without dob; UI completion-pct changed in the same session after auto-save and interests selection. No relevant testing skill found.",
+  "rca_of_the_issue": "Original age-gate bypass was caused by ProfileUpdate omitting dob, so body.model_dump(exclude_unset=True) never contained dob and the calc_age branch never ran. Original completion bug was caused by stats being fetched only on mount. The current patch addresses both: dob is present in ProfileUpdate and saveField refetches /profile/me/stats after each auto-save. No mocked APIs were used in the tested flows."
+}
