@@ -1,0 +1,15 @@
+{
+  "base_url": "http://localhost:8001/api",
+  "viewer_token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VyX2lkIjoidXNlcl82YTVmZGJiMWUzN2QiLCJpc19hZG1pbiI6ZmFsc2UsImV4cCI6MTc4ODA3NDI4MH0.xYXBUixa6NxFzdkjTSvzI47VqzQ7icO0YjFy2b1wVIM",
+  "viewer_user_id": "user_6a5fdbb1e37d",
+  "viewer_email": "ui_profile_3j57m3j27j@lovreski.ru",
+  "edit_token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VyX2lkIjoidXNlcl85OGQwOGRjYWFjOTAiLCJpc19hZG1pbiI6ZmFsc2UsImV4cCI6MTc4ODA3NDI4MH0.Jak0SrvV-1ZSrsFzVmQHrnvqbzNDIFGngH0FSSjrf_U",
+  "edit_user_id": "user_98d08dcaac90",
+  "edit_email": "ui_profile_nrgq33yrxc@lovreski.ru",
+  "target_user_id": "user_1b3424d42781",
+  "target_email": "ui_profile_glnqq56nbn@lovreski.ru",
+  "empty_user_id": "user_5f07b0aac3d0",
+  "empty_email": "ui_profile_q2m7zw60rz@lovreski.ru",
+  "upload_file": "/app/test_reports/frontend_large_face.jpg",
+  "upload_file_bytes": 18713237
+}

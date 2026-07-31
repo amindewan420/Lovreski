@@ -1,0 +1,71 @@
+{
+  "base_url": "http://localhost:8001/api",
+  "results": [
+    {
+      "name": "backend health",
+      "passed": true,
+      "status": 200,
+      "details": "{\"ok\":true}"
+    },
+    {
+      "name": "about > 500 returns 422",
+      "passed": true,
+      "status": 422,
+      "details": "{\"detail\":[{\"type\":\"string_too_long\",\"loc\":[\"body\",\"about\"],\"msg\":\"String should have at most 500 characters\",\"input\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+    },
+    {
+      "name": "job > 80 returns 422",
+      "passed": true,
+      "status": 422,
+      "details": "{\"detail\":[{\"type\":\"string_too_long\",\"loc\":[\"body\",\"job\"],\"msg\":\"String should have at most 80 characters\",\"input\":\"jjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjj\",\"ctx\":{\"max_length\":80},\"url\":\"https://errors.pydan"
+    },
+    {
+      "name": "education > 100 returns 422",
+      "passed": true,
+      "status": 422,
+      "details": "{\"detail\":[{\"type\":\"string_too_long\",\"loc\":[\"body\",\"education\"],\"msg\":\"String should have at most 100 characters\",\"input\":\"eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee\",\"ctx\":{\"max_length\":100}"
+    },
+    {
+      "name": "language > 50 returns 422",
+      "passed": true,
+      "status": 422,
+      "details": "{\"detail\":[{\"type\":\"string_too_long\",\"loc\":[\"body\",\"language\"],\"msg\":\"String should have at most 50 characters\",\"input\":\"lllllllllllllllllllllllllllllllllllllllllllllllllll\",\"ctx\":{\"max_length\":50},\"url\":\"https://errors.pydantic.dev/2.13/v/string_too"
+    },
+    {
+      "name": "within-limit profile returns 200 and persists",
+      "passed": true,
+      "status": 200,
+      "details": "{\"user_id\":\"user_b197e9737072\",\"email\":\"profilebug_female_75ejurbrxp@lovreski.ru\",\"name\":\"QA female 75ejurbrxp\",\"gender\":\"female\",\"dob\":\"1998-05-15\",\"photos\":[],\"interests\":[\"Travel\",\"Yoga\",\"Coffee and Tea\"],\"coins\":5,\"is_premium\":false,\"verified\":false,\"is_admin\":false,\"show_me\":\"male\",\"age_min\":18"
+    },
+    {
+      "name": "generated large face image >5MB",
+      "passed": true,
+      "status": null,
+      "details": "input_bytes=18713237"
+    },
+    {
+      "name": "photo upload accepts >5MB and stores compressed JPEG",
+      "passed": true,
+      "status": 200,
+      "details": "elapsed=2.1s input_bytes=18713237 compressed_est=723717 verification={'ok': True, 'reason': 'match', 'confidence': 0.95}"
+    },
+    {
+      "name": "solid color no-face photo rejected with exact message",
+      "passed": true,
+      "status": 422,
+      "details": "elapsed=0.8s body={\"detail\":\"Please upload a clear photo showing your face\"} input_bytes=23130"
+    },
+    {
+      "name": "male user + clearly female face rejected with exact mismatch",
+      "passed": true,
+      "status": 422,
+      "details": "elapsed=2.3s body={\"detail\":\"Photo does not match your profile gender. Please upload a photo that matches your gender.\"} input_bytes=194292"
+    },
+    {
+      "name": "male user + clearly male face accepted",
+      "passed": true,
+      "status": 200,
+      "details": "elapsed=1.3s body={\"photos\":[\"data:image/jpeg;base64,/9j/4AAQSkZJRgABAQAAAQABAAD/2wBDAAYEBAUEBAYFBQUGBgYHCQ4JCQgICRINDQoOFRIWFhUSFBQXGiEcFxgfGRQUHScdHyIjJSUlFhwpLCgkKyEkJST/2wBDAQYGBgkICREJCREkGBQYJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCT/wAARCAZABCsDASIAAhEBAxEB/8QAHQAAAQUBAQEBAAAAAAAAAAAAAQACAwQFBgcICf/EAEcQAAEDAwMCBAQEBQMEAQICCwECAxEABCEFEjFBURMiYXEGFIGRMkKhsQcjwdHwFVLhJDNi8XIIFkMlNIJTY5KyF6JEZML/xAAaAQEBAQEBAQEAAAAAAAAAAAAAAQIDBAUG/8QAKxEBAQEBAAICAgIDAAIBBQEAAAERAgMhEjFBUQRhEyJxBTKBF input_bytes=630326"
+    }
+  ]
+}

@@ -24,6 +24,14 @@ const cmToFtIn = (cm) => {
   return `${ft}'${inch}"`;
 };
 
+// Character-counter class helper: red when at 90%+ of limit
+const counterCls = (len, max) => (len / max >= 0.9 ? "text-rose-500 font-bold" : "text-muted-foreground");
+
+// Format counter with red-at-90 styling — wraps FieldRow's counter
+const CharCounter = ({ len, max, testid }) => (
+  <span data-testid={testid} className={`text-[10px] ${counterCls(len, max)}`}>{len}/{max}</span>
+);
+
 export default function ProfilePage() {
   const { user, refresh, logout } = useAuth();
   const { theme, toggle } = useTheme();
@@ -74,19 +82,26 @@ export default function ProfilePage() {
     } catch (e) { toast.error(e.response?.data?.detail || "Ошибка"); }
   };
 
-  // File → base64 upload
+  // File → base64 upload (no size limit — server compresses)
+  const [uploading, setUploading] = useState(false);
   const handleUpload = async (file) => {
     if (!file) return;
     if (!file.type.startsWith("image/")) return toast.error("Только изображения");
-    if (file.size > 1_500_000) return toast.error("Максимум 1.5 МБ");
+    setUploading(true);
     const reader = new FileReader();
     reader.onload = async () => {
       try {
+        toast.info("Проверяем ваше фото...", { id: "verify" });
         await api.post("/profile/photo", { data_url: reader.result });
+        toast.dismiss("verify");
         await refresh();
         toast.success("Фото загружено ✓");
-      } catch (e) { toast.error(e.response?.data?.detail || "Ошибка загрузки"); }
+      } catch (e) {
+        toast.dismiss("verify");
+        toast.error(e.response?.data?.detail || "Ошибка загрузки");
+      } finally { setUploading(false); }
     };
+    reader.onerror = () => { setUploading(false); toast.dismiss("verify"); toast.error("Не удалось прочитать файл"); };
     reader.readAsDataURL(file);
   };
 
@@ -219,7 +234,7 @@ export default function ProfilePage() {
         </div>
       </header>
 
-      <input ref={fileRef} type="file" accept="image/*" className="hidden" onChange={(e) => handleUpload(e.target.files?.[0])} data-testid="photo-file-input" />
+      <input ref={fileRef} type="file" accept="image/jpeg,image/jpg,image/png,image/webp,image/heic,image/heif" className="hidden" onChange={(e) => handleUpload(e.target.files?.[0])} data-testid="photo-file-input" />
 
       {/* Big circular photo header */}
       <section className="px-4 pt-6 pb-3 text-center">
@@ -232,10 +247,13 @@ export default function ProfilePage() {
           <button
             data-testid="btn-upload-photo"
             onClick={() => fileRef.current?.click()}
-            className="absolute bottom-0 right-0 w-10 h-10 rounded-full bg-primary text-primary-foreground flex items-center justify-center shadow-lg hover:scale-105 transition-transform duration-200"
+            disabled={uploading}
+            className="absolute bottom-0 right-0 w-10 h-10 rounded-full bg-primary text-primary-foreground flex items-center justify-center shadow-lg hover:scale-105 transition-transform duration-200 disabled:opacity-70"
             aria-label="Загрузить фото"
           >
-            <Plus className="w-5 h-5" />
+            {uploading ? (
+              <div data-testid="upload-spinner" className="w-5 h-5 border-2 border-primary-foreground border-t-transparent rounded-full animate-spin" />
+            ) : <Plus className="w-5 h-5" />}
           </button>
         </div>
         <div className="mt-3 flex items-center justify-center gap-2">
@@ -391,7 +409,7 @@ export default function ProfilePage() {
             <p className="text-xs font-semibold text-muted-foreground">О себе</p>
             <div className="flex items-center gap-2">
               {savedField === "about" && <SavedTick />}
-              <span className="text-[10px] text-muted-foreground">{(form.about || "").length}/500</span>
+              <span data-testid="about-counter" className={`text-[10px] ${counterCls((form.about || "").length, 500)}`}>{(form.about || "").length}/500</span>
             </div>
           </div>
           <textarea
@@ -399,7 +417,15 @@ export default function ProfilePage() {
             maxLength={500} rows={3}
             placeholder="Расскажите о себе..."
             value={form.about || ""}
-            onChange={(e) => setForm({ ...form, about: e.target.value })}
+            onChange={(e) => setForm({ ...form, about: e.target.value.slice(0, 500) })}
+            onPaste={(e) => {
+              // Truncate paste to remaining char budget
+              const cur = (form.about || "").length;
+              const room = 500 - cur;
+              const pasted = (e.clipboardData?.getData('text') || '').slice(0, room);
+              e.preventDefault();
+              setForm((f) => ({ ...f, about: ((f.about || "") + pasted).slice(0, 500) }));
+            }}
             onBlur={() => form.about !== user.about && saveField({ about: form.about })}
             className="w-full bg-transparent outline-none text-sm resize-none"
           />
@@ -411,12 +437,12 @@ export default function ProfilePage() {
             <input
               maxLength={80} placeholder="Ваша профессия..."
               value={form.job || ""}
-              onChange={(e) => setForm({ ...form, job: e.target.value })}
+              onChange={(e) => setForm({ ...form, job: e.target.value.slice(0, 80) })}
               onBlur={() => form.job !== user.job && saveField({ job: form.job })}
               className="flex-1 bg-transparent outline-none text-right"
             />
           }
-          counter={`${(form.job || "").length}/80`}
+          counter={<CharCounter len={(form.job || "").length} max={80} testid="job-counter" />}
         />
 
         <FieldRow
@@ -425,12 +451,12 @@ export default function ProfilePage() {
             <input
               maxLength={100} placeholder="Ваше образование..."
               value={form.education || ""}
-              onChange={(e) => setForm({ ...form, education: e.target.value })}
+              onChange={(e) => setForm({ ...form, education: e.target.value.slice(0, 100) })}
               onBlur={() => form.education !== user.education && saveField({ education: form.education })}
               className="flex-1 bg-transparent outline-none text-right"
             />
           }
-          counter={`${(form.education || "").length}/100`}
+          counter={<CharCounter len={(form.education || "").length} max={100} testid="education-counter" />}
         />
 
         <FieldRow
@@ -439,12 +465,12 @@ export default function ProfilePage() {
             <input
               maxLength={50} placeholder="English, Russian..."
               value={form.language || ""}
-              onChange={(e) => setForm({ ...form, language: e.target.value })}
+              onChange={(e) => setForm({ ...form, language: e.target.value.slice(0, 50) })}
               onBlur={() => form.language !== user.language && saveField({ language: form.language })}
               className="flex-1 bg-transparent outline-none text-right"
             />
           }
-          counter={`${(form.language || "").length}/50`}
+          counter={<CharCounter len={(form.language || "").length} max={50} testid="language-counter" />}
         />
 
         <FieldRow

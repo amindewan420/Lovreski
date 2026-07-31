@@ -156,13 +156,13 @@ class SessionExchange(BaseModel):
     session_id: str
 
 class ProfileUpdate(BaseModel):
-    name: Optional[str] = None
+    name: Optional[str] = Field(default=None, max_length=50)
     dob: Optional[str] = None
     gender: Optional[str] = None
-    about: Optional[str] = None
-    job: Optional[str] = None
-    education: Optional[str] = None
-    language: Optional[str] = None
+    about: Optional[str] = Field(default=None, max_length=500)
+    job: Optional[str] = Field(default=None, max_length=80)
+    education: Optional[str] = Field(default=None, max_length=100)
+    language: Optional[str] = Field(default=None, max_length=50)
     height: Optional[int] = None
     goal: Optional[str] = None
     relationship: Optional[str] = None
@@ -174,10 +174,10 @@ class ProfileUpdate(BaseModel):
     lat: Optional[float] = None
     lng: Optional[float] = None
     city: Optional[str] = None
-    show_me: Optional[str] = None  # 'male'|'female'|'both'
+    show_me: Optional[str] = None
     age_min: Optional[int] = None
     age_max: Optional[int] = None
-    distance_mode: Optional[str] = None  # 'limited'|'unlimited'
+    distance_mode: Optional[str] = None
     auto_translate: Optional[bool] = None
 
 class MessageBody(BaseModel):
@@ -467,23 +467,103 @@ async def update_profile(body: ProfileUpdate, user: dict = Depends(get_current_u
 class PhotoBody(BaseModel):
     data_url: str  # base64 data URL like data:image/jpeg;base64,...
 
+def _compress_image_data_url(data_url: str, max_dim: int = 1600, quality: int = 82) -> tuple[str, bytes]:
+    """Resize + JPEG-compress the uploaded image server-side.
+    Accepts JPG/PNG/WEBP/HEIC. Returns (data_url, raw_bytes)."""
+    from PIL import Image
+    try:
+        # Optional HEIC support
+        try:
+            from pillow_heif import register_heif_opener  # type: ignore
+            register_heif_opener()
+        except Exception:
+            pass
+        header, b64 = data_url.split(',', 1)
+        raw = base64.b64decode(b64)
+        img = Image.open(io.BytesIO(raw))
+        # Correct orientation from EXIF
+        try:
+            from PIL import ImageOps
+            img = ImageOps.exif_transpose(img)
+        except Exception:
+            pass
+        if img.mode != "RGB":
+            img = img.convert("RGB")
+        # Resize to fit within max_dim square while keeping aspect
+        img.thumbnail((max_dim, max_dim), Image.LANCZOS)
+        out = io.BytesIO()
+        img.save(out, format="JPEG", quality=quality, optimize=True)
+        compressed = out.getvalue()
+        new_url = "data:image/jpeg;base64," + base64.b64encode(compressed).decode()
+        return new_url, compressed
+    except Exception as e:
+        logger.warning(f"Image compression failed, falling back to original: {e}")
+        return data_url, b""
+
+async def _verify_gender_from_photo(image_data_url: str, user_gender: str) -> dict:
+    """AI gender check via Emergent LLM vision. Returns {ok, reason}.
+    Fails-open on any error / low confidence."""
+    # Skip if user's registered gender isn't specifically male/female
+    if user_gender not in ("male", "female"):
+        return {"ok": True, "reason": "unchecked"}
+    try:
+        from emergentintegrations.llm.chat import LlmChat, UserMessage, ImageContent  # type: ignore
+        header, b64 = image_data_url.split(',', 1)
+        chat = LlmChat(
+            api_key=os.environ['EMERGENT_LLM_KEY'],
+            session_id=f"gender_{uuid.uuid4().hex[:6]}",
+            system_message=(
+                "You are a photo moderator for a dating app. "
+                "Analyze the primary human face in the image. Reply ONLY with strict JSON in the shape "
+                '{"face_detected": true|false, "gender": "male"|"female"|"unknown", "confidence": 0.0-1.0}. '
+                "'confidence' is your certainty about the gender."
+            ),
+        ).with_model("openai", "gpt-4o")
+        msg = UserMessage(text="Analyze this photo and return the JSON.", file_contents=[ImageContent(image_base64=b64)])
+        import asyncio, json as _json
+        raw = await asyncio.wait_for(chat.send_message(msg), timeout=5.0)
+        text = str(raw).strip()
+        # Extract JSON (strip markdown fences if any)
+        if text.startswith("```"):
+            text = text.split('```', 2)[1].lstrip('json').strip()
+        data = _json.loads(text)
+        if not data.get("face_detected"):
+            return {"ok": False, "reason": "no_face", "message": "Please upload a clear photo showing your face"}
+        detected = data.get("gender", "unknown")
+        conf = float(data.get("confidence") or 0)
+        # Give benefit of the doubt on low confidence
+        if detected == "unknown" or conf < 0.6:
+            return {"ok": True, "reason": "low_confidence"}
+        if detected != user_gender:
+            return {"ok": False, "reason": "mismatch", "message": "Photo does not match your profile gender. Please upload a photo that matches your gender."}
+        return {"ok": True, "reason": "match", "confidence": conf}
+    except Exception as e:
+        logger.warning(f"Gender verification failed-open: {e}")
+        return {"ok": True, "reason": "verifier_error"}
+
 @api.post("/profile/photo")
 async def upload_photo(body: PhotoBody, user: dict = Depends(get_current_user)):
-    """Accept a base64 data URL from the browser (from FileReader). Enforce max 4 total.
-    Cloudinary integration deferred — storing as data URL directly on the user doc
-    keeps the flow self-contained until keys are provided."""
+    """Accept ANY size base64 data URL — server compresses aggressively.
+    Runs AI gender verification (5s timeout, fails-open on errors)."""
     if not body.data_url.startswith("data:image/"):
         raise HTTPException(status_code=400, detail="Invalid image format")
-    # Enforce max 1.5 MB per photo to keep documents lean
-    if len(body.data_url) > 2_000_000:
-        raise HTTPException(status_code=413, detail="Image too large (max ~1.5 MB)")
-    fresh = await db.users.find_one({"user_id": user['user_id']}, {"_id": 0, "photos": 1})
+
+    fresh = await db.users.find_one({"user_id": user['user_id']}, {"_id": 0, "photos": 1, "gender": 1})
     photos = (fresh or {}).get('photos') or []
     if len(photos) >= 4:
-        raise HTTPException(status_code=400, detail="Максимум 4 фотографии")
-    photos.append(body.data_url)
+        raise HTTPException(status_code=400, detail="Maximum 4 photos")
+
+    # Compress FIRST — smaller image also speeds up the AI check
+    compressed_url, _ = _compress_image_data_url(body.data_url)
+
+    # AI gender verification
+    verdict = await _verify_gender_from_photo(compressed_url, (fresh or {}).get('gender', ''))
+    if not verdict.get('ok'):
+        raise HTTPException(status_code=422, detail=verdict.get('message') or "Photo rejected")
+
+    photos.append(compressed_url)
     await db.users.update_one({"user_id": user['user_id']}, {"$set": {"photos": photos, "last_active": iso(now_utc())}})
-    return {"photos": photos}
+    return {"photos": photos, "verification": verdict}
 
 class PhotosReorderBody(BaseModel):
     photos: List[str]  # full list in new order (max 4)
