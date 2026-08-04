@@ -228,8 +228,9 @@ COIN_PACKAGES = [
 ]
 # Per-type coin cost for chat messages. Free users can send at most FREE_MSGS
 # messages TOTAL per chat (any kind). Beyond that the input is hard-blocked
-# unless the user has coins (or Premium for text/emoji).
-MSG_COST = {"text": 1, "emoji": 2, "image": 5, "file": 5, "gift": 10, "voice": 5, "video": 10}
+# unless the user has coins (or Premium for text/emoji). Note: 'gift' kind
+# does NOT use MSG_COST — its cost is looked up per-key in GIFT_COST_BY_KEY.
+MSG_COST = {"text": 1, "emoji": 2, "image": 5, "file": 5, "voice": 5, "video": 10}
 FREE_MSGS = 2
 
 # Gift catalog — illustrations use free Unicode emoji rendered inside a colored
@@ -905,7 +906,7 @@ async def _do_send_message(sender: dict, other_id: str, body: MessageBody) -> di
     other = await db.users.find_one({"user_id": other_id}, {"_id": 0})
     if not other:
         raise HTTPException(status_code=404, detail="User not found")
-    if body.kind not in MSG_COST:
+    if body.kind not in MSG_COST and body.kind != 'gift':
         raise HTTPException(status_code=400, detail="Invalid message kind")
     # Gift cost varies by key
     if body.kind == 'gift':
@@ -1739,10 +1740,13 @@ I18N_BASE_RU = {
     "lang.region.asia": "🌏 Азия", "lang.region.americas": "🌎 Америка",
 }
 
+import hashlib
+I18N_VERSION = hashlib.sha256(_json.dumps(I18N_BASE_RU, sort_keys=True, ensure_ascii=False).encode()).hexdigest()[:12]
+
 @api.get("/i18n/base")
 async def i18n_base():
     """Return the canonical Russian dictionary. Front-end uses this as source."""
-    return {"lang": "ru", "strings": I18N_BASE_RU}
+    return {"lang": "ru", "strings": I18N_BASE_RU, "version": I18N_VERSION}
 
 @api.get("/i18n/{lang}")
 async def i18n_lang(lang: str):
@@ -1750,12 +1754,11 @@ async def i18n_lang(lang: str):
     First call for a new language triggers a single bulk LLM translation."""
     lang = lang.lower().strip()
     if lang == "ru":
-        return {"lang": "ru", "strings": I18N_BASE_RU, "cached": True}
+        return {"lang": "ru", "strings": I18N_BASE_RU, "cached": True, "version": I18N_VERSION}
     cached = await db.i18n_cache.find_one({"lang": lang}, {"_id": 0})
-    # Invalidate if base dict added new keys
-    base_keys = set(I18N_BASE_RU.keys())
-    if cached and set((cached.get('strings') or {}).keys()) >= base_keys:
-        return {"lang": lang, "strings": cached['strings'], "cached": True}
+    # Invalidate whenever the base dictionary version changes
+    if cached and cached.get('version') == I18N_VERSION:
+        return {"lang": lang, "strings": cached['strings'], "cached": True, "version": I18N_VERSION}
     # Translate via LLM in one shot
     try:
         from emergentintegrations.llm.chat import LlmChat, UserMessage  # type: ignore
@@ -1780,14 +1783,14 @@ async def i18n_lang(lang: str):
             translated.setdefault(k, v)
         await db.i18n_cache.update_one(
             {"lang": lang},
-            {"$set": {"lang": lang, "strings": translated, "updated_at": iso(now_utc())}},
+            {"$set": {"lang": lang, "strings": translated, "version": I18N_VERSION, "updated_at": iso(now_utc())}},
             upsert=True,
         )
-        return {"lang": lang, "strings": translated, "cached": False}
+        return {"lang": lang, "strings": translated, "cached": False, "version": I18N_VERSION}
     except Exception as e:
         logger.exception("i18n translate failed")
         # Fail-open: return Russian so UI is at least legible
-        return {"lang": "ru", "strings": I18N_BASE_RU, "cached": False, "error": str(e)}
+        return {"lang": "ru", "strings": I18N_BASE_RU, "cached": False, "error": str(e), "version": I18N_VERSION}
 
 # ────────────────────────────── Demo seed ──────────────────────────────
 @api.post("/demo/seed")

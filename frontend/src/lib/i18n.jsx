@@ -115,10 +115,14 @@ export function I18nProvider({ children }) {
       setStrings(data.strings || {});
       setLangState(data.lang);
       localStorage.setItem(LS_KEY, data.lang);
+      // If user asked for X but server returned Russian, translation failed.
+      // Return that signal to callers so they can toast.
+      return { requestedLang: code, actualLang: data.lang, error: data.error };
     } catch (e) {
       console.warn("i18n load failed:", e);
+      return { requestedLang: code, actualLang: lang, error: String(e) };
     } finally { setLoading(false); }
-  }, []);
+  }, [lang]);
 
   // Initial load
   useEffect(() => { load(lang); }, [load, lang]);
@@ -131,8 +135,9 @@ export function I18nProvider({ children }) {
   }, [user?.language_pref]);
 
   const setLang = useCallback(async (code) => {
-    await load(code);
+    const result = await load(code);
     try { await api.put("/profile", { language_pref: code }); } catch { /* noop */ }
+    return result;
   }, [load]);
 
   const t = useCallback((key, vars) => {

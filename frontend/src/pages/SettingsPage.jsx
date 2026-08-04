@@ -160,7 +160,7 @@ export default function SettingsPage() {
         )}
         <button onClick={async () => { await logout(); nav("/"); }} className="w-full btn-pill bg-muted"><LogOut className="w-4 h-4 mr-2" /> {t("settings.logout")}</button>
       </div>
-      <LanguageSheet open={showLang} onClose={() => setShowLang(false)} onSelect={async (l) => { setShowLang(false); await setLang(l.code); toast.success(`${l.flag} ${l.name}`); }} />
+      <LanguageSheet open={showLang} onClose={() => setShowLang(false)} onSelect={async (l) => { setShowLang(false); const r = await setLang(l.code); if (r?.actualLang !== l.code) toast.error("Перевод недоступен, оставили русский"); else toast.success(`${l.flag} ${l.name}`); }} />
     </MobileShell>
   );
 }
