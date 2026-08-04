@@ -1,0 +1,40 @@
+{
+  "summary": "Iteration 20 – Complete Chat System (text/emoji/image/gift/voice/video + coin economics + WebSocket + locked flag + AI translate). Backend: 13/13 pytest cases pass on preview URL — /api/chat/costs table (text=1,emoji=1,image=5,gift=10,voice=10,video=15,free=2), free-window (msg#1&#2 cost_paid=0, msg#3 deducts 1 coin), insufficient coins → 402 with Russian detail, gift always 10 coins (402 without free window), /api/chat/media happy path returns {media_url, kind, size_bytes}, 413 on 5MB image, 400 on malformed data URLs, kind='image' send deducts exactly 5 coins, locked flag correctness (first 2 incoming unlocked with text, subsequent locked=true & text='' for free viewer, own messages always unlocked), /api/translate returns non-empty Russian output, WebSocket /api/ws?token=<JWT> — connect emits {type:'hello',user_id}, ping→pong, cross-user message delivery via REST reaches the other WS within <5s; missing token closes handshake. Frontend (mobile viewport 390×844): all required data-testids present on ChatRoomPage (chat-back, chat-coins-header, chat-input, btn-emoji, btn-gift, btn-image, btn-voice, btn-video, btn-translate-composer, btn-send, image-input, video-input), text send via Enter and via btn-send both add message to list without full reload, btn-gift opens gift grid with '10 💰' label, btn-translate-composer replaces 'Hello, how are you?' → 'Здравствуйте, как дела?' via /api/translate, image upload via setInputFiles renders <img data:image...> bubble, ChatsListPage shows '📷 Фото' preview after image send, real-time WS delivery verified with two browser contexts in both directions (API-triggered and UI-triggered messages appear on partner's ChatRoom within ~1s without refresh).",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [
+      {
+        "flow": "Insufficient-coins gift (or any 402)",
+        "issue": "ChatRoomPage.jsx line ~111 unconditionally calls `nav('/premium')` on ANY 402 response from /chats/{id}/send. The review spec explicitly requires the app to show the toast but NOT auto-navigate. Repro: free user with <10 coins clicks btn-gift → gift-rose → toast shows 'Недостаточно монет…' AND URL changes to /premium automatically. Same behaviour would trigger on paid text overspend or image overspend.",
+        "affected_selectors": ["[data-testid=\"btn-gift\"]", "[data-testid^=\"gift-\"]", "[data-testid=\"btn-send\"]"]
+      }
+    ],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_chat_iter20.py",
+    "/app/test_reports/pytest/chat_iter20.xml"
+  ],
+  "action_items": [
+    "Remove the automatic `if (e.response?.status === 402) nav('/premium')` in ChatRoomPage.jsx `send()` (around line 111). Leave the toast in place; let the user tap the existing Premium nudge/CTA to navigate. The spec calls this out explicitly ('302 flow does NOT navigate away automatically')."
+  ],
+  "critical_code_review_comments": [
+    "server.py grew to 1789 lines — router split still recommended.",
+    "WSManager is single-process only (documented in code). Deploying more than one uvicorn worker will silently break realtime; add a startup log warning or enforce workers=1.",
+    "_do_send_message uses `sender.get('is_premium')` (stale in-memory doc) at msg['cost_paid'] computation while the actual coin deduction uses `fresh` from DB — cost_paid label may misreport 0 vs cost if premium status flips between the two reads. Minor.",
+    "/api/chats/{other_id}/messages: `db.messages.update_many({..., 'read': False})` isn't in the filter — every fetch triggers a write even when everything is already read. Trivial index/perf improvement.",
+    "Base64 data-URL storage in Mongo will bloat the collection quickly for voice/video (up to 8MB each). Cloudinary migration is mentioned in the request; keep on roadmap.",
+    "ChatRoomPage.jsx line 200 `withinFree = sentByMe < costs.free_messages` counts based on local msgs state which may include locked/incoming — but the check filters `from_user === user?.user_id` so OK. However this cost is displayed in placeholder — if backend charges differently (e.g. after reconnect gap) the UI hint could mislead. Minor UX."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_chat_iter20.py"
+  ],
+  "success_rate": {"backend": "100% (13/13)", "frontend": "~92% — 1 spec deviation (auto-nav on 402)"},
+  "test_credentials": "testuser1@lovreski.ru / password123 works. Test users are freshly registered per-run (chat_*_/rt*_/fe*_/free*_ prefixes). Admin unchanged: admin@lovreski.ru / LovreskiAdmin2026!",
+  "seed_data_creation": "Each backend test registers ephemeral users via /api/auth/register. No cleanup (unique suffixes). Frontend tests also register fresh users via API and inject JWT into localStorage under key 'lovreski_token'.",
+  "retest_needed": true,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Chat System is functionally complete on the backend (13/13). Only remaining issue is a small frontend UX/spec deviation: ChatRoomPage auto-navigates to /premium on any 402. Fix is a 1-line removal in send()'s catch block (line ~111). Real-time WS works via wss://<host>/api/ws?token=<JWT>. Base URL for tests: process.env.REACT_APP_BACKEND_URL. Token key in localStorage: 'lovreski_token'. New users default to 5 coins, non-premium. Do NOT use POST /api/admin/users/add-coins in tests that need a non-premium user — that endpoint also flips is_premium=true.",
+  "rca of the issue": "Auto-nav on 402: ChatRoomPage.jsx `send()` catch block calls `nav('/premium')` unconditionally on 402, overriding the user's intent. Spec expects toast-only. Mitigation: delete the two-line `if (e.response?.status === 402) nav('/premium');` block. The existing `premium-nudge` button already offers a manual path to /premium."
+}

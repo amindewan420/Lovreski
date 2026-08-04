@@ -2,11 +2,13 @@
 Lovreski Dating App — FastAPI Backend
 All routes prefixed with /api. MongoDB storage. Uses custom user_id (UUID).
 """
-from fastapi import FastAPI, APIRouter, HTTPException, Depends, Request, Response, Cookie, Header
+from fastapi import FastAPI, APIRouter, HTTPException, Depends, Request, Response, Cookie, Header, WebSocket, WebSocketDisconnect
 from fastapi.responses import JSONResponse
 from dotenv import load_dotenv
 from starlette.middleware.cors import CORSMiddleware
 from motor.motor_asyncio import AsyncIOMotorClient
+import asyncio
+import json as _json
 import os
 import io
 import base64
@@ -222,8 +224,56 @@ COIN_PACKAGES = [
     {"id": "p300", "coins": 300, "price": 1200},
     {"id": "p500", "coins": 500, "price": 1900},
 ]
-MSG_COST = {"text": 1, "emoji": 1, "image": 5, "gift": 10, "voice": 10, "video": 10}
+# Per-type coin cost for chat messages (deducted after the FREE window for text/emoji;
+# always charged for media/gifts).
+MSG_COST = {"text": 1, "emoji": 1, "image": 5, "gift": 10, "voice": 10, "video": 15}
 FREE_MSGS = 2
+
+# ────────────────────────────── WebSocket Manager ──────────────────────────────
+class WSManager:
+    """Very small in-process pub/sub for chat + notifications.
+    NOTE: single-process only. Fine for MVP; use Redis pub/sub to scale out."""
+    def __init__(self):
+        self._conns: dict[str, set[WebSocket]] = {}
+        self._lock = asyncio.Lock()
+
+    async def connect(self, user_id: str, ws: WebSocket):
+        await ws.accept()
+        async with self._lock:
+            self._conns.setdefault(user_id, set()).add(ws)
+
+    async def disconnect(self, user_id: str, ws: WebSocket):
+        async with self._lock:
+            conns = self._conns.get(user_id)
+            if conns:
+                conns.discard(ws)
+                if not conns:
+                    self._conns.pop(user_id, None)
+
+    def is_online(self, user_id: str) -> bool:
+        return bool(self._conns.get(user_id))
+
+    def online_users(self) -> list[str]:
+        return list(self._conns.keys())
+
+    async def send_to(self, user_id: str, payload: dict):
+        conns = list(self._conns.get(user_id, ()))
+        dead: list[WebSocket] = []
+        for ws in conns:
+            try:
+                await ws.send_json(payload)
+            except Exception:
+                dead.append(ws)
+        for ws in dead:
+            await self.disconnect(user_id, ws)
+
+    async def broadcast_message(self, msg: dict):
+        """Send a chat message payload to both participants."""
+        payload = {"type": "message", "data": msg}
+        for uid in msg.get('participants', []):
+            await self.send_to(uid, payload)
+
+ws_manager = WSManager()
 
 def calc_age(dob: str) -> int:
     try:
@@ -522,7 +572,6 @@ async def _verify_gender_from_photo(image_data_url: str, user_gender: str) -> di
             ),
         ).with_model("openai", "gpt-4o")
         msg = UserMessage(text="Analyze this photo and return the JSON.", file_contents=[ImageContent(image_base64=b64)])
-        import asyncio, json as _json
         raw = await asyncio.wait_for(chat.send_message(msg), timeout=5.0)
         text = str(raw).strip()
         # Extract JSON (strip markdown fences if any)
@@ -792,38 +841,70 @@ async def list_chats(user: dict = Depends(get_current_user)):
     result.sort(key=lambda x: x['last_message']['created_at'], reverse=True)
     return result
 
+def _decorate_msg(m: dict, viewer_id: str, viewer_is_premium: bool) -> dict:
+    """Apply locked flag: incoming messages from partner beyond the 2 free window
+    are hidden unless the viewer has Premium. Free users see the message exists
+    but content is masked with an upgrade prompt."""
+    m = {k: v for k, v in m.items() if k != '_id'}
+    if m.get('from_user') != viewer_id and not viewer_is_premium:
+        # Count position of this message among partner's messages in the chat
+        pass  # handled in bulk below for efficiency
+    return m
+
 @api.get("/chats/{other_id}/messages")
-async def get_messages(other_id: str, user: dict = Depends(get_current_user), limit: int = 100):
+async def get_messages(other_id: str, user: dict = Depends(get_current_user), limit: int = 200):
     cid = chat_id(user['user_id'], other_id)
     msgs = await db.messages.find({"chat_id": cid}, {"_id": 0}).sort("created_at", 1).to_list(limit)
     await db.messages.update_many({"chat_id": cid, "to_user": user['user_id']}, {"$set": {"read": True}})
-    # Add locked flag: if user has no premium & no coins & msg is beyond free window from partner → unlock via premium
+    # Compute locked flag efficiently: incoming messages beyond first FREE_MSGS from partner are locked for free users
+    is_premium = bool(user.get('is_premium'))
+    partner_seen = 0
+    for m in msgs:
+        m.pop('_id', None)
+        if m.get('from_user') != user['user_id']:
+            partner_seen += 1
+            if not is_premium and partner_seen > FREE_MSGS:
+                m['locked'] = True
+                # Strip sensitive fields so free users cannot read
+                m['text'] = ''
+                m['media_url'] = None
+            else:
+                m['locked'] = False
+        else:
+            m['locked'] = False
     return msgs
 
-@api.post("/chats/{other_id}/send")
-async def send_message(other_id: str, body: MessageBody, user: dict = Depends(get_current_user)):
+async def _do_send_message(sender: dict, other_id: str, body: MessageBody) -> dict:
     other = await db.users.find_one({"user_id": other_id}, {"_id": 0})
     if not other:
         raise HTTPException(status_code=404, detail="User not found")
-    cost = MSG_COST.get(body.kind, 1)
-    cid = chat_id(user['user_id'], other_id)
-    # Count sent messages by user in this chat
-    sent_count = await db.messages.count_documents({"chat_id": cid, "from_user": user['user_id']})
-    is_admin_sender = user.get('is_admin', False)
-    needs_pay = sent_count >= FREE_MSGS and not is_admin_sender
+    if body.kind not in MSG_COST:
+        raise HTTPException(status_code=400, detail="Invalid message kind")
+    cost = MSG_COST[body.kind]
+    cid = chat_id(sender['user_id'], other_id)
+    sent_count = await db.messages.count_documents({"chat_id": cid, "from_user": sender['user_id']})
+    is_admin_sender = sender.get('is_admin', False)
+    # Free window applies only to text/emoji. Media (image/gift/voice/video) always costs coins.
+    free_kinds = {"text", "emoji"}
+    within_free = sent_count < FREE_MSGS and body.kind in free_kinds
+    needs_pay = not within_free and not is_admin_sender
     if needs_pay:
-        if not user.get('is_premium') and user.get('coins', 0) < cost:
-            raise HTTPException(status_code=402, detail=f"Недостаточно монет. Требуется {cost}, а у вас {user.get('coins', 0)}. Оформите Premium.")
-        # deduct coins (even if premium, we still deduct — matches problem statement)
-        if user.get('coins', 0) >= cost:
-            await db.users.update_one({"user_id": user['user_id']}, {"$inc": {"coins": -cost}})
-        elif not user.get('is_premium'):
-            raise HTTPException(status_code=402, detail="Недостаточно монет")
+        # Refresh coin balance from DB (avoid stale)
+        fresh = await db.users.find_one({"user_id": sender['user_id']}, {"_id": 0, "coins": 1, "is_premium": 1})
+        coins = int((fresh or {}).get('coins') or 0)
+        is_premium = bool((fresh or {}).get('is_premium'))
+        # Premium users still pay for media/gifts but text/emoji is free
+        if body.kind in free_kinds and is_premium:
+            pass  # free for premium
+        else:
+            if coins < cost:
+                raise HTTPException(status_code=402, detail=f"Недостаточно монет. Требуется {cost}, у вас {coins}. Пополните баланс или оформите Premium.")
+            await db.users.update_one({"user_id": sender['user_id']}, {"$inc": {"coins": -cost}})
     msg = {
         "message_id": f"msg_{uuid.uuid4().hex[:12]}",
         "chat_id": cid,
-        "participants": sorted([user['user_id'], other_id]),
-        "from_user": user['user_id'],
+        "participants": sorted([sender['user_id'], other_id]),
+        "from_user": sender['user_id'],
         "to_user": other_id,
         "kind": body.kind,
         "text": body.text or "",
@@ -831,11 +912,49 @@ async def send_message(other_id: str, body: MessageBody, user: dict = Depends(ge
         "gift_key": body.gift_key,
         "reply_to": body.reply_to,
         "read": False,
+        "cost_paid": cost if needs_pay and not (body.kind in free_kinds and (sender.get('is_premium') or False)) else 0,
         "created_at": iso(now_utc()),
     }
     await db.messages.insert_one(msg)
     msg.pop('_id', None)
+    # Broadcast to both participants via WS (fire-and-forget)
+    try:
+        await ws_manager.broadcast_message(msg)
+    except Exception as e:
+        logger.warning(f"ws broadcast failed: {e}")
     return msg
+
+@api.post("/chats/{other_id}/send")
+async def send_message(other_id: str, body: MessageBody, user: dict = Depends(get_current_user)):
+    return await _do_send_message(user, other_id, body)
+
+class ChatMediaBody(BaseModel):
+    data_url: str
+    kind: Literal['image', 'voice', 'video']
+
+@api.post("/chat/media")
+async def upload_chat_media(body: ChatMediaBody, user: dict = Depends(get_current_user)):
+    """Upload chat media (image / voice / video). Returns a data_url suitable
+    for the `media_url` field in a subsequent /chats/{id}/send call.
+    Images are compressed. Audio/video are stored as-is (base64 data URLs)."""
+    if not body.data_url.startswith("data:"):
+        raise HTTPException(status_code=400, detail="Invalid media format")
+    # Size guard: raw base64 payload <= ~8 MB for voice/video, ~4 MB for image
+    max_bytes = 4 * 1024 * 1024 if body.kind == 'image' else 8 * 1024 * 1024
+    try:
+        _, b64 = body.data_url.split(',', 1)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Malformed data URL")
+    approx_bytes = int(len(b64) * 3 / 4)
+    if approx_bytes > max_bytes:
+        raise HTTPException(status_code=413, detail=f"Файл слишком большой (лимит {max_bytes // (1024*1024)} МБ)")
+    if body.kind == 'image':
+        if not body.data_url.startswith('data:image/'):
+            raise HTTPException(status_code=400, detail="Ожидается изображение")
+        media_url, _ = _compress_image_data_url(body.data_url, max_dim=1200, quality=78)
+    else:
+        media_url = body.data_url
+    return {"media_url": media_url, "kind": body.kind, "size_bytes": approx_bytes}
 
 @api.delete("/messages/{message_id}")
 async def delete_message(message_id: str, user: dict = Depends(get_current_user)):
@@ -1587,8 +1706,66 @@ async def seed_demo():
 async def health():
     return {"ok": True}
 
+@api.get("/chat/costs")
+async def chat_costs(user: dict = Depends(get_current_user)):
+    """Public pricing table for chat message kinds + free-msg window."""
+    return {
+        "costs": MSG_COST,
+        "free_messages": FREE_MSGS,
+        "is_premium": bool(user.get('is_premium')),
+        "coins": int(user.get('coins') or 0),
+    }
+
 # ────────────────────────────── App wiring ──────────────────────────────
 app.include_router(api)
+
+# WebSocket for realtime chat + presence. Path is prefixed with /api so the K8s
+# ingress routes it to the backend on 8001. Auth via JWT/session token in query.
+@app.websocket("/api/ws")
+async def ws_endpoint(websocket: WebSocket, token: Optional[str] = None):
+    if not token:
+        await websocket.close(code=4401)
+        return
+    user_id: Optional[str] = None
+    # Prefer session lookup, fall back to JWT
+    sess = await db.sessions.find_one({"session_token": token}, {"_id": 0})
+    if sess:
+        user_id = sess.get('user_id')
+    else:
+        try:
+            payload = decode_jwt(token)
+            user_id = payload.get('user_id')
+        except Exception:
+            user_id = None
+    if not user_id:
+        await websocket.close(code=4401)
+        return
+    await ws_manager.connect(user_id, websocket)
+    # Mark online
+    try:
+        await db.users.update_one({"user_id": user_id}, {"$set": {"last_active": iso(now_utc())}})
+        await websocket.send_json({"type": "hello", "user_id": user_id})
+        while True:
+            # Client may send { type: "ping" } or { type: "typing", to: <uid> }
+            raw = await websocket.receive_text()
+            try:
+                data = _json.loads(raw)
+            except Exception:
+                continue
+            if data.get('type') == 'ping':
+                await websocket.send_json({"type": "pong"})
+            elif data.get('type') == 'typing' and data.get('to'):
+                await ws_manager.send_to(data['to'], {"type": "typing", "from": user_id})
+            elif data.get('type') == 'read' and data.get('chat_with'):
+                cid = chat_id(user_id, data['chat_with'])
+                await db.messages.update_many({"chat_id": cid, "to_user": user_id}, {"$set": {"read": True}})
+                await ws_manager.send_to(data['chat_with'], {"type": "read", "from": user_id})
+    except WebSocketDisconnect:
+        pass
+    except Exception as e:
+        logger.warning(f"ws loop error: {e}")
+    finally:
+        await ws_manager.disconnect(user_id, websocket)
 
 app.add_middleware(
     CORSMiddleware,
