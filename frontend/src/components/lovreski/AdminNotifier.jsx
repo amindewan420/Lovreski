@@ -32,6 +32,8 @@ export default function AdminNotifier() {
     let cancelled = false;
 
     const poll = async () => {
+      // Skip polling when the tab is hidden to reduce load
+      if (typeof document !== "undefined" && document.hidden) return;
       try {
         const { data } = await api.get("/admin/support/pending-count");
         const cur = data?.count ?? 0;
@@ -51,7 +53,7 @@ export default function AdminNotifier() {
             if ("Notification" in window && Notification.permission === "granted") {
               const n = new Notification("Lovreski Admin", {
                 body: `${delta} new receipt${delta > 1 ? "s" : ""} to verify (${cur} total)`,
-                icon: "/manifest.json",
+                icon: "/favicon.ico",
                 tag: "lovreski-admin-receipt",
               });
               n.onclick = () => { window.focus(); nav("/admin"); n.close(); };
