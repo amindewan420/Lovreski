@@ -108,7 +108,6 @@ export default function ChatRoomPage() {
       setTimeout(() => scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: "smooth" }), 30);
     } catch (e) {
       toast.error(e.response?.data?.detail || "Ошибка");
-      if (e.response?.status === 402) nav("/premium");
     }
   };
 

@@ -31,14 +31,20 @@ Build a complete, production-ready dating web app called "Lovreski" — mobile-f
 - ✅ Step 12 Security: JWT, CORS, MongoDB indexes, custom user_id UUID, cookie httpOnly for OAuth
 
 ## Deferred (backlog)
-- P1: WebSocket realtime chat (currently 4s polling)
 - P1: Real SBP webhook integration (requires Sberbank business account)
 - P1: Photo verification via face-detection
-- P1: Cloudinary uploads (photos are URLs now)
+- P1: Cloudinary uploads (photos/voice/video are Base64 in Mongo now)
+- P1: Spam / Report flow with admin warn/ban actions
 - P2: Push notifications via FCM (requires Firebase setup)
 - P2: End-to-end message encryption (currently server-stored plaintext, JWT-protected)
 - P2: Rate limiting via Redis
 - P2: Native mobile apps (Flutter as originally requested)
+- P2: Refactor server.py (1789 lines) into modular routers
+- P2: PWA install prompt on Settings & Home
+- P2: Email/SMS notifications via Resend/Twilio for refund status & matches
+
+## Changelog
+- 2026-02 · **Complete Chat System v1** — text/emoji/image/gift/voice/video message types with per-kind coin costs (`MSG_COST` in server.py). Free window: first 2 text/emoji sent messages per (sender, chat) are free; media and gifts always cost coins. Locked-message paywall: free users see incoming messages beyond msg #2 as `locked=true` with content stripped. `/api/chat/media` endpoint (image compressed via Pillow, voice/video stored as data-URL). `/api/chat/costs` returns pricing + wallet snapshot. In-app WebSocket at `/api/ws?token=<JWT>` (single-process pub/sub) — broadcasts new messages, typing indicators, and read receipts, replacing the previous 4-second HTTP polling in ChatRoomPage and ChatsListPage. AI translate button in composer (translates current draft to Russian via /api/translate). Iteration 20 backend 13/13 pass.
 
 ## Deploy
 Currently on Emergent (React + FastAPI + MongoDB). For amvera.cloud deployment, see `/app/backend/requirements.txt` + `/app/frontend/package.json`.
