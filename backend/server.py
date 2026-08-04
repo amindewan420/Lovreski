@@ -1204,8 +1204,6 @@ async def admin_reject_receipt(submission_id: str, body: AdminRejectBody, admin:
 
 @api.post("/admin/users/add-coins")
 async def admin_add_coins(body: CustomCoinAddBody, admin: dict = Depends(require_admin)):
-    """Custom coin add — admin manually credits coins to any user + activates Premium.
-    Coin balance never goes negative because `body.coins` must be > 0."""
     target = await db.users.find_one({"user_id": body.user_id}, {"_id": 0})
     if not target:
         raise HTTPException(status_code=404, detail="User not found")
@@ -1222,6 +1220,64 @@ async def admin_add_coins(body: CustomCoinAddBody, admin: dict = Depends(require
     })
     await _push_notification(body.user_id, f"🎉 {body.coins} coins added by admin. Premium is ACTIVE! 👑", "success")
     return {"ok": True, "new_balance": new_balance}
+
+# ────────── Refund Requests ──────────
+
+class RefundBody(BaseModel):
+    full_name: str = Field(min_length=1, max_length=100)
+    email: EmailStr
+    receipt_data_url: str
+    reason: str = Field(min_length=1, max_length=1000)
+
+@api.post("/support/refund")
+async def submit_refund(body: RefundBody, request: Request, user: dict = Depends(get_current_user)):
+    if not body.receipt_data_url.startswith("data:"):
+        raise HTTPException(status_code=400, detail="Invalid receipt format")
+    # Rate limit 3 refund requests per user per day
+    since = now_utc() - timedelta(days=1)
+    recent = await db.refund_requests.count_documents({"user_id": user['user_id'], "created_at": {"$gte": iso(since)}})
+    if recent >= 3:
+        raise HTTPException(status_code=429, detail="Too many refund requests. Try again tomorrow.")
+    receipt = body.receipt_data_url
+    if receipt.startswith("data:image/"):
+        try: receipt, _ = _compress_image_data_url(receipt, max_dim=1800, quality=85)
+        except Exception: pass
+    rid = f"ref_{uuid.uuid4().hex[:12]}"
+    await db.refund_requests.insert_one({
+        "refund_id": rid,
+        "user_id": user['user_id'],
+        "full_name": body.full_name,
+        "email": body.email.lower(),
+        "receipt_data_url": receipt,
+        "reason": body.reason,
+        "status": "pending",
+        "created_at": iso(now_utc()),
+    })
+    return {"refund_id": rid, "status": "pending"}
+
+@api.get("/admin/refunds")
+async def admin_refunds(status: str = "all", _: dict = Depends(require_admin)):
+    q = {} if status == "all" else {"status": status}
+    r = await db.refund_requests.find(q, {"_id": 0}).sort("created_at", -1).to_list(200)
+    return r
+
+@api.post("/admin/refunds/{refund_id}/decide")
+async def admin_refund_decide(refund_id: str, body: dict, admin: dict = Depends(require_admin)):
+    action = body.get('action')
+    if action not in ("approve", "reject"):
+        raise HTTPException(status_code=400, detail="Invalid action")
+    reason = body.get('reason') or ""
+    res = await db.refund_requests.find_one_and_update(
+        {"refund_id": refund_id, "status": "pending"},
+        {"$set": {"status": "approved" if action == "approve" else "rejected", "admin_reason": reason, "admin_id": admin['user_id'], "decided_at": iso(now_utc())}},
+        return_document=True,
+    )
+    if not res:
+        raise HTTPException(status_code=404, detail="Refund not found or already processed")
+    await _push_notification(res['user_id'],
+        f"{'✅' if action == 'approve' else '❌'} Refund {action}d." + (f" Note: {reason}" if reason else ""),
+        "success" if action == "approve" else "error")
+    return {"ok": True}
 
 
 # ────────────────────────────── Reports ──────────────────────────────

@@ -129,7 +129,7 @@ export default function AdminPage() {
 
       <div className="max-w-6xl mx-auto p-6">
         <div className="flex gap-2 mb-6 bg-muted p-1 rounded-full w-fit">
-          {[{k:"dashboard",l:"Дашборд"},{k:"support",l:"Verification",badge:pendingCount},{k:"reports",l:"Жалобы"},{k:"users",l:"Пользователи"},{k:"settings",l:"Настройки"}].map(t => (
+          {[{k:"dashboard",l:"Дашборд"},{k:"support",l:"Verification",badge:pendingCount},{k:"refunds",l:"Refund Requests"},{k:"reports",l:"Жалобы"},{k:"users",l:"Пользователи"},{k:"settings",l:"Настройки"}].map(t => (
             <button key={t.k} data-testid={`admin-tab-${t.k}`} onClick={() => setTab(t.k)} className={`relative px-5 py-2 rounded-full font-semibold text-sm ${tab === t.k ? "bg-card shadow" : "text-muted-foreground"}`}>
               {t.l}
               {t.badge > 0 && (
@@ -298,6 +298,8 @@ export default function AdminPage() {
           </div>
         )}
 
+        {tab === "refunds" && <RefundsTab />}
+
         {tab === "settings" && (
           <div className="max-w-lg space-y-6">
             <div className="p-5 rounded-2xl bg-card border border-border">
@@ -433,3 +435,53 @@ const Stat = ({ title, value, icon: Icon, accent }) => (
     <p className="font-display font-black text-2xl mt-2">{value}</p>
   </div>
 );
+
+function RefundsTab() {
+  const [items, setItems] = useState([]);
+  const [viewImg, setViewImg] = useState(null);
+  const load = async () => {
+    try { const { data } = await api.get("/admin/refunds"); setItems(data); } catch { toast.error("Ошибка"); }
+  };
+  useEffect(() => { load(); }, []);
+  const decide = async (id, action) => {
+    const reason = action === "reject" ? window.prompt("Причина отказа:", "") : (window.prompt("Комментарий (необязательно):") || "");
+    if (action === "reject" && !reason) return;
+    try { await api.post(`/admin/refunds/${id}/decide`, { action, reason }); toast.success("Обновлено"); load(); }
+    catch (e) { toast.error(e.response?.data?.detail || "Ошибка"); }
+  };
+  return (
+    <div className="space-y-3">
+      <h3 className="font-display font-bold text-lg">Refund Requests</h3>
+      {items.length === 0 && <p className="text-center text-muted-foreground py-10">Нет заявок</p>}
+      {items.map((r) => (
+        <div key={r.refund_id} data-testid={`refund-${r.refund_id}`} className="p-4 rounded-2xl bg-card border border-border">
+          <div className="flex gap-4">
+            {r.receipt_data_url && (
+              <button onClick={() => setViewImg(r.receipt_data_url)} className="w-24 h-24 rounded-xl overflow-hidden bg-muted flex-shrink-0">
+                <img src={r.receipt_data_url} alt="" className="w-full h-full object-cover" />
+              </button>
+            )}
+            <div className="flex-1 min-w-0">
+              <p className="font-bold">{r.full_name}</p>
+              <p className="text-xs text-muted-foreground">{r.email}</p>
+              <p className="text-xs mt-1">{r.reason}</p>
+              <p className="text-[11px] text-muted-foreground mt-1">{new Date(r.created_at).toLocaleString("ru")}</p>
+            </div>
+            <span className={`text-xs font-bold px-2 py-1 rounded-full h-fit ${r.status === "approved" ? "bg-emerald-500/15 text-emerald-500" : r.status === "rejected" ? "bg-rose-500/15 text-rose-500" : "bg-amber-500/15 text-amber-500"}`}>{r.status}</span>
+          </div>
+          {r.status === "pending" && (
+            <div className="mt-3 grid grid-cols-2 gap-2">
+              <button onClick={() => decide(r.refund_id, "approve")} className="btn-pill bg-emerald-500 text-white text-sm !py-2">✅ Approve</button>
+              <button onClick={() => decide(r.refund_id, "reject")} className="btn-pill bg-rose-500 text-white text-sm !py-2">❌ Reject</button>
+            </div>
+          )}
+        </div>
+      ))}
+      {viewImg && (
+        <div className="fixed inset-0 z-[90] bg-black/95 flex items-center justify-center p-4" onClick={() => setViewImg(null)}>
+          <img src={viewImg} alt="" className="max-w-full max-h-full object-contain" />
+        </div>
+      )}
+    </div>
+  );
+}
