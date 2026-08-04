@@ -178,6 +178,7 @@ class ProfileUpdate(BaseModel):
     age_min: Optional[int] = None
     age_max: Optional[int] = None
     distance_mode: Optional[str] = None
+    distance_km: Optional[int] = Field(default=None, ge=0, le=2000)
     auto_translate: Optional[bool] = None
 
 class MessageBody(BaseModel):
@@ -685,6 +686,18 @@ async def _filter_feed(user: dict, limit: int, skip: int = 0):
             dist = -d
         return online_bonus + dist
     users.sort(key=score, reverse=True)
+    # Distance radius filter (only when user picked "Рядом" + numeric radius)
+    if user.get('distance_mode') == 'limited' and user.get('lat') is not None:
+        max_km = user.get('distance_km')
+        if isinstance(max_km, (int, float)):
+            filtered = []
+            for u in users:
+                if u.get('lat') is None:
+                    continue  # skip users without geo when limited
+                d = haversine_km(user['lat'], user['lng'], u['lat'], u['lng'])
+                if d is not None and d <= max_km:
+                    filtered.append(u)
+            users = filtered
     return [user_public(u, viewer=user) for u in users[:limit]]
 
 @api.get("/home/feed")

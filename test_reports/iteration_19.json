@@ -1,0 +1,24 @@
+{
+  "summary": "Iteration 19 - Distance filter (Рядом / Весь мир). Backend + Frontend fully verified. 5/5 backend pytest cases pass including radius filter correctness (10km near user included, 500km far user excluded when limited/50, both returned when unlimited) and Field(ge=0,le=2000) validation (422 on -5 and 2500, 200 on 0 and 2000). Frontend: default 'unlimited' hides slider row; selecting 'Рядом' reveals slider row with amber geolocation hint (no lat/lng), distance-label live-updates as slider moves (ArrowRight keyboard step=10 verified 50→200), mouseup triggers PUT /api/profile with {distance_km:200}, server persists distance_mode='limited' + distance_km=200. Switching back to '🌍 Весь мир' hides slider row and persists distance_mode='unlimited'.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {"ui_bugs": [], "integration_issues": [], "design_issues": []},
+  "test_report_links": [
+    "/app/backend/tests/test_distance_iter19.py",
+    "/app/test_reports/pytest/distance_iter19.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "server.py is ~1612 lines — router split still recommended (unchanged from iter18).",
+    "_filter_feed: 'if user.get('lat')' truthy check would exclude viewers at exactly lat==0 (equator). Prefer explicit `is not None` (already done in the radius branch — inconsistent with the sort scoring branch above it).",
+    "SettingsPage saves on mouseup/touchend but NOT on keyboard interaction. A user changing the slider with ArrowLeft/Right (or Home/End) will not trigger the PUT — consider also saving onKeyUp or onChange debounced. Minor UX issue.",
+    "distance_km default fallback (?? 50) is duplicated in 3 places in JSX — extract to a constant."
+  ],
+  "updated_files": ["/app/backend/tests/test_distance_iter19.py"],
+  "success_rate": {"backend": "100%", "frontend": "100%"},
+  "test_credentials": "Ephemeral users registered per run: dist_<ts>@lovreski.ru / password123. Admin unchanged: admin@lovreski.ru / LovreskiAdmin2026!",
+  "seed_data_creation": "Each test registers fresh users prefixed dv_/view_/near_/far_/dist_<ts>. No cleanup (unique timestamps).",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Distance filter is fully working. Backend uses haversine_km with viewer.lat & target.lat both required (users w/o coords excluded when limited). Frontend saves via mouseup/touchend only (not keyboard) — flagged as minor UX issue. Feed endpoint returns user_id (not id) key. Use /api/auth/me (not /api/profile/me) to fetch current user's saved settings.",
+  "rca of the issue": "N/A — feature implementation matches spec."
+}

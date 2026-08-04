@@ -88,10 +88,28 @@ export default function SettingsPage() {
             </div>
           </Row>
           <Row label="Расстояние">
-            <select value={form.distance_mode || "unlimited"} onChange={(e) => { setForm({ ...form, distance_mode: e.target.value }); save({ distance_mode: e.target.value }); }} className="bg-transparent text-right outline-none">
-              <option value="limited">🏘️ Рядом</option><option value="unlimited">🌍 Весь мир</option>
+            <select data-testid="distance-mode" value={form.distance_mode || "unlimited"} onChange={(e) => { setForm({ ...form, distance_mode: e.target.value }); save({ distance_mode: e.target.value }); }} className="bg-transparent text-right outline-none">
+              <option value="limited">📍 Рядом</option><option value="unlimited">🌍 Весь мир</option>
             </select>
           </Row>
+          {form.distance_mode === "limited" && (
+            <div data-testid="distance-slider-row" className="px-4 py-3 border-t border-border">
+              {!(form.lat && form.lng) && (
+                <p className="text-xs text-amber-600 dark:text-amber-400 mb-2">📍 Разрешите доступ к геолокации для использования фильтра расстояния</p>
+              )}
+              <p data-testid="distance-label" className="text-sm font-semibold mb-1">В радиусе: {form.distance_km ?? 50} км</p>
+              <input
+                data-testid="distance-slider"
+                type="range" min={0} max={2000} step={10}
+                value={form.distance_km ?? 50}
+                onChange={(e) => setForm({ ...form, distance_km: parseInt(e.target.value) })}
+                onMouseUp={() => save({ distance_km: form.distance_km ?? 50 })}
+                onTouchEnd={() => save({ distance_km: form.distance_km ?? 50 })}
+                className="w-full accent-primary"
+              />
+              <div className="flex justify-between text-[10px] text-muted-foreground mt-1"><span>0 км</span><span>2000 км</span></div>
+            </div>
+          )}
         </Section>
 
         <Section title="Premium & Монеты" icon={Crown}>
