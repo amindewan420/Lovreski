@@ -14,6 +14,7 @@ import ProfilePage from "@/pages/ProfilePage";
 import OtherProfilePage from "@/pages/OtherProfilePage";
 import PremiumPage from "@/pages/PremiumPage";
 import PurchaseHistoryPage from "@/pages/PurchaseHistoryPage";
+import AdminNotifier from "@/components/lovreski/AdminNotifier";
 import SettingsPage from "@/pages/SettingsPage";
 import AdminPage from "@/pages/AdminPage";
 
@@ -54,6 +55,7 @@ function App() {
       <AuthProvider>
         <BrowserRouter>
           <AppRouter />
+          <AdminNotifier />
           <Toaster position="top-center" richColors />
         </BrowserRouter>
       </AuthProvider>

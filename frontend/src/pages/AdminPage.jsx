@@ -31,6 +31,9 @@ export default function AdminPage() {
     if (!user) return;
     if (!user.is_admin) { nav("/home"); return; }
     load();
+    // Auto-refresh admin data every 10s so new pending receipts appear live
+    const t = setInterval(load, 10000);
+    return () => clearInterval(t);
   }, [user, nav]);
 
   const load = async () => {

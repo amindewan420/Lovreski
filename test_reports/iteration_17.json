@@ -1,0 +1,31 @@
+{
+  "summary": "Iter17 real-time admin notifications for pending receipts: all backend + UI checks passed. Global AdminNotifier fires Sonner toast on any route when a fresh receipt lands (verified from /home), the /admin Verification tab auto-refreshes within ~10s, non-admin users get no toast and no console crash despite the endpoint returning 403, and the iter16 SBP-phone + full manual-approval regression (submit → approve → +coins + Premium) still passes end-to-end.",
+  "backend_issues": { "critical": [], "minor": [] },
+  "frontend_issues": { "ui_bugs": [], "integration_issues": [], "design_issues": [] },
+  "test_report_links": [
+    "/app/backend/tests/test_admin_notifier_iter17.py",
+    "/app/test_reports/pytest/iter17_results.xml",
+    "/app/test_reports/iter17_admin_home_toast.png",
+    "/app/test_reports/iter17_admin_verification_tab.png"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "AdminNotifier polls even when the browser tab is hidden — consider pausing on document.hidden to reduce load; non-blocking.",
+    "Notification icon uses '/manifest.json' as the icon URL which is a JSON manifest, not an image; native OS notifications will show a broken icon. Suggest pointing to a real PNG (e.g. /favicon.png).",
+    "Poll error is swallowed with an empty catch — logging a debug hint (e.g. console.debug) would help future diagnosis without leaking errors to users."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_admin_notifier_iter17.py",
+    "/app/test_reports/pytest/iter17_results.xml",
+    "/app/test_reports/iter17_admin_home_toast.png",
+    "/app/test_reports/iter17_admin_verification_tab.png",
+    "/app/test_reports/iteration_17.json"
+  ],
+  "success_rate": { "backend": "100% (6/6)", "frontend": "100%" },
+  "test_credentials": "Admin admin@lovreski.ru / LovreskiAdmin2026! (from /app/memory/test_credentials.md).",
+  "seed_data_creation": "Registered fresh users notif_<ts>@lovreski.ru, notif2_<ts>@lovreski.ru, nonadm_<ts>@lovreski.ru (password123). Submitted 3 pending receipts; approved one (100 coins + Premium activated on notif_<ts>).",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Backend URL: https://lovreski-dating.preview.emergentagent.com. Token localStorage key is 'lovreski_token' (NOT 'auth_token'). AdminNotifier polls /api/admin/support/pending-count every 10s, first poll is baseline. Sonner toast selector: '[data-sonner-toast]'. AdminPage Verification tab data-testid='admin-tab-support', pending items 'pending-<submission_id>'. Manual-approval regression still green.",
+  "rca_of_the_issue": "No bug — feature verified. Toast text observed: '🔔 1 new receipt awaiting review · total pending: N' with Open button navigating to /admin. Non-admin 403 is silently caught so no UI regression. Backend endpoint /api/admin/support/pending-count returns 200 for admin, 403 for regular user, 401 for anon."
+}
