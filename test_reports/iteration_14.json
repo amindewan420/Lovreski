@@ -1,0 +1,57 @@
+{
+  "verdict": "not_fixed",
+  "user_reported_bug": "Iteration-13 found CRITICAL — POST /api/coins/webhook still credited coins + activated Premium directly, bypassing the manual admin-approval flow. This must not happen: coins should only be credited via /admin/support/:id/approve or /admin/users/add-coins.",
+  "summary": "No relevant testing skill found. Focused backend verification found the webhook fix itself now passes: signed success webhook returns queued_for_admin, creates an admin-pending receipt_submission, and does not change coins/Premium; invalid secret and amount mismatch also pass. However the manual-only contract is still not fixed because legacy POST /api/admin/payments/{tx_id} approve remains reachable and directly credited +100 coins outside /admin/support/:id/approve or /admin/users/add-coins.",
+  "backend_issues": {
+    "critical": [
+      {
+        "endpoint": "POST /api/admin/payments/{tx_id}",
+        "issue": "Forbidden legacy credit path still works. Runtime proof: after creating checkout tx_6c26661ed1c0, admin approve returned 200 {ok:true} and user coins changed from 112 to 212, outside the two allowed credit endpoints.",
+        "priority": "CRITICAL"
+      }
+    ],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [
+      {
+        "flow": "Admin Payments tab",
+        "issue": "AdminPage still calls /admin/payments/{tx_id} from the Payments tab, exposing the forbidden legacy direct-credit path in the admin UI.",
+        "affected_selectors": ["data-testid=admin-tab-payments"]
+      }
+    ],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/test_reports/test_webhook_manual_approval_bug_iter14.py",
+    "/app/test_reports/webhook_manual_approval_bug_iter14_results.json",
+    "/app/test_reports/bug_verification_14.json",
+    "/app/test_reports/iteration_14.json"
+  ],
+  "action_items": [
+    "Disable/remove direct coin/Premium mutation from POST /api/admin/payments/{tx_id}; under the manual-only contract, only /api/admin/support/{submission_id}/approve and /api/admin/users/add-coins should credit coins.",
+    "Remove or disable the Admin Payments tab approval action, or convert it to route through receipt_submissions/manual verification without direct crediting.",
+    "Keep the verified webhook behavior: success webhook should queue pending admin review and never mutate user coins/Premium while AUTO_CREDIT_ENABLED is unset/false."
+  ],
+  "critical_code_review_comments": [
+    "/app/backend/server.py:1001-1037 now queues successful /coins/webhook payloads and runtime testing confirmed no immediate coin/Premium mutation.",
+    "/app/backend/server.py:1298-1308 still credits coins and sets is_premium=true in POST /admin/payments/{tx_id}, which violates the reported 'only /admin/support/:id/approve or /admin/users/add-coins' contract.",
+    "/app/frontend/src/pages/AdminPage.jsx:98-102 still wires the Payments tab approval button to the forbidden /admin/payments/{tx_id} endpoint."
+  ],
+  "updated_files": [
+    "/app/test_reports/test_webhook_manual_approval_bug_iter14.py",
+    "/app/test_reports/webhook_manual_approval_bug_iter14_results.json",
+    "/app/test_reports/bug_verification_14.json",
+    "/app/test_reports/iteration_14.json"
+  ],
+  "success_rate": {
+    "backend": "96.55%",
+    "frontend": "not run (backend-only request; source inspection found AdminPage integration exposure)"
+  },
+  "seed_data_creation": "Created fresh user whk_1785849025_042fcd@lovreski.ru / password123. Created webhook success tx_cf4b91f531bb, mismatch tx_e3b0559aae5c, pending-status tx_174fc8708552, rejected manual receipt sub_2081476cd8c2, and forbidden legacy admin-payments tx_6c26661ed1c0.",
+  "retest_needed": true,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "Re-run /app/test_reports/test_webhook_manual_approval_bug_iter14.py after disabling the legacy admin-payments credit path. The webhook-specific assertions should remain passing: queued_for_admin=true, status awaiting_admin, pending receipt visible to admin, no user balance/Premium change before admin support approval.",
+  "rca_of_the_issue": "The direct webhook auto-credit bug was fixed, but an old checkout-admin approval endpoint remains active. Because AdminPage still loads /admin/payments and posts approvals to /admin/payments/{tx_id}, an admin can credit a checkout transaction without using the new receipt verification approval route or custom add-coins route, violating the stated allowed credit paths. No MOCKED APIs were used."
+}

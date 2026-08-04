@@ -1000,15 +1000,14 @@ async def coins_status(tx_id: str, user: dict = Depends(get_current_user)):
 
 @api.post("/coins/webhook")
 async def coins_webhook(payload: dict, request: Request):
-    """Real-bank webhook stub. Signed by SBP provider in prod; here we just require a shared secret.
-    Accepts {tx_id, amount_rub, status, bank} and applies rules:
-      - amount must equal package price EXACTLY, else mark failed
-      - status must be 'success', else mark failed
-    Only crediting happens here; no client can call this without the secret."""
+    """SBP webhook. Under the manual-approval flow, this endpoint NO LONGER
+    credits coins directly — it only records the incoming payment claim as a
+    pending 'receipt submission' that the admin must approve just like a
+    user-uploaded screenshot. To re-enable direct crediting (real Sberbank
+    signed webhook in production), set AUTO_CREDIT_ENABLED=1."""
     secret = request.headers.get('X-Webhook-Secret')
     expected = os.environ.get('SBP_WEBHOOK_SECRET')
     if not expected:
-        # Fail closed: no fallback to JWT_SECRET — misconfiguration must not silently accept
         raise HTTPException(status_code=503, detail="Webhook secret not configured")
     if secret != expected:
         raise HTTPException(status_code=401, detail="Invalid webhook secret")
@@ -1018,6 +1017,24 @@ async def coins_webhook(payload: dict, request: Request):
     if payload.get('status') != 'success' or payload.get('amount_rub') != tx['amount_rub']:
         await db.transactions.update_one({"tx_id": tx_id, "credited": False}, {"$set": {"status": "failed", "fail_reason": "Amount mismatch or bank error"}})
         return {"ok": False}
+    if not AUTO_CREDIT_ENABLED:
+        # Manual-approval flow: record as a pending receipt submission for the admin
+        # instead of crediting the user directly.
+        await db.transactions.update_one({"tx_id": tx_id}, {"$set": {"status": "awaiting_admin", "bank": payload.get('bank') or tx.get('bank')}})
+        sub_id = f"sub_{uuid.uuid4().hex[:12]}"
+        await db.receipt_submissions.insert_one({
+            "submission_id": sub_id,
+            "user_id": tx['user_id'],
+            "user_email": tx.get('user_email'),
+            "user_name": tx.get('user_name'),
+            "package_id": tx.get('package_id'),
+            "receipt_data_url": None,
+            "message": f"[SBP webhook] tx {tx_id} · {payload.get('bank') or 'bank'} · {tx['amount_rub']} ₽",
+            "status": "pending",
+            "created_at": iso(now_utc()),
+        })
+        return {"ok": True, "queued_for_admin": True}
+    # Legacy direct-credit path (only when explicitly enabled)
     res = await db.transactions.find_one_and_update(
         {"tx_id": tx_id, "credited": False, "status": "pending"},
         {"$set": {"status": "success", "credited": True, "bank": payload.get('bank') or "Sberbank", "confirmed_at": iso(now_utc())}},

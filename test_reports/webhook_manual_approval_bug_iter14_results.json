@@ -1,0 +1,168 @@
+{
+  "summary": {
+    "passed": 28,
+    "total": 29,
+    "success_rate": 96.55
+  },
+  "context": {
+    "base_url": "https://lovreski-dating.preview.emergentagent.com",
+    "auto_credit_enabled_env": "<unset/default false>",
+    "user_email": "whk_1785849025_042fcd@lovreski.ru",
+    "user_id": "user_5d95d1ea17f7",
+    "initial_coins": 5,
+    "initial_premium": false,
+    "valid_webhook_tx_id": "tx_cf4b91f531bb",
+    "webhook_submission_id": "sub_8d481d9675fc",
+    "mismatch_tx_id": "tx_e3b0559aae5c",
+    "pending_status_tx_id": "tx_174fc8708552",
+    "manual_receipt_submission_id": "sub_2081476cd8c2",
+    "legacy_admin_payments_tx_id": "tx_6c26661ed1c0"
+  },
+  "results": [
+    {
+      "name": "SBP_WEBHOOK_SECRET present",
+      "status": "PASS",
+      "detail": "using configured secret (not printed)"
+    },
+    {
+      "name": "admin login succeeds",
+      "status": "PASS",
+      "detail": "200"
+    },
+    {
+      "name": "fresh webhook test user registered",
+      "status": "PASS",
+      "detail": "200"
+    },
+    {
+      "name": "initial user balance is non-premium",
+      "status": "PASS",
+      "detail": "{'coins': 5, 'is_premium': False}"
+    },
+    {
+      "name": "checkout for valid webhook test creates pending tx",
+      "status": "PASS",
+      "detail": "{'tx_id': 'tx_cf4b91f531bb', 'amount_rub': 500, 'coins': 100, 'sbp_link': 'https://qr.nspk.ru/pay?type=01&bank=100000000111&sum=50000&cur=RUB&crc=lovreski&ref=lovreski_tx_cf4b91f531bb&purpose=Lovreski%20coins', 'qr_png': 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAjoAAAI6AQAAAAAGM99tAAAFi0lEQVR4nO2dW2rkSBBFT4wE/SmBF+ClyDvoJZlZUu9AuZRagCH1aVAR85EPpcqGHnCZyZ66+SGqSqqDBEEQeeMhc+6ywl/34YBAAgkkkEACCSSQQAL9X0CW1whsZulUmMtFwczMZrAXrkaYwV628qeX77gjgQT64nJ3dxZ3d4+D+zrlT+nsypDOssT6jwgscfDmv2t/jyaQQMCWna+9RjB73rMBM+0QbAQmd5Y4ePoNIHv577kjgQT6yho/+zH56/DTYbkYHn6+mQcDDzPGsoKzfdMdCSTQPdYHyw7z28iykowaAIMRW+KMLX4dPczxowre36MJ9NCgYtmTAxuw/BpxuI4wOQbDDtvTTnh2YHtylsuYwpHWvvt7NIEEatQPYHB72X44y2WEJYK9APZ6GfOnfLgmaeSb7kgggb60ks9unG+YhxREe3h+t3x2u1oOrKd3c3g3P3vsHh9NoIcGFdUvAjC4r0A63J6Y9vwb005zwqX6CdQfiGyYVbam+QRZ3q6XJKM+fZVlC9QjKBtmTs0Un+2+pyRNceHVZ0fIF6evgzI1AnUJqjnIPfnnbKfT6eDFhVONP+cllYMUqFNQ3kGG+Q1bLgZhjhgYzpYPLL/mpAQ6QFFDrqMHG/Z735FAAt1ltbUfqWQESv58aHx2DkSKby+BiOJsgfoEtRLIEodUGZLikvbsycZXanjudUPZ36MJ9NCg4nKnnbQpPG8U22A7lr1kctcRcpWULFug/kCnaIQSb+Q6VWDxavJJu945qv6S8SsaEahD0CkaSVHznjM167TzaZydjX/wZsmyBeoRlAPrbQRSBibnbHK5tpkR5sEJ9iNXlYTnHcJ8VU+NQF2CapxdD9CI1c1GMVl7uaRcJ21EoD5BtRSkSiBpj5ijkbymvMnM9lwTlspBCtQrqGbXS2Bdd5B5Q3nsEYEjV5m+qm5EoF5BKQdpuctgxJiip6aDJT7tRsk5OtPbCNuT23IZd6sEW9a73pFAAt1lFZ/9scJvnaoEUsKUQ/LOF0/K1AjUNSjNFtnGLGAfnTR5ykhevjK4vV7GcvFFvesC9Q0qOchkscFG2r0kVdzjaknwS+Ma5qKSdPxoAj0kqMlBpu95okjO3uQCKWoPQqymXC9WNCJQh6BWz84SSFHzGj9eSv+aeqmqdsuyBeoRdKtn50IRquAXocxG41RQEoHaWibLFqgz0Klpt5Gy"
+    },
+    {
+      "name": "POST /coins/webhook with invalid secret returns 401",
+      "status": "PASS",
+      "detail": "401 {'detail': 'Invalid webhook secret'}"
+    },
+    {
+      "name": "valid success webhook returns ok true + queued_for_admin true",
+      "status": "PASS",
+      "detail": "200 {'ok': True, 'queued_for_admin': True}"
+    },
+    {
+      "name": "valid success webhook does NOT increment coins or activate Premium",
+      "status": "PASS",
+      "detail": "{'coins': 5, 'is_premium': False}"
+    },
+    {
+      "name": "webhook-updated tx is awaiting_admin and not credited in status response",
+      "status": "PASS",
+      "detail": "{'transaction': {'tx_id': 'tx_cf4b91f531bb', 'user_id': 'user_5d95d1ea17f7', 'user_email': 'whk_1785849025_042fcd@lovreski.ru', 'user_name': 'Webhook Bug Tester', 'package_id': 'p100', 'coins': 100, 'amount_rub': 500, 'payment_method': 'SBP', 'bank': 'sberbank', 'status': 'awaiting_admin', 'credited': False, 'created_at': '2026-08-04T13:10:25.802529+00:00'}, 'coins': 5, 'is_premium': False}"
+    },
+    {
+      "name": "webhook creates a pending receipt_submission visible in admin pending",
+      "status": "PASS",
+      "detail": "{'submission_id': 'sub_8d481d9675fc', 'user_id': 'user_5d95d1ea17f7', 'user_email': 'whk_1785849025_042fcd@lovreski.ru', 'user_name': 'Webhook Bug Tester', 'package_id': 'p100', 'receipt_data_url': None, 'message': '[SBP webhook] tx tx_cf4b91f531bb · sberbank · 500 ₽', 'status': 'pending', 'created_at': '2026-08-04T13:10:26.040210+00:00'}"
+    },
+    {
+      "name": "checkout for mismatch test creates pending tx",
+      "status": "PASS",
+      "detail": "{'tx_id': 'tx_e3b0559aae5c', 'amount_rub': 900, 'coins': 200, 'sbp_link': 'https://qr.nspk.ru/pay?type=01&bank=100000000111&sum=90000&cur=RUB&crc=lovreski&ref=lovreski_tx_e3b0559aae5c&purpose=Lovreski%20coins', 'qr_png': 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAjoAAAI6AQAAAAAGM99tAAAFoUlEQVR4nO2dS4rjSBCGvxgJvJTBB/BR5Bv0kYq+mXQUH2BAWhokYhb5lKthZiibyZ76cyH0/EhBEETGK815yZj/eA0HBBJIIIEEEkgggQQS6P8Csjh6YDULj+Zzemk2M7Mz2I3dmM9gtzV9dHvHjAQS6IvD3d0Z3d196dynIZ4xLuATXXjKuOQvFmBcOq++ndr7NYEEAtaofO229tht2PCf1w0YtqCzw9m4dB7OAKKWf8+MBBLoK6P/dGdYiJ7A9eSMd8PnHwvM1jnzGWOcwFnfNCOBBHoLaFx2s9vaA8MjWddrHx4w+ob/PHefveC/wa8J9J1ASWcPDlkNO+tuwMkNug3Ws8Gw9bBenPHeb/G9N8xIIIFeCMreD1hPbjfiCpJxgXh5P7ndgHTYg2vkTTMSSKCvDT8OGDw5SHxLLpAFgr8kfrE9fybfiEBNgpJ3usf9bmYf9x6gc2A3s3PnzNeHubt7sr2zB/wdMxJIoC+OqHKz25phS17sBZL2Tq8E19/hUjpboBZBtWRD5z4d7gVDZKJzn4aN2i4Jl50iNQI1CSJZ1xtRdj3GZ4K6zjo7xSCj8Me4pGKQAjUKytH1OsCYVDhEKV7Icu/R1Tf6VsXeJdkCNQbKK8C0RmQ9OQwLBFf28GefvN09wN6HkCTrxW303fzFMxJIoFeMINk+GzDeT8EZ4rD34WxcdmC9bIxBhDuH1XCGLURqbJxeOiOBBHrJSK6PLRkYZWVYUv9CJmBaS+ZMQBhkZwvUJqg2nePllvNUCdJebO+0vnRPIZxOkRqBmgRVK0ifhqy4SUvGykGylPBjVOuKQQrULKgKk4frYIPQ1dGbXIOQQjjJTJlK4Ka9XxPoW4NSVKaIaC4wGA9aOdggIauE7A50xSAFahNEEdtoYJQUKN/SSzmOM0Hye5e1pCRboPZAlW+kip9PUEXSo1aG7D5Jl8obEahVUPBnWzz0hFKDcblsBt1m8WGO2awXt/Heb5YJ8mcL1C4oOUjcQ1FY1MUPK8ZJKIucrw/zn9eHxcTAt81IIIFeAppDq5EeGNztxh6UcuoyEodPdB6zt9cexrvyswVqE5TrIBdSt4W9D1HzGEm/5LJIwlPm69bHdg3nXAzZ3q8J9K1BtSECVHl94SwYIuQahCU5/OLL8o0I1CboEKnJzuogz8NWH4qPexpyVylX3ohAbYIqf3atgXOoMWSQZMdg"
+    },
+    {
+      "name": "amount mismatch webhook returns ok false",
+      "status": "PASS",
+      "detail": "200 {'ok': False}"
+    },
+    {
+      "name": "amount mismatch marks tx.status failed",
+      "status": "PASS",
+      "detail": "{'transaction': {'tx_id': 'tx_e3b0559aae5c', 'user_id': 'user_5d95d1ea17f7', 'user_email': 'whk_1785849025_042fcd@lovreski.ru', 'user_name': 'Webhook Bug Tester', 'package_id': 'p200', 'coins': 200, 'amount_rub': 900, 'payment_method': 'SBP', 'bank': None, 'status': 'failed', 'credited': False, 'created_at': '2026-08-04T13:10:26.578607+00:00', 'fail_reason': 'Amount mismatch or bank error'}, 'coins': 5, 'is_premium': False}"
+    },
+    {
+      "name": "amount mismatch does not credit coins/premium",
+      "status": "PASS",
+      "detail": "{'coins': 5, 'is_premium': False}"
+    },
+    {
+      "name": "checkout for status-pending regression creates tx",
+      "status": "PASS",
+      "detail": "{'tx_id': 'tx_174fc8708552', 'amount_rub': 1200, 'coins': 300, 'sbp_link': 'https://qr.nspk.ru/pay?type=01&bank=100000000111&sum=120000&cur=RUB&crc=lovreski&ref=lovreski_tx_174fc8708552&purpose=Lovreski%20coins', 'qr_png': 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAjoAAAI6AQAAAAAGM99tAAAFSUlEQVR4nO2dTYrkOBCFX4wNuXTCHKCOYt9gjjT0zeyj1AEa5GWBTMwipFAoc9HNVCUjpp4Wpuy0P2yICp7iRxLFl4zjj6/hAAQRRBBBBBFEEEEEEfR/AUkZM2Q7Z4jcYQccdwCHiAD2wyX2xHbWh7ZXvBFBBH1yqKoqVlVVTZPqjkl1BwAs5RrWVK+taSpTzjVNGp7dx/s0gggCcLrzXT7EDHh9n81n64+73798CFbNdiIi88veiCCCPjPmh3Mply4BcIli+WkHrArguCfz2YrzRW9EEEFfMR4tG+t+zQIAerzlWdb3GQLcFDj/zACuWYHpOQo+3qcRRBBMU+8AcMgM3RdVAJPiuE+qmgCRtwzgvGnTIKpVl4z8aQR9S1CZQZZRZou/d6gPcQZJ0IAg875BXBxvGYrzEj3uk8npoqmXDBz3CTaNxNIrkvE+jaBvDQpRP3PD5ouXDABFiNT7MoBFNYT+7JQ+m6DxQGbZwWxNkrTTauN2twf8Stx7yQVAyyZoLFC1bJfOlpVZstku1gSUxA08NZOqM18TaNkEDQnqLFuLz7bYyFpTkiVysmRUF14HLZugUUGP2fX6F6rixtTZuB/834A6m6ARQTXqVwVzmDzuHuM215ymep+dllklfTZB44KKQz5FYF55ybDivs2EiKpsKIpbNkxqlYAhGznqpxH0TUGuRjLaoWpvoIiOJXtxXw6TTOpsgoYFPeUgAdS0ItyU7eDiRItRt1JWWjZBg4GqywWif/YfzIXvVaGEoImlcBjPJmhQkGdq1AMfNYBtuiTFrEydQcZ4CS2boBFB1eUufnANYr8mAJ5nr6E/oGlvRv0IGhEUdHaoEWm+uIgO9ewNUIxao2qhZRM0GMh1dqkWCRGR5pBDGbZHRILx07IJGg/k+RkNYZEYBEz1xmDordaPOpugQUFPsZHHgJ/FQaau6m/JNZBSH6NlEzQkSP5OAHCWZnW7JnLTmnS8pOXZYeZ9zvWvV7wRQQR9coSAX/PZpTaq+ewYCWy6JCQs6bMJGgsULbsMr8qu1U8oUb9an903ItCyCRoY5KZcx2QlUCJvqqr6IcCSw+pnJXtzciUdgsYEdd1iQF3fzNMwHjQpKzV0k8dQ0U2fTdBYIM9BlsbHEhHpQn8lVJKA0OG71mAh1QhBI4JCPFt3PJSRwBM3T3PJchNr/QgaFNT3QWbEjshFux6xRU"
+    },
+    {
+      "name": "/coins/status remains pending after auto-confirm delay when AUTO_CREDIT_ENABLED is off",
+      "status": "PASS",
+      "detail": "{'transaction': {'tx_id': 'tx_174fc8708552', 'user_id': 'user_5d95d1ea17f7', 'user_email': 'whk_1785849025_042fcd@lovreski.ru', 'user_name': 'Webhook Bug Tester', 'package_id': 'p300', 'coins': 300, 'amount_rub': 1200, 'payment_method': 'SBP', 'bank': None, 'status': 'pending', 'credited': False, 'created_at': '2026-08-04T13:10:27.105775+00:00'}, 'coins': 5, 'is_premium': False}"
+    },
+    {
+      "name": "admin can approve webhook-created pending submission",
+      "status": "PASS",
+      "detail": "200 {'ok': True, 'coins_added': 100}"
+    },
+    {
+      "name": "admin support approval increments coins and activates Premium",
+      "status": "PASS",
+      "detail": "{'expected_coins': 105, 'actual': {'coins': 105, 'is_premium': True}}"
+    },
+    {
+      "name": "second approve returns 404 and does not double-credit",
+      "status": "PASS",
+      "detail": "{'status': 404, 'balance': {'coins': 105, 'is_premium': True}}"
+    },
+    {
+      "name": "/support/receipt without file returns 422",
+      "status": "PASS",
+      "detail": "422 {'detail': [{'type': 'missing', 'loc': ['body', 'receipt_data_url'], 'msg': 'Field required', 'input': {'message': 'no file'}, 'url': 'https://errors.pydantic.dev/2.13/v/missing'}]}"
+    },
+    {
+      "name": "/support/receipt valid upload returns pending",
+      "status": "PASS",
+      "detail": "200 {'submission_id': 'sub_2081476cd8c2', 'status': 'pending'}"
+    },
+    {
+      "name": "manual receipt is visible in admin pending",
+      "status": "PASS",
+      "detail": "{'submission_id': 'sub_2081476cd8c2', 'user_id': 'user_5d95d1ea17f7', 'user_email': 'whk_1785849025_042fcd@lovreski.ru', 'user_name': 'Webhook Bug Tester', 'package_id': 'p100', 'receipt_data_url': 'data:image/png;base64,iVBORw0KGgo=', 'message': 'manual reject regression receipt', 'status': 'pending', 'created_at': '2026-08-04T13:10:37.476487+00:00'}"
+    },
+    {
+      "name": "admin reject receipt returns ok",
+      "status": "PASS",
+      "detail": "200 {'ok': True}"
+    },
+    {
+      "name": "second reject returns 404",
+      "status": "PASS",
+      "detail": "404 {'detail': 'Submission not found or already processed'}"
+    },
+    {
+      "name": "admin add-coins rejects zero",
+      "status": "PASS",
+      "detail": "422 {'detail': [{'type': 'greater_than', 'loc': ['body', 'coins'], 'msg': 'Input should be greater than 0', 'input': 0, 'ctx': {'gt': 0}, 'url': 'https://errors.pydantic.dev/2.13/v/greater_than'}]}"
+    },
+    {
+      "name": "admin add-coins rejects negative",
+      "status": "PASS",
+      "detail": "422 {'detail': [{'type': 'greater_than', 'loc': ['body', 'coins'], 'msg': 'Input should be greater than 0', 'input': -5, 'ctx': {'gt': 0}, 'url': 'https://errors.pydantic.dev/2.13/v/greater_than'}]}"
+    },
+    {
+      "name": "admin add-coins valid body increments coins and keeps Premium active",
+      "status": "PASS",
+      "detail": "{'response': {'ok': True, 'new_balance': 112}, 'before': {'coins': 105, 'is_premium': True}, 'after': {'coins': 112, 'is_premium': True}}"
+    },
+    {
+      "name": "checkout for forbidden legacy admin payments path creates tx",
+      "status": "PASS",
+      "detail": "{'tx_id': 'tx_6c26661ed1c0', 'amount_rub': 500, 'coins': 100, 'sbp_link': 'https://qr.nspk.ru/pay?type=01&bank=100000000111&sum=50000&cur=RUB&crc=lovreski&ref=lovreski_tx_6c26661ed1c0&purpose=Lovreski%20coins', 'qr_png': 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAjoAAAI6AQAAAAAGM99tAAAFhklEQVR4nO2dS4rjSBCGvxgJailBHcBHkW/QRyr6SH0D6Sg+QIG0NEjELPKp6oIZKJvJnvpzYWwp/SFBEMQ7zXnIWv56DAcEEkgggQQSSCCBBBLo/wKyuHpgMwu3ljFtWszMbAS7chjLCHbd0p+uz3gigQT64nJ3dyZ3d18793mI38LdmS7cZVrzP1ZgWjuv/ju392oCCQRsUfna2wpmlz0KMMMedDYM7kxr5+EaQNTyz3kigQT6yuo/uxj09fLDYboZvvxYYTHwZcSYZnC2Jz2RQAI9ZEWLYoVKIUfjpOzqooUy+c7JYOlkjQjUJOijnQ3Djs/DngQ9CDXhWjDFqw/Z2QK1DcrRD6bbi9vb7SXmJqcV7EoXrtkVSB9HCI086YkEEuhLK9jZH1Lsvlx2nO2weHc7LBrWw90c7uYf/9Teqwn0rUG1nQ2d+8xnsb7OozXinkzxfMNljQjUHogomFmUGdyTnU3yFvOW4l/mn5JsgVoERcHMkQ6foZLdoKnLN1+h8jRjvESSLVBzoBwbyRGRbG9k7f2ZwRJtFcVGBGoUFD3IZXzHpluPL+MKbD2+XA1ne3Gbfo34ctl7B0jRkKP3xbr90U8kkEAPWXVMuniGIX9e+43REDlnaiaXnS1Qm6DsQUJJRPo8uJe75VrZnL5nh7K9VxPoW4NqEc3px+IoBnmOSjqGA6O6XiFWSUmyBWoPlEPURRfvuU4VmIrIh9h1dC1jFeuqeLZAbYJOFVHBat6J6Zoh2dRFZ3veUoRaki1Qs6DgPLL1QMjAeAhvh3Ltt5sZy9g5i724XbcXZ7nssIyHemoEahJUeZBRP0MVrC6rjnEDaZ9iIwK1CTrb2Z0nHzHrcSC5liWGUspblYMUqE1QqvXbDGd4N5/8sFjFt/U42+sOHBgYTH70oRJwuR6WSv8e+kQCCfSQVXR2+B008JB7HsPqvOpGqG4MimcL1DLI/dankpE0lcF/Xu6W+mcAgt94N/95uVvc/LQnEkigL67kQZ50cRXKTjdSwd+paTLuk84WqDlQ6l0fVlL047132HtfxtVhe626a4CjZ7nsfRzXMObWmvZeTaBvDaoqosLvUjcyrWlqDuQehDUF/PJm6WyBWgQlaySnGj9G/fJHdh6j3OdAtyRboAZBdWxkSoWp8UZ2HqMUnwtKVkDzRgRqFZRnRB19jE5vI75cux04DAbH4Oid7dXD"
+    },
+    {
+      "name": "FORBIDDEN: /admin/payments/{tx_id} approve must not be a coin-credit path",
+      "status": "FAIL",
+      "detail": "{'response_status': 200, 'response': {'ok': True}, 'before': {'coins': 112, 'is_premium': True}, 'after': {'coins': 212, 'is_premium': True}}"
+    }
+  ]
+}
