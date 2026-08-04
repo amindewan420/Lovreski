@@ -1,10 +1,10 @@
 {
   "base_url": "https://lovreski-dating.preview.emergentagent.com",
-  "email": "leg_1785849302@lovreski.ru",
+  "email": "leg_1785850693@lovreski.ru",
   "steps": [
     {
       "name": "fresh_user",
-      "user_id": "user_8e8e33d0e201",
+      "user_id": "user_5d94dc21db1b",
       "balance": {
         "coins": 5,
         "is_premium": false
@@ -12,7 +12,7 @@
     },
     {
       "name": "legacy_admin_payment_approve_neutralized",
-      "tx_id": "tx_4f2d5621e7aa",
+      "tx_id": "tx_98a553f4dd95",
       "status_after": "awaiting_admin",
       "before": {
         "coins": 5,
@@ -29,7 +29,7 @@
     },
     {
       "name": "legacy_admin_payment_reject_still_rejects",
-      "tx_id": "tx_5f168585ce89",
+      "tx_id": "tx_b027bff2ca20",
       "status_after": "rejected",
       "before": {
         "coins": 5,
@@ -45,13 +45,13 @@
     },
     {
       "name": "checkout_status_remains_pending_no_credit",
-      "tx_id": "tx_3020856ee12d",
+      "tx_id": "tx_bdfe764c61cf",
       "status_response": {
         "transaction": {
-          "tx_id": "tx_3020856ee12d",
-          "user_id": "user_8e8e33d0e201",
-          "user_email": "leg_1785849302@lovreski.ru",
-          "user_name": "Legacy QA 1785849302",
+          "tx_id": "tx_bdfe764c61cf",
+          "user_id": "user_5d94dc21db1b",
+          "user_email": "leg_1785850693@lovreski.ru",
+          "user_name": "Legacy QA 1785850693",
           "package_id": "p100",
           "coins": 100,
           "amount_rub": 500,
@@ -59,7 +59,7 @@
           "bank": "sberbank",
           "status": "pending",
           "credited": false,
-          "created_at": "2026-08-04T13:15:04.676417+00:00"
+          "created_at": "2026-08-04T13:38:15.667260+00:00"
         },
         "coins": 5,
         "is_premium": false
@@ -75,8 +75,8 @@
     },
     {
       "name": "webhook_queues_no_credit",
-      "tx_id": "tx_a546deb11285",
-      "submission_id": "sub_8db6d0e7e839",
+      "tx_id": "tx_cbf17a851d69",
+      "submission_id": "sub_11fe7f9c60aa",
       "status_after": "awaiting_admin",
       "before": {
         "coins": 5,
@@ -93,7 +93,7 @@
     },
     {
       "name": "support_approve_allowed_credit_path",
-      "submission_id": "sub_8db6d0e7e839",
+      "submission_id": "sub_11fe7f9c60aa",
       "before": {
         "coins": 5,
         "is_premium": false
@@ -124,18 +124,18 @@
     },
     {
       "name": "ui_pending_seed",
-      "submission_id": "sub_5961c6eda58b",
+      "submission_id": "sub_18dde4246b48",
       "pending_count": {
-        "count": 5
+        "count": 7
       }
     }
   ],
   "ok": true,
   "admin_email": "admin@lovreski.ru",
-  "test_user_id": "user_8e8e33d0e201",
+  "test_user_id": "user_5d94dc21db1b",
   "final_balance": {
     "coins": 53,
     "is_premium": true
   },
-  "ui_seed_submission_id": "sub_5961c6eda58b"
+  "ui_seed_submission_id": "sub_18dde4246b48"
 }

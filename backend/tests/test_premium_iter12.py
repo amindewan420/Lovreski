@@ -60,7 +60,7 @@ class TestPackagesResponse:
 
     def test_sbp_phone_recipient_and_banks(self):
         data = requests.get(f"{BASE_URL}/api/coins/packages", timeout=15).json()
-        assert data.get("sbp_phone") == "+79783069381", f"got {data.get('sbp_phone')}"
+        assert data.get("sbp_phone") == "+79780369381", f"got {data.get('sbp_phone')}"
         assert data.get("recipient_name") == "Al Amin Dewan"
         banks = data.get("banks") or []
         ids = {b["id"] for b in banks}

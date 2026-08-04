@@ -1,0 +1,38 @@
+{
+  "ok": true,
+  "base_url": "https://lovreski-dating.preview.emergentagent.com",
+  "checks": [
+    {
+      "name": "backend_env",
+      "SBP_PHONE": "+79780369381"
+    },
+    {
+      "name": "coins_packages",
+      "sbp_phone": "+79780369381"
+    },
+    {
+      "name": "admin_login",
+      "is_admin": true
+    },
+    {
+      "name": "admin_settings_masked",
+      "sbp_phone_masked": "+7 (***) ***-**-81",
+      "last4": "9381"
+    },
+    {
+      "name": "admin_settings_reveal",
+      "sbp_phone": "+79780369381"
+    },
+    {
+      "name": "frontend_static_html_and_js_no_old_phone",
+      "script_count": 1,
+      "scripts": [
+        {
+          "path": "/static/js/bundle.js",
+          "contains_correct": false,
+          "bytes": 5367211
+        }
+      ]
+    }
+  ]
+}
