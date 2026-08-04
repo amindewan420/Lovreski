@@ -2,6 +2,7 @@ import "@/App.css";
 import { BrowserRouter, Routes, Route, Navigate, useLocation } from "react-router-dom";
 import { AuthProvider, useAuth } from "@/context/AuthContext";
 import { ThemeProvider } from "@/context/ThemeContext";
+import { I18nProvider } from "@/lib/i18n";
 import { Toaster } from "sonner";
 import Landing from "@/pages/Landing";
 import AuthCallback from "@/pages/AuthCallback";
@@ -53,11 +54,13 @@ function App() {
   return (
     <ThemeProvider>
       <AuthProvider>
-        <BrowserRouter>
-          <AppRouter />
-          <AdminNotifier />
-          <Toaster position="top-center" richColors />
-        </BrowserRouter>
+        <I18nProvider>
+          <BrowserRouter>
+            <AppRouter />
+            <AdminNotifier />
+            <Toaster position="top-center" richColors />
+          </BrowserRouter>
+        </I18nProvider>
       </AuthProvider>
     </ThemeProvider>
   );

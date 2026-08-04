@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="utf-8"?><testsuites name="pytest tests"><testsuite name="pytest" errors="0" failures="2" skipped="0" tests="18" time="43.230" timestamp="2026-08-04T20:57:30.229820+00:00" hostname="agent-env-5fe55e4d-341d-4857-b470-78293f60954c"><testcase classname="tests.test_chat_iter21.TestI18n" name="test_base_ru" time="0.394" /><testcase classname="tests.test_chat_iter21.TestSendCostsAndBlock" name="test_free_then_gift_costs_by_key" time="7.251" /><testcase classname="tests.test_chat_iter21.TestI18n" name="test_i18n_ru_alias" time="0.295" /><testcase classname="tests.test_chat_iter21.TestI18n" name="test_i18n_en_translates_and_caches" time="15.228" /><testcase classname="tests.test_chat_iter21.TestSendCostsAndBlock" name="test_third_text_deducts_one" time="1.398" /><testcase classname="tests.test_chat_iter21.TestSendCostsAndBlock" name="test_emoji_after_free_costs_2" time="1.318" /><testcase classname="tests.test_chat_iter21.TestSendCostsAndBlock" name="test_gift_yacht_30_needs_topup" time="1.280" /><testcase classname="tests.test_chat_iter21.TestSendCostsAndBlock" name="test_invalid_gift_key_400" time="0.998" /><testcase classname="tests.test_chat_iter21.TestSendCostsAndBlock" name="test_file_kind_5_coins_after_free" time="1.287" /><testcase classname="tests.test_chat_iter21.TestGifts" name="test_gifts_18_with_required_fields" time="0.177" /><testcase classname="tests.test_chat_iter21.TestGifts" name="test_gifts_specific_costs" time="0.164" /><testcase classname="tests.test_chat_iter21.TestChatMedia" name="test_upload_file_kind" time="0.558" /><testcase classname="tests.test_chat_iter21.TestChatMedia" name="test_upload_voice_video_non_image" time="0.333" /><testcase classname="tests.test_chat_iter21.TestChatStatus" name="test_status_shape" time="0.552" /><testcase classname="tests.test_chat_iter21.TestProfileLanguage" name="test_set_language_pref" time="0.720"><failure message="assert 404 == 200&#10; +  where 404 = &lt;Response [404]&gt;.status_code">backend/tests/test_chat_iter21.py:263: in test_set_language_pref
+    assert r2.status_code == 200
+E   assert 404 == 200
+E    +  where 404 = &lt;Response [404]&gt;.status_code</failure></testcase><testcase classname="tests.test_chat_iter21.TestI18n" name="test_i18n_fr_and_de" time="17.843" /><testcase classname="tests.test_chat_iter21.TestWebSocket" name="test_ws_ping_pong_and_broadcast" time="4.433"><failure message="AssertionError: did not receive broadcast message on WS&#10;assert False">backend/tests/test_chat_iter21.py:297: in test_ws_ping_pong_and_broadcast
+    asyncio.run(run())
+/usr/local/lib/python3.11/asyncio/runners.py:190: in run
+    return runner.run(main)
+           ^^^^^^^^^^^^^^^^
+/usr/local/lib/python3.11/asyncio/runners.py:118: in run
+    return self._loop.run_until_complete(task)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+/usr/local/lib/python3.11/asyncio/base_events.py:654: in run_until_complete
+    return future.result()
+           ^^^^^^^^^^^^^^^
+backend/tests/test_chat_iter21.py:295: in run
+    assert got_msg, "did not receive broadcast message on WS"
+E   AssertionError: did not receive broadcast message on WS
+E   assert False</failure></testcase><testcase classname="tests.test_chat_iter21.TestI18n" name="test_i18n_invalid_lang_no_500" time="8.767" /></testsuite></testsuites>

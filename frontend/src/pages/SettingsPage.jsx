@@ -5,6 +5,8 @@ import { MobileShell } from "@/components/lovreski/Shell";
 import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
 import { ChevronRight, User, Search, Crown, Bell, Languages, FileText, Download, Shield, LogOut } from "lucide-react";
+import { useI18n, getLangMeta } from "@/lib/i18n";
+import LanguageSheet from "@/components/lovreski/LanguageSheet";
 
 const LEGAL = {
   terms: {
@@ -26,9 +28,12 @@ const LEGAL_ORDER = ["terms", "payment", "security", "refund"];
 export default function SettingsPage() {
   const { user, refresh, logout } = useAuth();
   const nav = useNavigate();
+  const { t, lang, setLang } = useI18n();
+  const langMeta = getLangMeta(lang);
   const [section, setSection] = useState(null);
   const [form, setForm] = useState({});
   const [installed, setInstalled] = useState(false);
+  const [showLang, setShowLang] = useState(false);
 
   useEffect(() => { if (user) setForm({ ...user }); }, [user]);
   useEffect(() => {
@@ -60,25 +65,25 @@ export default function SettingsPage() {
   return (
     <MobileShell>
       <header className="sticky top-0 z-40 bg-background/85 backdrop-blur-xl px-4 pt-4 pb-3 border-b border-border/50 flex items-center gap-2">
-        <button onClick={() => nav(-1)} className="text-sm text-muted-foreground">← Назад</button>
-        <h1 className="font-display font-black text-xl">Настройки</h1>
+        <button onClick={() => nav(-1)} className="text-sm text-muted-foreground">{t("settings.back")}</button>
+        <h1 className="font-display font-black text-xl">{t("settings.title")}</h1>
       </header>
 
       <div className="p-4 space-y-6">
-        <Section title="Личная информация" icon={User}>
-          <Row label="Имя"><input value={form.name || ""} onChange={(e) => setForm({ ...form, name: e.target.value })} onBlur={() => save({ name: form.name })} className="bg-transparent text-right outline-none" /></Row>
-          <Row label="Пол">
+        <Section title={t("settings.section.personal")} icon={User}>
+          <Row label={t("settings.name")}><input value={form.name || ""} onChange={(e) => setForm({ ...form, name: e.target.value })} onBlur={() => save({ name: form.name })} className="bg-transparent text-right outline-none" /></Row>
+          <Row label={t("settings.gender")}>
             <select value={form.gender || "female"} onChange={(e) => { setForm({ ...form, gender: e.target.value }); save({ gender: e.target.value }); }} className="bg-transparent text-right outline-none">
-              <option value="female">Женский</option><option value="male">Мужской</option>
+              <option value="female">{t("settings.female")}</option><option value="male">{t("settings.male")}</option>
             </select>
           </Row>
-          <Row label="Дата рождения"><input type="date" value={form.dob || ""} onChange={(e) => { setForm({ ...form, dob: e.target.value }); save({ dob: e.target.value }); }} className="bg-transparent text-right outline-none" /></Row>
+          <Row label={t("settings.dob")}><input type="date" value={form.dob || ""} onChange={(e) => { setForm({ ...form, dob: e.target.value }); save({ dob: e.target.value }); }} className="bg-transparent text-right outline-none" /></Row>
         </Section>
 
-        <Section title="Поиск" icon={Search}>
-          <Row label="Показывать">
+        <Section title={t("settings.section.search")} icon={Search}>
+          <Row label={t("settings.show_me")}>
             <select data-testid="show-me" value={form.show_me || "both"} onChange={(e) => { setForm({ ...form, show_me: e.target.value }); save({ show_me: e.target.value }); }} className="bg-transparent text-right outline-none">
-              <option value="female">Девушек</option><option value="male">Парней</option><option value="both">Всех</option>
+              <option value="female">{t("settings.show_female")}</option><option value="male">{t("settings.show_male")}</option><option value="both">{t("settings.show_both")}</option>
             </select>
           </Row>
           <Row label={`Возраст: ${form.age_min || 18}–${form.age_max || 60}`}>
@@ -87,9 +92,9 @@ export default function SettingsPage() {
               <input type="number" min={18} max={80} value={form.age_max || 60} onChange={(e) => setForm({ ...form, age_max: +e.target.value })} onBlur={() => save({ age_max: form.age_max })} className="w-14 bg-muted rounded px-1 text-right" />
             </div>
           </Row>
-          <Row label="Расстояние">
+          <Row label={t("settings.distance")}>
             <select data-testid="distance-mode" value={form.distance_mode || "unlimited"} onChange={(e) => { setForm({ ...form, distance_mode: e.target.value }); save({ distance_mode: e.target.value }); }} className="bg-transparent text-right outline-none">
-              <option value="limited">📍 Рядом</option><option value="unlimited">🌍 Весь мир</option>
+              <option value="limited">{t("settings.distance_near")}</option><option value="unlimited">{t("settings.distance_world")}</option>
             </select>
           </Row>
           {form.distance_mode === "limited" && (
@@ -112,27 +117,35 @@ export default function SettingsPage() {
           )}
         </Section>
 
-        <Section title="Premium & Монеты" icon={Crown}>
+        <Section title={t("settings.section.premium")} icon={Crown}>
           <button data-testid="link-premium" onClick={() => nav("/premium")} className="w-full flex justify-between items-center py-2 text-sm">
-            <span>Управление Premium</span><ChevronRight className="w-4 h-4" />
+            <span>{t("settings.manage_premium")}</span><ChevronRight className="w-4 h-4" />
           </button>
         </Section>
 
-        <Section title="Уведомления" icon={Bell}>
+        <Section title={t("settings.section.notifications")} icon={Bell}>
           {["messages","likes","matches","visits","who_liked"].map((k) => (
-            <Row key={k} label={{messages:"Сообщения",likes:"Лайки",matches:"Матчи",visits:"Посещения",who_liked:"Кто лайкнул"}[k]}>
+            <Row key={k} label={t(`settings.notif.${k}`)}>
               <input type="checkbox" checked={form.notif_push?.[k] || false} onChange={(e) => { const np = { ...(form.notif_push||{}), [k]: e.target.checked }; setForm({ ...form, notif_push: np }); save({ notif_push: np }); }} className="accent-primary" />
             </Row>
           ))}
         </Section>
 
-        <Section title="AI Перевод" icon={Languages}>
-          <Row label="Авто-перевод в чате">
+        <Section title={t("settings.section.translate")} icon={Languages}>
+          <Row label={t("settings.auto_translate")}>
             <input data-testid="toggle-translate" type="checkbox" checked={form.auto_translate || false} onChange={(e) => { setForm({ ...form, auto_translate: e.target.checked }); save({ auto_translate: e.target.checked }); }} className="accent-primary" />
           </Row>
+          <button data-testid="settings-language-row" onClick={() => setShowLang(true)} className="w-full flex justify-between items-center px-4 py-3 text-sm">
+            <span>{t("settings.language")}</span>
+            <span className="flex items-center gap-2 text-muted-foreground">
+              <span className="text-lg">{langMeta.flag}</span>
+              <span>{langMeta.name}</span>
+              <ChevronRight className="w-4 h-4" />
+            </span>
+          </button>
         </Section>
 
-        <Section title="Правовая информация" icon={FileText}>
+        <Section title={t("settings.section.legal")} icon={FileText}>
           {LEGAL_ORDER.map((k) => (
             <button key={k} data-testid={`legal-${k}`} onClick={() => setSection(k)} className="w-full flex justify-between items-center py-2 text-sm">
               <span>{LEGAL[k].title}</span><ChevronRight className="w-4 h-4" />
@@ -140,13 +153,14 @@ export default function SettingsPage() {
           ))}
         </Section>
 
-        <button data-testid="btn-install" onClick={install} className="w-full btn-pill bg-primary text-primary-foreground"><Download className="w-4 h-4 mr-2" /> {installed ? "Установлено" : "Установить приложение"}</button>
+        <button data-testid="btn-install" onClick={install} className="w-full btn-pill bg-primary text-primary-foreground"><Download className="w-4 h-4 mr-2" /> {installed ? t("settings.installed") : t("settings.install")}</button>
 
         {user?.is_admin && (
-          <button onClick={() => nav("/admin")} className="w-full btn-pill bg-foreground text-background"><Shield className="w-4 h-4 mr-2" /> Админ панель</button>
+          <button onClick={() => nav("/admin")} className="w-full btn-pill bg-foreground text-background"><Shield className="w-4 h-4 mr-2" /> {t("settings.admin")}</button>
         )}
-        <button onClick={async () => { await logout(); nav("/"); }} className="w-full btn-pill bg-muted"><LogOut className="w-4 h-4 mr-2" /> Выйти</button>
+        <button onClick={async () => { await logout(); nav("/"); }} className="w-full btn-pill bg-muted"><LogOut className="w-4 h-4 mr-2" /> {t("settings.logout")}</button>
       </div>
+      <LanguageSheet open={showLang} onClose={() => setShowLang(false)} onSelect={async (l) => { setShowLang(false); await setLang(l.code); toast.success(`${l.flag} ${l.name}`); }} />
     </MobileShell>
   );
 }

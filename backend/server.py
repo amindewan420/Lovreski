@@ -182,11 +182,13 @@ class ProfileUpdate(BaseModel):
     distance_mode: Optional[str] = None
     distance_km: Optional[int] = Field(default=None, ge=0, le=2000)
     auto_translate: Optional[bool] = None
+    language_pref: Optional[str] = Field(default=None, max_length=10)
 
 class MessageBody(BaseModel):
     text: Optional[str] = None
-    kind: Literal['text', 'emoji', 'image', 'gift', 'voice', 'video'] = 'text'
+    kind: Literal['text', 'emoji', 'image', 'file', 'gift', 'voice', 'video'] = 'text'
     media_url: Optional[str] = None
+    file_name: Optional[str] = None
     gift_key: Optional[str] = None
     reply_to: Optional[str] = None
 
@@ -224,10 +226,35 @@ COIN_PACKAGES = [
     {"id": "p300", "coins": 300, "price": 1200},
     {"id": "p500", "coins": 500, "price": 1900},
 ]
-# Per-type coin cost for chat messages (deducted after the FREE window for text/emoji;
-# always charged for media/gifts).
-MSG_COST = {"text": 1, "emoji": 1, "image": 5, "gift": 10, "voice": 10, "video": 15}
+# Per-type coin cost for chat messages. Free users can send at most FREE_MSGS
+# messages TOTAL per chat (any kind). Beyond that the input is hard-blocked
+# unless the user has coins (or Premium for text/emoji).
+MSG_COST = {"text": 1, "emoji": 2, "image": 5, "file": 5, "gift": 10, "voice": 5, "video": 10}
 FREE_MSGS = 2
+
+# Gift catalog — illustrations use free Unicode emoji rendered inside a colored
+# gradient tile on the frontend; each gift has a specific coin cost per spec.
+GIFT_CATALOG = [
+    {"key": "heart",       "name": "Сердце",       "emoji": "❤️", "cost": 5,  "gradient": "from-rose-400 to-pink-500"},
+    {"key": "rose",        "name": "Роза",         "emoji": "🌹", "cost": 10, "gradient": "from-red-400 to-rose-600"},
+    {"key": "kiss",        "name": "Поцелуй",      "emoji": "💋", "cost": 5,  "gradient": "from-pink-400 to-fuchsia-500"},
+    {"key": "crown",       "name": "Корона",       "emoji": "👑", "cost": 20, "gradient": "from-amber-400 to-yellow-500"},
+    {"key": "diamond",     "name": "Бриллиант",    "emoji": "💎", "cost": 20, "gradient": "from-sky-300 to-cyan-500"},
+    {"key": "bouquet",     "name": "Букет",        "emoji": "💐", "cost": 15, "gradient": "from-fuchsia-400 to-pink-500"},
+    {"key": "cake",        "name": "Торт",         "emoji": "🎂", "cost": 10, "gradient": "from-orange-300 to-rose-400"},
+    {"key": "star",        "name": "Звезда",       "emoji": "⭐", "cost": 5,  "gradient": "from-yellow-300 to-amber-500"},
+    {"key": "yacht",       "name": "Яхта",         "emoji": "🛥️", "cost": 30, "gradient": "from-blue-400 to-indigo-600"},
+    {"key": "champagne",   "name": "Шампанское",   "emoji": "🥂", "cost": 15, "gradient": "from-yellow-200 to-amber-400"},
+    {"key": "cocktail",    "name": "Коктейль",     "emoji": "🍹", "cost": 10, "gradient": "from-lime-300 to-emerald-500"},
+    {"key": "envelope",    "name": "Письмо",       "emoji": "💌", "cost": 5,  "gradient": "from-rose-300 to-red-500"},
+    {"key": "tulips",      "name": "Тюльпаны",     "emoji": "🌷", "cost": 10, "gradient": "from-pink-300 to-rose-500"},
+    {"key": "winged_heart","name": "Крылатое сердце","emoji": "💘","cost": 15, "gradient": "from-red-400 to-pink-600"},
+    {"key": "watermelon",  "name": "Арбуз",        "emoji": "🍉", "cost": 5,  "gradient": "from-emerald-400 to-red-500"},
+    {"key": "koala",       "name": "Коала",        "emoji": "🐨", "cost": 8,  "gradient": "from-slate-300 to-slate-500"},
+    {"key": "lips",        "name": "Губы",         "emoji": "👄", "cost": 5,  "gradient": "from-rose-400 to-red-600"},
+    {"key": "mask",        "name": "Маска",        "emoji": "🎭", "cost": 8,  "gradient": "from-purple-400 to-fuchsia-600"},
+]
+GIFT_COST_BY_KEY = {g["key"]: g["cost"] for g in GIFT_CATALOG}
 
 # ────────────────────────────── WebSocket Manager ──────────────────────────────
 class WSManager:
@@ -880,26 +907,39 @@ async def _do_send_message(sender: dict, other_id: str, body: MessageBody) -> di
         raise HTTPException(status_code=404, detail="User not found")
     if body.kind not in MSG_COST:
         raise HTTPException(status_code=400, detail="Invalid message kind")
-    cost = MSG_COST[body.kind]
+    # Gift cost varies by key
+    if body.kind == 'gift':
+        if not body.gift_key or body.gift_key not in GIFT_COST_BY_KEY:
+            raise HTTPException(status_code=400, detail="Invalid gift")
+        cost = GIFT_COST_BY_KEY[body.gift_key]
+    else:
+        cost = MSG_COST[body.kind]
     cid = chat_id(sender['user_id'], other_id)
     sent_count = await db.messages.count_documents({"chat_id": cid, "from_user": sender['user_id']})
     is_admin_sender = sender.get('is_admin', False)
-    # Free window applies only to text/emoji. Media (image/gift/voice/video) always costs coins.
-    free_kinds = {"text", "emoji"}
-    within_free = sent_count < FREE_MSGS and body.kind in free_kinds
-    needs_pay = not within_free and not is_admin_sender
-    if needs_pay:
-        # Refresh coin balance from DB (avoid stale)
-        fresh = await db.users.find_one({"user_id": sender['user_id']}, {"_id": 0, "coins": 1, "is_premium": 1})
-        coins = int((fresh or {}).get('coins') or 0)
-        is_premium = bool((fresh or {}).get('is_premium'))
-        # Premium users still pay for media/gifts but text/emoji is free
-        if body.kind in free_kinds and is_premium:
-            pass  # free for premium
-        else:
-            if coins < cost:
-                raise HTTPException(status_code=402, detail=f"Недостаточно монет. Требуется {cost}, у вас {coins}. Пополните баланс или оформите Premium.")
-            await db.users.update_one({"user_id": sender['user_id']}, {"$inc": {"coins": -cost}})
+
+    # Refresh coin/premium status from DB
+    fresh = await db.users.find_one({"user_id": sender['user_id']}, {"_id": 0, "coins": 1, "is_premium": 1})
+    coins = int((fresh or {}).get('coins') or 0)
+    is_premium = bool((fresh or {}).get('is_premium'))
+
+    within_free = sent_count < FREE_MSGS
+    # First 2 messages are ALWAYS free (any kind). After that:
+    #   - If user has enough coins → deduct
+    #   - Otherwise → 402 with `blocked=True` in body so client shows purchase popup
+    if within_free or is_admin_sender:
+        cost_paid = 0
+    else:
+        if coins < cost:
+            raise HTTPException(status_code=402, detail={
+                "message": "Купите монеты, чтобы продолжить общение",
+                "blocked": True,
+                "required": cost,
+                "have": coins,
+                "kind": body.kind,
+            })
+        await db.users.update_one({"user_id": sender['user_id']}, {"$inc": {"coins": -cost}})
+        cost_paid = cost
     msg = {
         "message_id": f"msg_{uuid.uuid4().hex[:12]}",
         "chat_id": cid,
@@ -909,10 +949,11 @@ async def _do_send_message(sender: dict, other_id: str, body: MessageBody) -> di
         "kind": body.kind,
         "text": body.text or "",
         "media_url": body.media_url,
+        "file_name": body.file_name,
         "gift_key": body.gift_key,
         "reply_to": body.reply_to,
         "read": False,
-        "cost_paid": cost if needs_pay and not (body.kind in free_kinds and (sender.get('is_premium') or False)) else 0,
+        "cost_paid": cost_paid,
         "created_at": iso(now_utc()),
     }
     await db.messages.insert_one(msg)
@@ -930,17 +971,17 @@ async def send_message(other_id: str, body: MessageBody, user: dict = Depends(ge
 
 class ChatMediaBody(BaseModel):
     data_url: str
-    kind: Literal['image', 'voice', 'video']
+    kind: Literal['image', 'voice', 'video', 'file']
+    file_name: Optional[str] = None
 
 @api.post("/chat/media")
 async def upload_chat_media(body: ChatMediaBody, user: dict = Depends(get_current_user)):
-    """Upload chat media (image / voice / video). Returns a data_url suitable
-    for the `media_url` field in a subsequent /chats/{id}/send call.
-    Images are compressed. Audio/video are stored as-is (base64 data URLs)."""
+    """Upload chat media (image / voice / video / file). Returns a data_url
+    suitable for the `media_url` field in a subsequent /chats/{id}/send call.
+    Images are compressed. Audio / video / files are stored as-is (base64 data URLs)."""
     if not body.data_url.startswith("data:"):
         raise HTTPException(status_code=400, detail="Invalid media format")
-    # Size guard: raw base64 payload <= ~8 MB for voice/video, ~4 MB for image
-    max_bytes = 4 * 1024 * 1024 if body.kind == 'image' else 8 * 1024 * 1024
+    max_bytes = 4 * 1024 * 1024 if body.kind == 'image' else 10 * 1024 * 1024
     try:
         _, b64 = body.data_url.split(',', 1)
     except ValueError:
@@ -954,7 +995,33 @@ async def upload_chat_media(body: ChatMediaBody, user: dict = Depends(get_curren
         media_url, _ = _compress_image_data_url(body.data_url, max_dim=1200, quality=78)
     else:
         media_url = body.data_url
-    return {"media_url": media_url, "kind": body.kind, "size_bytes": approx_bytes}
+    return {"media_url": media_url, "kind": body.kind, "size_bytes": approx_bytes, "file_name": body.file_name}
+
+@api.get("/chat/status/{other_id}")
+async def chat_status(other_id: str, user: dict = Depends(get_current_user)):
+    """Per-chat state for the current viewer.
+    Returns free-message counter and whether the input is hard-blocked."""
+    cid = chat_id(user['user_id'], other_id)
+    sent = await db.messages.count_documents({"chat_id": cid, "from_user": user['user_id']})
+    fresh = await db.users.find_one({"user_id": user['user_id']}, {"_id": 0, "coins": 1, "is_premium": 1})
+    coins = int((fresh or {}).get('coins') or 0)
+    is_premium = bool((fresh or {}).get('is_premium'))
+    # Free-message limit reached AND no coins → blocked
+    is_blocked = (sent >= FREE_MSGS) and coins < MSG_COST['text'] and not is_premium and not user.get('is_admin')
+    return {
+        "chat_id": cid,
+        "sent_count": sent,
+        "free_used": min(sent, FREE_MSGS),
+        "free_limit": FREE_MSGS,
+        "coins": coins,
+        "is_premium": is_premium,
+        "is_blocked": is_blocked,
+    }
+
+@api.get("/gifts")
+async def gifts_list():
+    """Public gift catalog: key, name, emoji, cost, tailwind gradient."""
+    return GIFT_CATALOG
 
 @api.delete("/messages/{message_id}")
 async def delete_message(message_id: str, user: dict = Depends(get_current_user)):
@@ -1612,6 +1679,115 @@ async def translate(body: TranslateBody, user: dict = Depends(get_current_user))
     except Exception as e:
         logger.exception("translate failed")
         raise HTTPException(status_code=500, detail=str(e))
+
+# ────────────────────────────── App-wide i18n ──────────────────────────────
+# Canonical Russian UI dictionary. Extend as new strings are added.
+I18N_BASE_RU = {
+    # nav
+    "nav.home": "Главная", "nav.search": "Поиск", "nav.likes": "Лайки",
+    "nav.chats": "Чаты", "nav.profile": "Профиль",
+    # chat
+    "chat.title": "Чаты", "chat.empty": "Начните общение из вкладки Поиск",
+    "chat.online": "онлайн", "chat.recent": "недавно", "chat.typing": "печатает...",
+    "chat.placeholder": "Сообщение...", "chat.placeholder_blocked": "🔒 Купите монеты, чтобы продолжить общение",
+    "chat.reply": "Ответить", "chat.translate": "Перевести", "chat.reply_prefix": "Ответ:",
+    "chat.today": "Сегодня", "chat.yesterday": "Вчера",
+    "chat.send_gift": "Отправить подарок",
+    "chat.confirm_gift": "Отправить подарок за {cost} монет?",
+    "chat.confirm": "Отправить", "chat.cancel": "Отменить",
+    "chat.recording": "Запись голосового · до 60с",
+    "chat.limit_title": "Лимит бесплатных сообщений исчерпан!",
+    "chat.limit_body": "Чтобы продолжить общение, пожалуйста, купите монеты.",
+    "chat.buy_coins": "🛒 Купить монеты", "chat.close": "Закрыть",
+    "chat.gift_gallery": "Галерея", "chat.gift_file": "Файл",
+    "chat.gift_camera": "Видео", "chat.gift_emoji": "Эмодзи",
+    "chat.gift_gifts": "Подарки", "chat.gift_translate": "Переводчик",
+    "chat.preview_gift": "🎁 Подарок", "chat.preview_image": "📷 Фото",
+    "chat.preview_voice": "🎤 Голосовое", "chat.preview_video": "🎥 Видео",
+    "chat.preview_file": "📁 Файл",
+    "chat.premium_locked": "Оформите Premium, чтобы прочитать",
+    "chat.premium_cta": "Оформить Premium",
+    # settings
+    "settings.title": "Настройки", "settings.back": "← Назад",
+    "settings.section.personal": "Личная информация",
+    "settings.section.search": "Поиск",
+    "settings.section.premium": "Premium & Монеты",
+    "settings.section.notifications": "Уведомления",
+    "settings.section.translate": "AI Перевод",
+    "settings.section.legal": "Правовая информация",
+    "settings.name": "Имя", "settings.gender": "Пол", "settings.dob": "Дата рождения",
+    "settings.female": "Женский", "settings.male": "Мужской",
+    "settings.show_me": "Показывать", "settings.show_female": "Девушек",
+    "settings.show_male": "Парней", "settings.show_both": "Всех",
+    "settings.distance": "Расстояние", "settings.distance_near": "📍 Рядом",
+    "settings.distance_world": "🌍 Весь мир",
+    "settings.manage_premium": "Управление Premium",
+    "settings.notif.messages": "Сообщения", "settings.notif.likes": "Лайки",
+    "settings.notif.matches": "Матчи", "settings.notif.visits": "Посещения",
+    "settings.notif.who_liked": "Кто лайкнул",
+    "settings.auto_translate": "Авто-перевод в чате",
+    "settings.language": "Язык перевода",
+    "settings.install": "Установить приложение",
+    "settings.installed": "Установлено",
+    "settings.admin": "Админ панель", "settings.logout": "Выйти",
+    # common
+    "common.save": "Сохранить", "common.saved": "Сохранено", "common.error": "Ошибка",
+    "common.loading": "Загрузка...", "common.search": "Поиск",
+    # language sheet
+    "lang.title": "Выберите язык", "lang.search": "Поиск языка",
+    "lang.region.global": "🌍 Глобальные", "lang.region.europe": "🌍 Европа",
+    "lang.region.asia": "🌏 Азия", "lang.region.americas": "🌎 Америка",
+}
+
+@api.get("/i18n/base")
+async def i18n_base():
+    """Return the canonical Russian dictionary. Front-end uses this as source."""
+    return {"lang": "ru", "strings": I18N_BASE_RU}
+
+@api.get("/i18n/{lang}")
+async def i18n_lang(lang: str):
+    """Return the UI dictionary translated to `lang`. Cached in Mongo.
+    First call for a new language triggers a single bulk LLM translation."""
+    lang = lang.lower().strip()
+    if lang == "ru":
+        return {"lang": "ru", "strings": I18N_BASE_RU, "cached": True}
+    cached = await db.i18n_cache.find_one({"lang": lang}, {"_id": 0})
+    # Invalidate if base dict added new keys
+    base_keys = set(I18N_BASE_RU.keys())
+    if cached and set((cached.get('strings') or {}).keys()) >= base_keys:
+        return {"lang": lang, "strings": cached['strings'], "cached": True}
+    # Translate via LLM in one shot
+    try:
+        from emergentintegrations.llm.chat import LlmChat, UserMessage  # type: ignore
+        payload = _json.dumps(I18N_BASE_RU, ensure_ascii=False)
+        chat = LlmChat(
+            api_key=os.environ['EMERGENT_LLM_KEY'],
+            session_id=f"i18n_{lang}",
+            system_message=(
+                "You are a professional UI translator. You will receive a JSON object of Russian UI strings. "
+                f"Translate ALL values to the target language code '{lang}'. "
+                "Keep the JSON keys IDENTICAL. Preserve any {placeholders}, emojis, and punctuation. "
+                "Respond ONLY with the translated JSON object — no markdown, no commentary."
+            ),
+        ).with_model("openai", "gpt-4o-mini")
+        raw = await asyncio.wait_for(chat.send_message(UserMessage(text=payload)), timeout=45.0)
+        txt = str(raw).strip()
+        if txt.startswith("```"):
+            txt = txt.split("```", 2)[1].lstrip("json").strip()
+        translated = _json.loads(txt)
+        # Fill any missing keys with the Russian original
+        for k, v in I18N_BASE_RU.items():
+            translated.setdefault(k, v)
+        await db.i18n_cache.update_one(
+            {"lang": lang},
+            {"$set": {"lang": lang, "strings": translated, "updated_at": iso(now_utc())}},
+            upsert=True,
+        )
+        return {"lang": lang, "strings": translated, "cached": False}
+    except Exception as e:
+        logger.exception("i18n translate failed")
+        # Fail-open: return Russian so UI is at least legible
+        return {"lang": "ru", "strings": I18N_BASE_RU, "cached": False, "error": str(e)}
 
 # ────────────────────────────── Demo seed ──────────────────────────────
 @api.post("/demo/seed")

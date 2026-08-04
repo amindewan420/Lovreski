@@ -1,0 +1,26 @@
+{
+  "summary": "Iteration 21 – Telegram-style chat redesign + global i18n + free-user hard-block. Backend: 18/18 pytest cases pass on preview URL (/api/gifts returns 18 gifts w/ per-key costs 5-30 including heart=5/diamond=20/yacht=30, invalid gift_key→400, /api/i18n/base has 82 keys incl. nav.home/chat.title/settings.language, /api/i18n/en LLM-translates & caches in Mongo — 2nd call cached=true in <3s, /api/i18n/fr and /de translate, /api/i18n/xx fails-open to ru without 500, /api/chat/status returns full shape with free_limit=2 and is_blocked, per-kind costs after free window: text=1/emoji=2/file=5, gift cost varies by key, 402 response is dict-detail with blocked=true/required/have/kind, /api/chat/media supports kind='file' echoing file_name, PUT /profile{language_pref:'en'} persists and returned by /auth/me, WS /api/ws?token= regression: hello+ping/pong+cross-user REST→WS broadcast <8s). Frontend (mobile 390×844): 38/38 UI/integration checks pass — Telegram-style chat renders (sent bubble computed bg rgb(220,242,255)=#DCF2FF, tick svg present, date-sep present), composer swap btn-mic↔btn-send on typing works, btn-plus toggles attach-tray with all 6 tiles (emoji/gifts/gallery/file/video/lang), gift-sheet shows 18 gift buttons, gift-confirm modal + gift-confirm-send sends gift message, emoji-sheet has all 6 tabs (faces/love/gest/act/food/trav), lang-sheet opens from both tray and settings-language-row, selecting lang-en calls PUT /profile{language_pref:'en'}, chat header 'онлайн'→'online' after switch, localStorage['lovreski_lang']='en' persists across reload (header still 'online' after full reload), free-user block flow: after 3 sends with 0 coins the block-popup renders, chat-input becomes readOnly with placeholder '🔒 Buy coins to continue chatting' (translated), popup-buy navigates to /premium.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {"ui_bugs": [], "integration_issues": [], "design_issues": []},
+  "test_report_links": [
+    "/app/backend/tests/test_chat_iter21.py",
+    "/app/test_reports/pytest/iter21.xml",
+    "/app/test_reports/pytest/iter21_retry.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "server.py is now 1965 lines – router-split still recommended (chat/i18n/media each merit their own module).",
+    "MSG_COST['gift']=10 is dead-code at server.py:232 — gift kind ignores the map and always uses GIFT_COST_BY_KEY. Consider deleting the 'gift' entry from MSG_COST to avoid future confusion.",
+    "i18n endpoint fails-open by returning {lang:'ru', ...} with an 'error' field when the LLM fails. Front-end LanguageSheet still highlights the requested language as selected in local state — but server returned ru. Add a client-side check on data.lang to alert the user when translation was unavailable.",
+    "i18n cache key invalidation compares base_keys ⊆ cached.strings.keys — if the Russian base ever REMOVES a key the cache is never invalidated. Prefer storing a hash of I18N_BASE_RU alongside the cache entry.",
+    "ChatRoomPage.jsx line ~334 handles blocked-click via wrapper div onClick — works but relies on the readOnly-textarea NOT swallowing the click. Consider explicit block detection in onKeyDown too."
+  ],
+  "updated_files": ["/app/backend/tests/test_chat_iter21.py"],
+  "success_rate": {"backend": "100% (18/18)", "frontend": "100% (38/38 assertions)"},
+  "test_credentials": "admin@lovreski.ru / LovreskiAdmin2026! works. Test users are freshly registered per-run via /api/auth/register (iter21_*, iter21fe_*, blk_* prefixes).",
+  "seed_data_creation": "Each backend/frontend test registers ephemeral users. Frontend test also calls POST /api/demo/seed (idempotent → 16 already-seeded). No teardown; suffix-uuid keeps uniqueness.",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Iter 21 fully verified. Chat is Telegram-style (bg white, sent=#DCF2FF, received=white+border), composer has btn-plus tray, block-popup rules working, LLM-cached global i18n working (Russian base = 82 keys). Backend tests: /app/backend/tests/test_chat_iter21.py (needs REACT_APP_BACKEND_URL env). WS test uses 'data' field, not 'message', in the {type:'message',data:msg} payload. token key in localStorage: 'lovreski_token'; language key: 'lovreski_lang'. Only ChatsListPage / ChatRoomPage / SettingsPage / Shell nav use useI18n() by design — other pages remain Russian-only for now.",
+  "rca of the issue": "N/A – no bugs found. Only minor code-review nits (dead MSG_COST['gift'] entry, i18n cache key hashing, router-split reminder)."
+}

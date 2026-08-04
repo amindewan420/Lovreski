@@ -3,12 +3,14 @@ import { api } from "@/lib/api";
 import { createChatSocket } from "@/lib/ws";
 import { MobileShell } from "@/components/lovreski/Shell";
 import { useNavigate } from "react-router-dom";
+import { useI18n } from "@/lib/i18n";
 import { MessageCircle } from "lucide-react";
 
 export default function ChatsListPage() {
   const [chats, setChats] = useState([]);
   const [loading, setLoading] = useState(true);
   const nav = useNavigate();
+  const { t } = useI18n();
   const sockRef = useRef(null);
 
   const load = async () => {
@@ -20,17 +22,14 @@ export default function ChatsListPage() {
 
   useEffect(() => {
     load();
-    // Real-time refresh on any incoming/outgoing chat message
-    sockRef.current = createChatSocket({
-      onMessage: () => { load(); },
-    });
+    sockRef.current = createChatSocket({ onMessage: () => { load(); } });
     return () => sockRef.current?.close();
   }, []);
 
   return (
     <MobileShell>
       <header className="sticky top-0 z-40 bg-background/85 backdrop-blur-xl px-4 pt-4 pb-3 border-b border-border/50">
-        <h1 className="font-display font-black text-2xl tracking-tight">Чаты</h1>
+        <h1 className="font-display font-black text-2xl tracking-tight">{t("chat.title")}</h1>
       </header>
       <div className="divide-y divide-border">
         {loading ? (
@@ -38,16 +37,17 @@ export default function ChatsListPage() {
         ) : chats.length === 0 ? (
           <div className="text-center py-20 px-6">
             <MessageCircle className="w-12 h-12 text-muted-foreground mx-auto mb-3" />
-            <p className="text-muted-foreground">Начните общение из вкладки Поиск</p>
+            <p className="text-muted-foreground">{t("chat.empty")}</p>
           </div>
         ) : (
           chats.map((c) => {
             const last = c.last_message || {};
             const preview =
-              last.kind === "gift" ? "🎁 Подарок" :
-              last.kind === "image" ? "📷 Фото" :
-              last.kind === "voice" ? "🎤 Голосовое" :
-              last.kind === "video" ? "🎥 Видео" :
+              last.kind === "gift"  ? t("chat.preview_gift") :
+              last.kind === "image" ? t("chat.preview_image") :
+              last.kind === "voice" ? t("chat.preview_voice") :
+              last.kind === "video" ? t("chat.preview_video") :
+              last.kind === "file"  ? t("chat.preview_file") :
               last.text || "...";
             return (
               <button
