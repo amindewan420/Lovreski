@@ -1297,17 +1297,25 @@ async def admin_payments(status: str = "all", _: dict = Depends(require_admin)):
 
 @api.post("/admin/payments/{tx_id}")
 async def admin_action_payment(tx_id: str, body: AdminPaymentAction, _: dict = Depends(require_admin)):
+    """LEGACY endpoint. Under the manual-approval contract, this endpoint NO LONGER
+    credits coins. It only updates the checkout tx status for record-keeping.
+    Coin/Premium mutations must go through /admin/support/:id/approve or
+    /admin/users/add-coins."""
     tx = await db.transactions.find_one({"tx_id": tx_id}, {"_id": 0})
     if not tx:
         raise HTTPException(status_code=404, detail="Transaction not found")
     if body.action == "approve":
-        await db.transactions.update_one({"tx_id": tx_id}, {"$set": {"status": "approved", "approved_at": iso(now_utc())}})
-        await db.users.update_one(
-            {"user_id": tx['user_id']},
-            {"$inc": {"coins": tx['coins']}, "$set": {"is_premium": True, "premium_until": iso(now_utc() + timedelta(days=30))}},
+        # No coin/premium mutation here anymore — only mark the tx as reviewed.
+        await db.transactions.update_one(
+            {"tx_id": tx_id},
+            {"$set": {"status": "awaiting_admin", "reviewed_at": iso(now_utc())}},
         )
+        return {"ok": True, "note": "Use /admin/support/:id/approve or /admin/users/add-coins to credit coins."}
     else:
-        await db.transactions.update_one({"tx_id": tx_id}, {"$set": {"status": "rejected", "reject_reason": body.reason or "Отклонено администратором"}})
+        await db.transactions.update_one(
+            {"tx_id": tx_id},
+            {"$set": {"status": "rejected", "reject_reason": body.reason or "Отклонено администратором"}},
+        )
     return {"ok": True}
 
 @api.get("/admin/reports")

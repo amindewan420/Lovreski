@@ -1,0 +1,39 @@
+{
+  "verdict": "fixed",
+  "user_reported_bug": "Iteration-14 found the last remaining auto-credit bypass: POST /api/admin/payments/{tx_id} still credited coins and set is_premium=true, violating the manual-only contract. Must be neutralized so ONLY /api/admin/support/:id/approve and /api/admin/users/add-coins credit coins.",
+  "summary": "No relevant testing skill found. Focused backend/API and UI regression passed: legacy admin payment approve returned 200 with manual-endpoint note and did not change coins or premium; reject still marked the tx rejected without coin mutation; webhook/status stayed manual-only; the two allowed credit endpoints still credited; Admin Payments tab is absent while Support tab and pending badge are visible.",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/test_reports/test_manual_admin_credit_bug_iter15.py",
+    "/app/test_reports/test_admin_payments_tab_removed_iter15.py",
+    "/app/test_reports/manual_credit_backend_results_iter15.json"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "AdminPage still contains unreachable legacy Payments panel/action code and still fetches /admin/payments, but data-testid='admin-tab-payments' is not exposed and the backend endpoint is neutralized; not a failing symptom for this bug."
+  ],
+  "updated_files": [
+    "/app/test_reports/test_manual_admin_credit_bug_iter15.py",
+    "/app/test_reports/test_admin_payments_tab_removed_iter15.py",
+    "/app/test_reports/manual_credit_backend_results_iter15.json",
+    "/app/test_reports/bug_verification_15.json",
+    "/app/test_reports/iteration_15.json"
+  ],
+  "success_rate": {
+    "backend": "100%",
+    "frontend": "100%"
+  },
+  "seed_data_creation": "Created fresh user leg_1785849302@lovreski.ru, checkout transactions for approve/reject/status/webhook coverage, approved webhook-created support submission sub_8db6d0e7e839, and left pending UI badge seed submission sub_5961c6eda58b.",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Backend API used https://lovreski-dating.preview.emergentagent.com/api. Legacy approve tx tx_4f2d5621e7aa stayed coins=5/is_premium=false and returned note. Legacy reject tx tx_5f168585ce89 became rejected. Checkout status tx tx_3020856ee12d stayed pending. Webhook tx tx_a546deb11285 queued support instead of crediting. UI browser check found support badge count 5 and no admin-tab-payments.",
+  "rca_of_the_issue": "Previous bypass was legacy POST /api/admin/payments/{tx_id} approving checkout transactions as if payment approval implied entitlement. Verified it is now record-only: approve sets tx to awaiting_admin and returns a note directing admins to /admin/support/:id/approve or /admin/users/add-coins, while only those two endpoints mutate coins/premium."
+}

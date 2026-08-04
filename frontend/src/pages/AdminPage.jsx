@@ -126,7 +126,7 @@ export default function AdminPage() {
 
       <div className="max-w-6xl mx-auto p-6">
         <div className="flex gap-2 mb-6 bg-muted p-1 rounded-full w-fit">
-          {[{k:"dashboard",l:"Дашборд"},{k:"payments",l:"Платежи"},{k:"support",l:"Verification",badge:pendingCount},{k:"reports",l:"Жалобы"},{k:"users",l:"Пользователи"},{k:"settings",l:"Настройки"}].map(t => (
+          {[{k:"dashboard",l:"Дашборд"},{k:"support",l:"Verification",badge:pendingCount},{k:"reports",l:"Жалобы"},{k:"users",l:"Пользователи"},{k:"settings",l:"Настройки"}].map(t => (
             <button key={t.k} data-testid={`admin-tab-${t.k}`} onClick={() => setTab(t.k)} className={`relative px-5 py-2 rounded-full font-semibold text-sm ${tab === t.k ? "bg-card shadow" : "text-muted-foreground"}`}>
               {t.l}
               {t.badge > 0 && (

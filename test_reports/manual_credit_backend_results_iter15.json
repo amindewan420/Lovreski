@@ -1,0 +1,141 @@
+{
+  "base_url": "https://lovreski-dating.preview.emergentagent.com",
+  "email": "leg_1785849302@lovreski.ru",
+  "steps": [
+    {
+      "name": "fresh_user",
+      "user_id": "user_8e8e33d0e201",
+      "balance": {
+        "coins": 5,
+        "is_premium": false
+      }
+    },
+    {
+      "name": "legacy_admin_payment_approve_neutralized",
+      "tx_id": "tx_4f2d5621e7aa",
+      "status_after": "awaiting_admin",
+      "before": {
+        "coins": 5,
+        "is_premium": false
+      },
+      "after": {
+        "coins": 5,
+        "is_premium": false
+      },
+      "response": {
+        "ok": true,
+        "note": "Use /admin/support/:id/approve or /admin/users/add-coins to credit coins."
+      }
+    },
+    {
+      "name": "legacy_admin_payment_reject_still_rejects",
+      "tx_id": "tx_5f168585ce89",
+      "status_after": "rejected",
+      "before": {
+        "coins": 5,
+        "is_premium": false
+      },
+      "after": {
+        "coins": 5,
+        "is_premium": false
+      },
+      "response": {
+        "ok": true
+      }
+    },
+    {
+      "name": "checkout_status_remains_pending_no_credit",
+      "tx_id": "tx_3020856ee12d",
+      "status_response": {
+        "transaction": {
+          "tx_id": "tx_3020856ee12d",
+          "user_id": "user_8e8e33d0e201",
+          "user_email": "leg_1785849302@lovreski.ru",
+          "user_name": "Legacy QA 1785849302",
+          "package_id": "p100",
+          "coins": 100,
+          "amount_rub": 500,
+          "payment_method": "SBP",
+          "bank": "sberbank",
+          "status": "pending",
+          "credited": false,
+          "created_at": "2026-08-04T13:15:04.676417+00:00"
+        },
+        "coins": 5,
+        "is_premium": false
+      },
+      "before": {
+        "coins": 5,
+        "is_premium": false
+      },
+      "after": {
+        "coins": 5,
+        "is_premium": false
+      }
+    },
+    {
+      "name": "webhook_queues_no_credit",
+      "tx_id": "tx_a546deb11285",
+      "submission_id": "sub_8db6d0e7e839",
+      "status_after": "awaiting_admin",
+      "before": {
+        "coins": 5,
+        "is_premium": false
+      },
+      "after": {
+        "coins": 5,
+        "is_premium": false
+      },
+      "response": {
+        "ok": true,
+        "queued_for_admin": true
+      }
+    },
+    {
+      "name": "support_approve_allowed_credit_path",
+      "submission_id": "sub_8db6d0e7e839",
+      "before": {
+        "coins": 5,
+        "is_premium": false
+      },
+      "after": {
+        "coins": 42,
+        "is_premium": true
+      },
+      "response": {
+        "ok": true,
+        "coins_added": 37
+      }
+    },
+    {
+      "name": "admin_users_add_coins_allowed_credit_path",
+      "before": {
+        "coins": 42,
+        "is_premium": true
+      },
+      "after": {
+        "coins": 53,
+        "is_premium": true
+      },
+      "response": {
+        "ok": true,
+        "new_balance": 53
+      }
+    },
+    {
+      "name": "ui_pending_seed",
+      "submission_id": "sub_5961c6eda58b",
+      "pending_count": {
+        "count": 5
+      }
+    }
+  ],
+  "ok": true,
+  "admin_email": "admin@lovreski.ru",
+  "test_user_id": "user_8e8e33d0e201",
+  "final_balance": {
+    "coins": 53,
+    "is_premium": true
+  },
+  "ui_seed_submission_id": "sub_5961c6eda58b"
+}
