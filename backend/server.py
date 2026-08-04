@@ -957,10 +957,15 @@ async def _try_auto_confirm(tx: dict) -> dict:
                 return tx
         except ValueError:
             return tx
-    # Atomic mark-as-success (prevents double-crediting via CAS on credited: False)
+    # Atomic mark-as-success (prevents double-crediting via CAS on credited: False).
+    # Preserve the user-selected sender bank (tx.bank); only set it to 'Sberbank' if
+    # the user did not choose one at checkout.
+    set_fields = {"status": "success", "credited": True, "confirmed_at": iso(now_utc())}
+    if not tx.get('bank'):
+        set_fields['bank'] = "Sberbank"
     res = await db.transactions.find_one_and_update(
         {"tx_id": tx['tx_id'], "credited": False, "status": "pending"},
-        {"$set": {"status": "success", "credited": True, "bank": "Sberbank", "confirmed_at": iso(now_utc())}},
+        {"$set": set_fields},
         return_document=True,
     )
     if not res:
