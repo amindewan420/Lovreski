@@ -196,6 +196,7 @@ class PurchaseBody(BaseModel):
     # phone/sbp_balance are legacy — no longer required. Kept optional for backward compat.
     phone: Optional[str] = None
     sbp_balance: Optional[float] = None
+    bank: Optional[Literal['sberbank', 'tbank']] = None  # user's preferred sending bank
 
 class AdminPaymentAction(BaseModel):
     action: Literal['approve', 'reject']
@@ -215,10 +216,10 @@ class ResetBody(BaseModel):
 
 # ────────────────────────────── Constants ──────────────────────────────
 COIN_PACKAGES = [
-    {"id": "p10", "coins": 10, "price": 300},
-    {"id": "p25", "coins": 25, "price": 700},
-    {"id": "p50", "coins": 50, "price": 1200},
-    {"id": "p100", "coins": 100, "price": 2000},
+    {"id": "p100", "coins": 100, "price": 500},
+    {"id": "p200", "coins": 200, "price": 900},
+    {"id": "p300", "coins": 300, "price": 1200},
+    {"id": "p500", "coins": 500, "price": 1900},
 ]
 MSG_COST = {"text": 1, "emoji": 1, "image": 5, "gift": 10, "voice": 10, "video": 10}
 FREE_MSGS = 2
@@ -872,13 +873,24 @@ def _qr_png_base64(data: str) -> str:
 
 @api.get("/coins/packages")
 async def coin_packages():
-    """PUBLIC packages list — deliberately does NOT include the admin SBP phone number."""
+    """Public packages + admin SBP phone (per updated spec, users need to see the
+    payment recipient number and copy it into their bank app)."""
     s = await db.settings.find_one({"key": "app"}, {"_id": 0}) or {}
     packages = s.get('packages') or COIN_PACKAGES
-    # Mark 50-coin as the popular plan (per product spec)
     for p in packages:
-        p['popular'] = (p['id'] == 'p50')
-    return {"packages": packages, "currency": "RUB"}
+        p['popular'] = (p['id'] == 'p300')  # 300 coins = best value (4 ₽/coin)
+    # Fetch the admin SBP phone (encrypted at rest) so users can copy it
+    sbp_phone = await _get_admin_sbp_phone()
+    return {
+        "packages": packages,
+        "currency": "RUB",
+        "sbp_phone": sbp_phone,
+        "recipient_name": os.environ.get('SBP_RECIPIENT_NAME', 'Al Amin Dewan'),
+        "banks": [
+            {"id": "sberbank", "name": "Сбербанк"},
+            {"id": "tbank", "name": "T-Bank (Тинькофф)"},
+        ],
+    }
 
 @api.post("/coins/checkout")
 async def coins_checkout(body: PurchaseBody, request: Request, user: dict = Depends(get_current_user)):
@@ -912,15 +924,12 @@ async def coins_checkout(body: PurchaseBody, request: Request, user: dict = Depe
         "coins": pkg['coins'],
         "amount_rub": pkg['price'],
         "payment_method": "SBP",
-        "bank": None,  # will be filled when payment lands (via webhook / user selection)
+        "bank": body.bank,  # sender's chosen bank (sberbank | tbank | None)
         "status": "pending",  # pending → success | failed
         "credited": False,
         "ip": ip,
-        # Store the SBP link only server-side. Client just gets the link + QR at checkout time
-        # and a status endpoint to poll. The admin phone itself is NEVER exposed.
         "sbp_link_hash": hash(sbp_link),
         "created_at": iso(now_utc()),
-        # For MOCKED mode: auto-confirm at this timestamp
         "auto_confirm_at": iso(now_utc() + timedelta(seconds=MOCK_CONFIRM_DELAY_SECONDS)),
     }
     await db.transactions.insert_one(tx)

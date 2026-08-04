@@ -2,7 +2,10 @@ import { useEffect, useRef, useState } from "react";
 import { api } from "@/lib/api";
 import { useAuth } from "@/context/AuthContext";
 import { MobileShell } from "@/components/lovreski/Shell";
-import { Coins, Sparkles, Crown, Building2, Check, Clock, X, QrCode, Copy, ExternalLink, ShieldCheck } from "lucide-react";
+import {
+  Coins, Sparkles, Crown, Building2, Check, Clock, X, Copy, ExternalLink,
+  ShieldCheck, AlertTriangle, Phone, User,
+} from "lucide-react";
 import { toast } from "sonner";
 import { useNavigate } from "react-router-dom";
 import { motion, AnimatePresence } from "framer-motion";
@@ -12,27 +15,38 @@ export default function PremiumPage() {
   const { user, refresh } = useAuth();
   const nav = useNavigate();
   const [packages, setPackages] = useState([]);
-  const [checkout, setCheckout] = useState(null); // { tx_id, amount_rub, coins, sbp_link, qr_png }
-  const [status, setStatus] = useState("pending"); // pending | success | failed
+  const [sbpPhone, setSbpPhone] = useState("");
+  const [recipientName, setRecipientName] = useState("");
+  const [banks, setBanks] = useState([]);
+  const [selectedBank, setSelectedBank] = useState("sberbank");
+  const [checkout, setCheckout] = useState(null);
+  const [status, setStatus] = useState("pending");
   const [busy, setBusy] = useState(false);
-  const [success, setSuccess] = useState(null); // { coins, newBalance }
+  const [success, setSuccess] = useState(null);
   const pollTimer = useRef(null);
 
   const load = async () => {
     const { data } = await api.get("/coins/packages");
     setPackages(data.packages);
+    setSbpPhone(data.sbp_phone || "");
+    setRecipientName(data.recipient_name || "");
+    setBanks(data.banks || []);
   };
   useEffect(() => { load(); }, []);
-
-  // Cleanup polling on unmount
   useEffect(() => () => { if (pollTimer.current) clearInterval(pollTimer.current); }, []);
+
+  const copyPhone = async () => {
+    try {
+      await navigator.clipboard.writeText(sbpPhone);
+      toast.success("Номер скопирован ✓");
+    } catch { toast.error("Не удалось скопировать"); }
+  };
 
   const startCheckout = async (pkg) => {
     setBusy(true);
     try {
-      const { data } = await api.post("/coins/checkout", { package_id: pkg.id });
+      const { data } = await api.post("/coins/checkout", { package_id: pkg.id, bank: selectedBank });
       setCheckout(data); setStatus("pending");
-      // Poll every 3s
       pollTimer.current = setInterval(async () => {
         try {
           const r = await api.get(`/coins/status/${data.tx_id}`);
@@ -43,14 +57,13 @@ export default function PremiumPage() {
             setSuccess({ coinsAdded: tx.coins, newBalance: r.data.coins, bank: tx.bank });
             setCheckout(null);
             await refresh();
-            // Confetti 🎊
             confetti({ particleCount: 120, spread: 90, origin: { y: 0.6 } });
             setTimeout(() => confetti({ particleCount: 80, spread: 100, angle: 60, origin: { x: 0 } }), 250);
             setTimeout(() => confetti({ particleCount: 80, spread: 100, angle: 120, origin: { x: 1 } }), 400);
           } else if (tx.status === "failed") {
             clearInterval(pollTimer.current); pollTimer.current = null;
             setStatus("failed");
-            toast.error("❌ Insufficient balance! Your account balance is less than the required amount. Please top up your bank account and try again.");
+            toast.error("❌ Insufficient balance! Please top up your bank account and try again.");
           }
         } catch { /* keep polling */ }
       }, 3000);
@@ -78,23 +91,23 @@ export default function PremiumPage() {
       </header>
 
       <div className="p-4 space-y-5">
-        {/* Live balance card — updates instantly on success */}
+        {/* Live balance card */}
         <div className="p-5 rounded-2xl bg-gradient-to-br from-primary via-primary to-rose-700 text-primary-foreground relative overflow-hidden grain">
           <p className="text-xs uppercase tracking-widest opacity-80">Ваш баланс</p>
-          <p data-testid="coin-balance" className="font-display font-black text-4xl mt-1">{user?.coins || 0} 💰</p>
+          <p data-testid="coin-balance" className="font-display font-black text-4xl mt-1">{user?.coins || 0} 🪙</p>
           <p className="text-sm mt-2 opacity-90 flex items-center gap-2">
             {user?.is_premium ? <><Crown className="w-4 h-4" /> Premium активен</> : "Активируйте Premium для всех функций"}
           </p>
           <button
             onClick={() => nav("/purchase-history")}
             data-testid="link-purchase-history"
-            className="mt-3 text-xs bg-white/15 backdrop-blur px-3 py-1.5 rounded-full font-semibold hover:bg-white/25 transition-colors duration-200"
+            className="mt-3 text-xs bg-white/15 backdrop-blur px-3 py-1.5 rounded-full font-semibold hover:bg-white/25"
           >
             История покупок →
           </button>
         </div>
 
-        {/* Packages — 1 click checkout */}
+        {/* Coin packages */}
         <div>
           <h3 className="font-display font-bold text-lg mb-3">Выберите пакет</h3>
           <div className="grid grid-cols-2 gap-3">
@@ -117,21 +130,74 @@ export default function PremiumPage() {
                   <span className="text-xs text-muted-foreground">монет</span>
                 </div>
                 <p className="text-lg font-bold text-primary mt-1">{p.price.toLocaleString("ru")} ₽</p>
-                <p className="text-[10px] text-muted-foreground mt-1">{(p.price / p.coins).toFixed(0)} ₽ / монета</p>
-                <p className="mt-3 text-[11px] font-semibold text-primary flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity duration-200">
-                  Оплатить в один клик →
-                </p>
+                <p className="text-[10px] text-muted-foreground mt-1">{(p.price / p.coins).toFixed(1)} ₽ / монета</p>
               </button>
             ))}
           </div>
         </div>
 
-        {/* Security note — no phone number ever shown */}
-        <div className="p-3 rounded-xl bg-muted/50 border border-border flex gap-2 items-start">
-          <ShieldCheck className="w-5 h-5 text-emerald-500 flex-shrink-0 mt-0.5" />
-          <div className="text-xs text-muted-foreground leading-relaxed">
-            Платите из <b>любого банка</b> — Сбербанк, Тинькофф, Альфа, ВТБ, Райффайзен и др. Все платежи через СБП. Реквизиты получателя защищены и никогда не отображаются в приложении.
+        {/* SBP payment phone number — copyable */}
+        <div className="p-4 rounded-2xl bg-card border border-border" data-testid="sbp-info-card">
+          <p className="text-xs uppercase tracking-widest text-muted-foreground flex items-center gap-1">
+            <Phone className="w-3.5 h-3.5" /> Номер СБП для оплаты
+          </p>
+          <div className="mt-2 flex items-center gap-2">
+            <p data-testid="sbp-phone" className="flex-1 font-display font-semibold text-xl tracking-wide select-all">{sbpPhone || "—"}</p>
+            <button
+              data-testid="btn-copy-phone"
+              onClick={copyPhone}
+              className="inline-flex items-center gap-1 px-3 py-2 rounded-full bg-primary text-primary-foreground text-xs font-bold hover:opacity-90"
+            >
+              <Copy className="w-3.5 h-3.5" /> Копировать
+            </button>
           </div>
+          {recipientName && (
+            <div className="mt-3 flex items-center gap-2 text-sm">
+              <User className="w-4 h-4 text-primary" />
+              <span className="text-muted-foreground">Получатель:</span>
+              <span data-testid="sbp-recipient" className="font-semibold">{recipientName}</span>
+            </div>
+          )}
+        </div>
+
+        {/* Bank selector — user's preferred bank */}
+        {banks.length > 0 && (
+          <div className="p-4 rounded-2xl bg-card border border-border" data-testid="bank-selector">
+            <p className="text-xs uppercase tracking-widest text-muted-foreground mb-2 flex items-center gap-1">
+              <Building2 className="w-3.5 h-3.5" /> Ваш банк-отправитель
+            </p>
+            <div className="grid grid-cols-2 gap-2">
+              {banks.map((b) => (
+                <button
+                  key={b.id}
+                  data-testid={`bank-${b.id}`}
+                  onClick={() => setSelectedBank(b.id)}
+                  className={`p-3 rounded-xl border-2 text-sm font-semibold transition-all duration-200 ${selectedBank === b.id ? "border-primary bg-primary/5 text-primary" : "border-border hover:border-primary/50"}`}
+                >
+                  {selectedBank === b.id && <Check className="w-4 h-4 mr-1 inline" />}
+                  {b.name}
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* Rules Box — yellow/orange border */}
+        <div
+          data-testid="rules-box"
+          className="p-4 rounded-2xl border-2 border-amber-400 bg-amber-50 dark:bg-amber-950/30"
+        >
+          <p className="font-display font-black text-sm flex items-center gap-1.5 text-amber-700 dark:text-amber-400">
+            <AlertTriangle className="w-4 h-4" /> ПРАВИЛА АКТИВАЦИИ PREMIUM
+          </p>
+          <ol className="mt-3 space-y-2 text-sm text-amber-900 dark:text-amber-100 list-decimal pl-5">
+            <li data-testid="rule-1">
+              Перед оплатой Premium убедитесь, что <b>имя получателя</b> в вашем банке — <b>"{recipientName || 'Al Amin Dewan'}"</b>.
+            </li>
+            <li data-testid="rule-2">
+              Вы можете выбрать <b>предпочитаемый банк</b> (например, Сбербанк, T-Bank) для оплаты.
+            </li>
+          </ol>
         </div>
       </div>
 
@@ -152,22 +218,20 @@ export default function PremiumPage() {
               <div className="flex justify-between items-start mb-1">
                 <div>
                   <h3 className="font-display font-black text-xl">Оплата {checkout.amount_rub.toLocaleString("ru")} ₽</h3>
-                  <p className="text-xs text-muted-foreground">Получите {checkout.coins} монет 🪙</p>
+                  <p className="text-xs text-muted-foreground">Получите {checkout.coins} монет 🪙 · через {banks.find(b => b.id === selectedBank)?.name}</p>
                 </div>
                 <button data-testid="pay-close" onClick={closeCheckout} className="p-1 rounded-full hover:bg-muted"><X className="w-5 h-5" /></button>
               </div>
 
-              {/* QR code — scan with any bank app */}
               <div className="mt-4 flex flex-col items-center">
                 <div className="p-3 bg-white rounded-2xl shadow-lg border border-border">
-                  <img data-testid="pay-qr" src={checkout.qr_png} alt="Отсканируйте QR любым банковским приложением" className="w-52 h-52" />
+                  <img data-testid="pay-qr" src={checkout.qr_png} alt="Отсканируйте QR" className="w-52 h-52" />
                 </div>
                 <p className="mt-3 text-xs text-center text-muted-foreground max-w-xs">
-                  Отсканируйте QR-код <b>любым</b> банковским приложением (Сбер, Тинькофф, Альфа, ВТБ и др.) — сумма подставится автоматически
+                  Отсканируйте QR или переведите на <b>{sbpPhone}</b> ({recipientName}) вручную через ваш банк
                 </p>
               </div>
 
-              {/* Deep link buttons */}
               <div className="mt-4 grid grid-cols-2 gap-2">
                 <a
                   data-testid="pay-open-bank"
@@ -186,7 +250,6 @@ export default function PremiumPage() {
                 </button>
               </div>
 
-              {/* Live status */}
               <div className="mt-5 p-3 rounded-xl bg-muted flex items-center gap-3">
                 {status === "pending" && (
                   <>
@@ -196,7 +259,7 @@ export default function PremiumPage() {
                     </div>
                     <div className="flex-1">
                       <p data-testid="pay-status" className="text-sm font-semibold">Ожидание оплаты...</p>
-                      <p className="text-[11px] text-muted-foreground">Проверяем каждые 3 сек. Монеты зачислятся автоматически.</p>
+                      <p className="text-[11px] text-muted-foreground">Проверяем каждые 3 сек.</p>
                     </div>
                   </>
                 )}
@@ -205,13 +268,11 @@ export default function PremiumPage() {
                     <X className="w-5 h-5 text-rose-500" />
                     <div className="flex-1">
                       <p data-testid="pay-status" className="text-sm font-semibold text-rose-500">Платёж не прошёл</p>
-                      <p className="text-[11px] text-muted-foreground">Проверьте баланс банка и попробуйте снова.</p>
+                      <p className="text-[11px] text-muted-foreground">Проверьте баланс и попробуйте снова.</p>
                     </div>
                   </>
                 )}
               </div>
-
-              <p className="mt-3 text-[10px] text-center text-muted-foreground">Ссылка действительна {Math.floor(checkout.expires_in / 60)} минут</p>
             </motion.div>
           </motion.div>
         )}
@@ -230,17 +291,10 @@ export default function PremiumPage() {
               transition={{ type: "spring", damping: 12 }}
               className="w-full max-w-sm text-center p-8 rounded-3xl bg-gradient-to-br from-emerald-500 via-emerald-400 to-primary text-white shadow-2xl"
             >
-              <motion.div
-                animate={{ y: [-5, 5, -5], rotate: [0, 5, -5, 0] }}
-                transition={{ duration: 2, repeat: Infinity }}
-                className="text-7xl mb-3"
-              >
-                🎊
-              </motion.div>
+              <motion.div animate={{ y: [-5, 5, -5], rotate: [0, 5, -5, 0] }} transition={{ duration: 2, repeat: Infinity }} className="text-7xl mb-3">🎊</motion.div>
               <h2 className="font-display font-black text-3xl">Payment Successful!</h2>
               <p className="mt-3 text-2xl">+{success.coinsAdded} 🪙 монет</p>
               <p className="mt-1 opacity-90 text-sm">Новый баланс: <b>{success.newBalance}</b> монет</p>
-              {success.bank && <p className="mt-1 text-xs opacity-80">Оплачено через {success.bank}</p>}
               <div className="mt-6 flex flex-col gap-2">
                 <button
                   data-testid="success-explore"
@@ -248,12 +302,6 @@ export default function PremiumPage() {
                   className="w-full btn-pill bg-white text-emerald-600 font-black"
                 >
                   Start Exploring →
-                </button>
-                <button
-                  onClick={() => setSuccess(null)}
-                  className="text-xs opacity-80 hover:opacity-100 underline"
-                >
-                  Купить ещё
                 </button>
               </div>
             </motion.div>
