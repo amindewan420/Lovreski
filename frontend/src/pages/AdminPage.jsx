@@ -19,6 +19,13 @@ export default function AdminPage() {
   const [sbpPhoneInput, setSbpPhoneInput] = useState("");
   const [sbpMasked, setSbpMasked] = useState("");
   const [sbpRevealed, setSbpRevealed] = useState(null);
+  const [pendingSubs, setPendingSubs] = useState([]);
+  const [supportHistory, setSupportHistory] = useState([]);
+  const [pendingCount, setPendingCount] = useState(0);
+  const [modal, setModal] = useState(null); // {kind:'approve'|'reject', submission}
+  const [coinAmt, setCoinAmt] = useState("");
+  const [modalReason, setModalReason] = useState("");
+  const [viewImg, setViewImg] = useState(null);
 
   useEffect(() => {
     if (!user) return;
@@ -28,18 +35,46 @@ export default function AdminPage() {
 
   const load = async () => {
     try {
-      const [s, p, r, u, cfg] = await Promise.all([
+      const [s, p, r, u, cfg, pend, hist, cnt] = await Promise.all([
         api.get("/admin/stats"),
         api.get("/admin/payments"),
         api.get("/admin/reports"),
         api.get("/admin/users"),
         api.get("/admin/settings"),
+        api.get("/admin/support/pending"),
+        api.get("/admin/support/history"),
+        api.get("/admin/support/pending-count"),
       ]);
       setStats(s.data); setPayments(p.data); setReports(r.data); setUsers(u.data);
       setSbpMasked(cfg.data?.sbp_phone_masked || "");
-      setSbpPhoneInput(""); // empty by default — admin types new value; never pre-fill full phone
-      setSbpRevealed(null);
+      setSbpPhoneInput(""); setSbpRevealed(null);
+      setPendingSubs(pend.data); setSupportHistory(hist.data);
+      setPendingCount(cnt.data?.count || 0);
     } catch (e) { toast.error("Требуются права администратора"); nav("/home"); }
+  };
+
+  const openApprove = (s) => { setModal({ kind: "approve", submission: s }); setCoinAmt(""); setModalReason(""); };
+  const openReject = (s) => { setModal({ kind: "reject", submission: s }); setModalReason(""); };
+
+  const doApprove = async () => {
+    const coins = parseInt(coinAmt, 10);
+    if (!coins || coins <= 0) return toast.error("Введите положительное число монет");
+    if (!modalReason.trim()) return toast.error("Причина обязательна");
+    if (!window.confirm(`Начислить ${coins} монет пользователю ${modal.submission.user_name}?`)) return;
+    try {
+      await api.post(`/admin/support/${modal.submission.submission_id}/approve`, { coins, reason: modalReason });
+      toast.success(`✅ ${coins} монет начислено · Premium активирован`);
+      setModal(null); load();
+    } catch (e) { toast.error(e.response?.data?.detail || "Ошибка"); }
+  };
+
+  const doReject = async () => {
+    if (!modalReason.trim()) return toast.error("Причина обязательна");
+    try {
+      await api.post(`/admin/support/${modal.submission.submission_id}/reject`, { reason: modalReason });
+      toast.success("Чек отклонён");
+      setModal(null); load();
+    } catch (e) { toast.error(e.response?.data?.detail || "Ошибка"); }
   };
 
   const revealSbp = async () => {
@@ -91,8 +126,15 @@ export default function AdminPage() {
 
       <div className="max-w-6xl mx-auto p-6">
         <div className="flex gap-2 mb-6 bg-muted p-1 rounded-full w-fit">
-          {[{k:"dashboard",l:"Дашборд"},{k:"payments",l:"Платежи"},{k:"reports",l:"Жалобы"},{k:"users",l:"Пользователи"},{k:"settings",l:"Настройки"}].map(t => (
-            <button key={t.k} data-testid={`admin-tab-${t.k}`} onClick={() => setTab(t.k)} className={`px-5 py-2 rounded-full font-semibold text-sm ${tab === t.k ? "bg-card shadow" : "text-muted-foreground"}`}>{t.l}</button>
+          {[{k:"dashboard",l:"Дашборд"},{k:"payments",l:"Платежи"},{k:"support",l:"Verification",badge:pendingCount},{k:"reports",l:"Жалобы"},{k:"users",l:"Пользователи"},{k:"settings",l:"Настройки"}].map(t => (
+            <button key={t.k} data-testid={`admin-tab-${t.k}`} onClick={() => setTab(t.k)} className={`relative px-5 py-2 rounded-full font-semibold text-sm ${tab === t.k ? "bg-card shadow" : "text-muted-foreground"}`}>
+              {t.l}
+              {t.badge > 0 && (
+                <span data-testid="pending-badge" className="absolute -top-1 -right-1 min-w-[18px] h-[18px] px-1 rounded-full bg-rose-500 text-white text-[10px] font-bold flex items-center justify-center">
+                  {t.badge}
+                </span>
+              )}
+            </button>
           ))}
         </div>
 
@@ -203,6 +245,56 @@ export default function AdminPage() {
           </div>
         )}
 
+        {tab === "support" && (
+          <div className="space-y-3">
+            <h3 className="font-display font-bold text-lg">Проверка чеков</h3>
+            {pendingSubs.length === 0 && supportHistory.length === 0 && (
+              <p className="text-center text-muted-foreground py-10">Нет заявок</p>
+            )}
+            {pendingSubs.map((s) => (
+              <div key={s.submission_id} data-testid={`pending-${s.submission_id}`} className="p-4 rounded-2xl bg-card border border-border">
+                <div className="flex gap-4">
+                  <button onClick={() => setViewImg(s.receipt_data_url)} className="w-24 h-24 rounded-xl overflow-hidden bg-muted flex-shrink-0">
+                    {s.receipt_data_url?.startsWith("data:image/") ? (
+                      <img src={s.receipt_data_url} alt="receipt" className="w-full h-full object-cover" data-testid={`receipt-img-${s.submission_id}`} />
+                    ) : (
+                      <div className="w-full h-full flex items-center justify-center text-xs text-muted-foreground">PDF</div>
+                    )}
+                  </button>
+                  <div className="flex-1 min-w-0">
+                    <p className="font-bold">{s.user_name} <span className="text-xs text-muted-foreground">({s.user_email})</span></p>
+                    <p className="text-[11px] text-muted-foreground">ID: {s.user_id}</p>
+                    <p className="text-[11px] text-muted-foreground">{new Date(s.created_at).toLocaleString("ru")}</p>
+                    {s.message && <p className="text-xs mt-1 italic">"{s.message}"</p>}
+                    {s.package_id && <p className="text-xs mt-1">Пакет: <b>{s.package_id}</b></p>}
+                  </div>
+                </div>
+                <div className="mt-3 grid grid-cols-2 gap-2">
+                  <button data-testid={`btn-approve-${s.submission_id}`} onClick={() => openApprove(s)} className="btn-pill bg-emerald-500 text-white text-sm !py-2"><Check className="w-4 h-4 mr-1" /> Custom Coin Add</button>
+                  <button data-testid={`btn-reject-${s.submission_id}`} onClick={() => openReject(s)} className="btn-pill bg-rose-500 text-white text-sm !py-2"><X className="w-4 h-4 mr-1" /> Отклонить</button>
+                </div>
+              </div>
+            ))}
+            {supportHistory.length > 0 && (
+              <details className="mt-4">
+                <summary className="text-sm font-semibold text-muted-foreground cursor-pointer">История ({supportHistory.length})</summary>
+                <div className="mt-2 space-y-2">
+                  {supportHistory.map((s) => (
+                    <div key={s.submission_id} className="p-3 rounded-xl bg-muted/40 border border-border text-xs">
+                      <div className="flex justify-between">
+                        <span><b>{s.user_name}</b> · {new Date(s.created_at).toLocaleDateString("ru")}</span>
+                        <span className={s.status === "verified" ? "text-emerald-500" : "text-rose-500"}>
+                          {s.status === "verified" ? `✓ ${s.coins_added} 🪙` : `✗ ${s.reject_reason}`}
+                        </span>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </details>
+            )}
+          </div>
+        )}
+
         {tab === "settings" && (
           <div className="max-w-lg space-y-6">
             <div className="p-5 rounded-2xl bg-card border border-border">
@@ -250,6 +342,81 @@ export default function AdminPage() {
           </div>
         )}
       </div>
+
+      {/* Approve / Reject modal */}
+      {modal && (
+        <div data-testid="admin-modal" className="fixed inset-0 z-[80] flex items-center justify-center bg-black/70 backdrop-blur-sm p-4" onClick={() => setModal(null)}>
+          <div onClick={(e) => e.stopPropagation()} className="w-full max-w-md bg-card border border-border rounded-2xl shadow-2xl p-6">
+            {modal.kind === "approve" ? (
+              <>
+                <h3 className="font-display font-black text-lg">💰 Custom Coin Add</h3>
+                <p className="text-xs text-muted-foreground mt-1">Пользователь: <b>{modal.submission.user_name}</b> ({modal.submission.user_email})</p>
+                <p className="text-xs text-muted-foreground">Текущий баланс: <b>{modal.submission._currentBalance ?? "—"}</b> 🪙</p>
+                <div className="mt-4 space-y-3">
+                  <div>
+                    <label className="text-xs font-semibold">Сумма монет (число):</label>
+                    <input
+                      data-testid="modal-coin-amount"
+                      type="number" min="1" step="1"
+                      value={coinAmt} onChange={(e) => setCoinAmt(e.target.value.replace(/[^\d]/g, ""))}
+                      className="mt-1 w-full px-3 py-2 rounded-xl bg-muted outline-none border border-transparent focus:border-primary text-lg font-bold"
+                    />
+                  </div>
+                  <div>
+                    <label className="text-xs font-semibold">Причина (обязательно):</label>
+                    <input
+                      data-testid="modal-reason"
+                      value={modalReason} onChange={(e) => setModalReason(e.target.value)}
+                      placeholder="e.g. Payment verified"
+                      className="mt-1 w-full px-3 py-2 rounded-xl bg-muted outline-none border border-transparent focus:border-primary"
+                    />
+                  </div>
+                  {coinAmt > 0 && (
+                    <div data-testid="modal-preview" className="p-3 rounded-xl bg-primary/10 border border-primary/30 text-sm">
+                      Предпросмотр: <b>+ {coinAmt}</b> 🪙 · Premium будет активирован
+                    </div>
+                  )}
+                </div>
+                <div className="mt-5 flex gap-2">
+                  <button onClick={() => setModal(null)} className="flex-1 btn-pill bg-muted">Отмена</button>
+                  <button data-testid="modal-confirm-approve" onClick={doApprove} className="flex-1 btn-pill bg-emerald-500 text-white">✅ Confirm & Add Coins</button>
+                </div>
+              </>
+            ) : (
+              <>
+                <h3 className="font-display font-black text-lg text-rose-500">❌ Отклонить чек</h3>
+                <p className="text-xs text-muted-foreground mt-1">Пользователь: <b>{modal.submission.user_name}</b></p>
+                <div className="mt-4 space-y-2">
+                  {["Blurry/unclear receipt","Wrong amount transferred","Fake/edited receipt","Payment not received in account"].map((r) => (
+                    <button key={r} data-testid={`reject-reason-${r.replace(/[^a-z]/gi,'_')}`} onClick={() => setModalReason(r)} className={`w-full text-left px-3 py-2 rounded-xl border ${modalReason === r ? "border-rose-500 bg-rose-500/10" : "border-border"}`}>
+                      {r}
+                    </button>
+                  ))}
+                  <input
+                    data-testid="modal-reject-other"
+                    placeholder="Другое..."
+                    value={modalReason.startsWith("Other:") ? modalReason.slice(6) : (["Blurry/unclear receipt","Wrong amount transferred","Fake/edited receipt","Payment not received in account"].includes(modalReason) ? "" : modalReason)}
+                    onChange={(e) => setModalReason("Other: " + e.target.value)}
+                    className="w-full px-3 py-2 rounded-xl bg-muted outline-none border border-transparent focus:border-primary"
+                  />
+                </div>
+                <div className="mt-5 flex gap-2">
+                  <button onClick={() => setModal(null)} className="flex-1 btn-pill bg-muted">Отмена</button>
+                  <button data-testid="modal-confirm-reject" onClick={doReject} className="flex-1 btn-pill bg-rose-500 text-white">Reject</button>
+                </div>
+              </>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* Fullscreen receipt viewer */}
+      {viewImg && (
+        <div className="fixed inset-0 z-[90] bg-black/95 flex items-center justify-center p-4" onClick={() => setViewImg(null)}>
+          <img src={viewImg} alt="receipt" className="max-w-full max-h-full object-contain" />
+          <button className="absolute top-4 right-4 w-10 h-10 rounded-full bg-white/20 text-white flex items-center justify-center">✕</button>
+        </div>
+      )}
     </div>
   );
 }

@@ -838,9 +838,11 @@ async def delete_message(message_id: str, user: dict = Depends(get_current_user)
     return {"ok": True}
 
 # ────────────────────────────── Premium & Coins ──────────────────────────────
-# Auto-confirmation delay for MOCKED SBP verification (simulates bank webhook).
-# In production, replace with a real webhook endpoint from Sberbank.
-MOCK_CONFIRM_DELAY_SECONDS = 8
+# ⚠️ Auto-crediting DISABLED per updated flow — coins are added ONLY by admin
+# manually after verifying a submitted payment receipt. The `_try_auto_confirm`
+# function is retained but is a no-op unless AUTO_CREDIT_ENABLED is set to '1'.
+AUTO_CREDIT_ENABLED = os.environ.get('AUTO_CREDIT_ENABLED', '0') == '1'
+MOCK_CONFIRM_DELAY_SECONDS = 8  # only used if AUTO_CREDIT_ENABLED
 
 async def _get_admin_sbp_phone() -> str:
     """Fetch the current admin SBP phone from DB (encrypted at rest) with env fallback.
@@ -945,7 +947,11 @@ async def coins_checkout(body: PurchaseBody, request: Request, user: dict = Depe
     }
 
 async def _try_auto_confirm(tx: dict) -> dict:
-    """MOCKED: If enough time has passed since checkout, mark tx success + credit coins atomically."""
+    """DISABLED by default. Only runs when AUTO_CREDIT_ENABLED env is '1'.
+    Under the new manual-approval flow, coins are added only via /admin/support/*
+    or /admin/users/*/add-coins."""
+    if not AUTO_CREDIT_ENABLED:
+        return tx
     if tx.get('credited') or tx.get('status') != 'pending':
         return tx
     ac = tx.get('auto_confirm_at')
@@ -1035,6 +1041,170 @@ async def user_transactions(user: dict = Depends(get_current_user)):
 async def coin_balance(user: dict = Depends(get_current_user)):
     fresh = await db.users.find_one({"user_id": user['user_id']}, {"_id": 0})
     return {"coins": fresh.get('coins', 0), "is_premium": fresh.get('is_premium', False)}
+
+# ────────── Manual receipt-approval flow ──────────
+
+class ReceiptBody(BaseModel):
+    package_id: Optional[str] = None
+    receipt_data_url: str  # base64 data URL (JPG/PNG/PDF)
+    message: Optional[str] = Field(default=None, max_length=500)
+
+@api.post("/support/receipt")
+async def submit_receipt(body: ReceiptBody, user: dict = Depends(get_current_user)):
+    """User uploads a payment receipt image/PDF for admin verification.
+    Coins are NOT credited here — only after admin approval."""
+    if not body.receipt_data_url.startswith("data:"):
+        raise HTTPException(status_code=400, detail="Invalid receipt format")
+    # Rate-limit 5 receipts per hour
+    since = now_utc() - timedelta(hours=1)
+    recent = await db.receipt_submissions.count_documents({"user_id": user['user_id'], "created_at": {"$gte": iso(since)}})
+    if recent >= 5:
+        raise HTTPException(status_code=429, detail="Too many submissions. Try again later.")
+    # Optional compression for image receipts
+    receipt = body.receipt_data_url
+    if receipt.startswith("data:image/"):
+        try:
+            receipt, _ = _compress_image_data_url(receipt, max_dim=1800, quality=85)
+        except Exception:
+            pass
+    sub_id = f"sub_{uuid.uuid4().hex[:12]}"
+    await db.receipt_submissions.insert_one({
+        "submission_id": sub_id,
+        "user_id": user['user_id'],
+        "user_email": user.get('email'),
+        "user_name": user.get('name'),
+        "package_id": body.package_id,
+        "receipt_data_url": receipt,
+        "message": body.message,
+        "status": "pending",  # pending → verified | rejected
+        "created_at": iso(now_utc()),
+    })
+    return {"submission_id": sub_id, "status": "pending"}
+
+@api.get("/support/my")
+async def my_submissions(user: dict = Depends(get_current_user)):
+    subs = await db.receipt_submissions.find(
+        {"user_id": user['user_id']},
+        {"_id": 0, "receipt_data_url": 0},
+    ).sort("created_at", -1).to_list(50)
+    return subs
+
+@api.get("/notifications")
+async def my_notifications(user: dict = Depends(get_current_user)):
+    """Return the user's recent notifications and mark them as read."""
+    notes = await db.notifications.find({"user_id": user['user_id']}, {"_id": 0}).sort("created_at", -1).to_list(50)
+    await db.notifications.update_many({"user_id": user['user_id'], "read": False}, {"$set": {"read": True}})
+    return notes
+
+async def _push_notification(user_id: str, message: str, kind: str = "info"):
+    await db.notifications.insert_one({
+        "id": f"n_{uuid.uuid4().hex[:12]}",
+        "user_id": user_id, "message": message, "kind": kind, "read": False,
+        "created_at": iso(now_utc()),
+    })
+
+# ────────── Admin: pending submissions + custom coin add ──────────
+
+class AdminApproveBody(BaseModel):
+    coins: int = Field(gt=0, le=100000)
+    reason: str = Field(min_length=1, max_length=200)
+
+class AdminRejectBody(BaseModel):
+    reason: str = Field(min_length=1, max_length=200)
+
+class CustomCoinAddBody(BaseModel):
+    user_id: str
+    coins: int = Field(gt=0, le=100000)
+    reason: str = Field(min_length=1, max_length=200)
+
+@api.get("/admin/support/pending-count")
+async def admin_pending_count(_: dict = Depends(require_admin)):
+    return {"count": await db.receipt_submissions.count_documents({"status": "pending"})}
+
+@api.get("/admin/support/pending")
+async def admin_pending(_: dict = Depends(require_admin)):
+    subs = await db.receipt_submissions.find({"status": "pending"}, {"_id": 0}).sort("created_at", -1).to_list(200)
+    return subs
+
+@api.get("/admin/support/history")
+async def admin_history(_: dict = Depends(require_admin)):
+    subs = await db.receipt_submissions.find({"status": {"$ne": "pending"}}, {"_id": 0}).sort("created_at", -1).to_list(200)
+    return subs
+
+@api.post("/admin/support/{submission_id}/approve")
+async def admin_approve_receipt(submission_id: str, body: AdminApproveBody, admin: dict = Depends(require_admin)):
+    """Admin approves a receipt: atomically credits coins + activates Premium.
+    Idempotent via CAS on status:pending → verified."""
+    res = await db.receipt_submissions.find_one_and_update(
+        {"submission_id": submission_id, "status": "pending"},
+        {"$set": {
+            "status": "verified",
+            "coins_added": body.coins,
+            "reason": body.reason,
+            "admin_id": admin['user_id'],
+            "verified_at": iso(now_utc()),
+        }},
+        return_document=True,
+    )
+    if not res:
+        raise HTTPException(status_code=404, detail="Submission not found or already processed")
+    # Credit coins + activate premium
+    await db.users.update_one(
+        {"user_id": res['user_id']},
+        {"$inc": {"coins": body.coins},
+         "$set": {"is_premium": True, "premium_until": iso(now_utc() + timedelta(days=30))}},
+    )
+    # Audit log
+    await db.admin_audit.insert_one({
+        "admin_id": admin['user_id'], "action": "receipt_approve",
+        "target_user": res['user_id'], "submission_id": submission_id,
+        "coins": body.coins, "reason": body.reason, "at": iso(now_utc()),
+    })
+    await _push_notification(res['user_id'], f"🎉 Payment verified! {body.coins} coins added. Your Premium is now ACTIVE! 👑", "success")
+    return {"ok": True, "coins_added": body.coins}
+
+@api.post("/admin/support/{submission_id}/reject")
+async def admin_reject_receipt(submission_id: str, body: AdminRejectBody, admin: dict = Depends(require_admin)):
+    res = await db.receipt_submissions.find_one_and_update(
+        {"submission_id": submission_id, "status": "pending"},
+        {"$set": {
+            "status": "rejected",
+            "reject_reason": body.reason,
+            "admin_id": admin['user_id'],
+            "rejected_at": iso(now_utc()),
+        }},
+        return_document=True,
+    )
+    if not res:
+        raise HTTPException(status_code=404, detail="Submission not found or already processed")
+    await db.admin_audit.insert_one({
+        "admin_id": admin['user_id'], "action": "receipt_reject",
+        "target_user": res['user_id'], "submission_id": submission_id,
+        "reason": body.reason, "at": iso(now_utc()),
+    })
+    await _push_notification(res['user_id'], f"❌ Receipt rejected. Reason: {body.reason}. Please contact support.", "error")
+    return {"ok": True}
+
+@api.post("/admin/users/add-coins")
+async def admin_add_coins(body: CustomCoinAddBody, admin: dict = Depends(require_admin)):
+    """Custom coin add — admin manually credits coins to any user + activates Premium.
+    Coin balance never goes negative because `body.coins` must be > 0."""
+    target = await db.users.find_one({"user_id": body.user_id}, {"_id": 0})
+    if not target:
+        raise HTTPException(status_code=404, detail="User not found")
+    new_balance = (target.get('coins', 0) or 0) + body.coins
+    await db.users.update_one(
+        {"user_id": body.user_id},
+        {"$inc": {"coins": body.coins},
+         "$set": {"is_premium": True, "premium_until": iso(now_utc() + timedelta(days=30))}},
+    )
+    await db.admin_audit.insert_one({
+        "admin_id": admin['user_id'], "action": "custom_coin_add",
+        "target_user": body.user_id, "coins": body.coins,
+        "reason": body.reason, "at": iso(now_utc()),
+    })
+    await _push_notification(body.user_id, f"🎉 {body.coins} coins added by admin. Premium is ACTIVE! 👑", "success")
+    return {"ok": True, "new_balance": new_balance}
 
 
 # ────────────────────────────── Reports ──────────────────────────────

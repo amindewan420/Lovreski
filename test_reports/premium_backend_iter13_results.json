@@ -1,0 +1,174 @@
+{
+  "summary": {
+    "passed": 29,
+    "total": 30,
+    "success_rate": 96.67
+  },
+  "context": {
+    "user_email": "recp_1785848564@lovreski.ru",
+    "user_id": "user_d9499443932b",
+    "initial_coins": 5,
+    "admin_token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VyX2lkIjoidXNlcl8zNTJjMmFjNzdhMDAiLCJpc19hZG1pbiI6dHJ1ZSwiZXhwIjoxNzg4NDQwNTY0fQ.nuLx7rXn3NsL2BLcmHhA5h2xsjkjTl7s9CD0utaQtmY",
+    "user_token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VyX2lkIjoidXNlcl9kOTQ5OTQ0MzkzMmIiLCJpc19hZG1pbiI6ZmFsc2UsImV4cCI6MTc4ODQ0MDU2NH0.5TSGtLR7-T3NqB_tYsjjy6lNj9Nekn2E9ehGm68RZ5c",
+    "approved_submission_id": "sub_8a49a86b79e4",
+    "rejected_submission_id": "sub_9b8930e47824",
+    "remaining_pending_submission_ids": [
+      "sub_4b89d3d54278",
+      "sub_f5955ddad5e2",
+      "sub_fb2839ee30c7"
+    ],
+    "webhook_test_email": "webhook_1785848564@lovreski.ru"
+  },
+  "results": [
+    {
+      "name": "admin login succeeds",
+      "status": "PASS",
+      "detail": "200"
+    },
+    {
+      "name": "fresh user registered",
+      "status": "PASS",
+      "detail": "recp_1785848564@lovreski.ru"
+    },
+    {
+      "name": "POST /coins/checkout creates pending tx",
+      "status": "PASS",
+      "detail": "{\"tx_id\":\"tx_35ade9165c56\",\"amount_rub\":900,\"coins\":200,\"sbp_link\":\"https://qr.nspk.ru/pay?type=01&bank=100000000111&sum=90000&cur=RUB&crc=lovreski&ref=lovreski"
+    },
+    {
+      "name": "/coins/status remains pending after >10s",
+      "status": "PASS",
+      "detail": "{\"transaction\": {\"tx_id\": \"tx_35ade9165c56\", \"user_id\": \"user_d9499443932b\", \"user_email\": \"recp_1785848564@lovreski.ru\", \"user_name\": \"Receipt Tester\", \"package_id\": \"p200\", \"coins\": 200, \"amount_rub\": 900, \"payment_method\": \"SBP\", \"bank\":"
+    },
+    {
+      "name": "checkout/status did not increment coins",
+      "status": "PASS",
+      "detail": "coins=5 initial=5"
+    },
+    {
+      "name": "POST /support/receipt without receipt_data_url returns 422",
+      "status": "PASS",
+      "detail": "{\"detail\":[{\"type\":\"missing\",\"loc\":[\"body\",\"receipt_data_url\"],\"msg\":\"Field required\",\"input\":{\"message\":\"no file\"},\"url\":\"https://errors.pydantic.dev/2.13/v/mi"
+    },
+    {
+      "name": "valid receipt submission 1 returns pending",
+      "status": "PASS",
+      "detail": "{\"submission_id\":\"sub_8a49a86b79e4\",\"status\":\"pending\"}"
+    },
+    {
+      "name": "valid receipt submission 2 returns pending",
+      "status": "PASS",
+      "detail": "{\"submission_id\":\"sub_9b8930e47824\",\"status\":\"pending\"}"
+    },
+    {
+      "name": "valid receipt submission 3 returns pending",
+      "status": "PASS",
+      "detail": "{\"submission_id\":\"sub_4b89d3d54278\",\"status\":\"pending\"}"
+    },
+    {
+      "name": "valid receipt submission 4 returns pending",
+      "status": "PASS",
+      "detail": "{\"submission_id\":\"sub_f5955ddad5e2\",\"status\":\"pending\"}"
+    },
+    {
+      "name": "valid receipt submission 5 returns pending",
+      "status": "PASS",
+      "detail": "{\"submission_id\":\"sub_fb2839ee30c7\",\"status\":\"pending\"}"
+    },
+    {
+      "name": "6th receipt submission in hour returns 429",
+      "status": "PASS",
+      "detail": "{\"detail\":\"Too many submissions. Try again later.\"}"
+    },
+    {
+      "name": "GET /support/my succeeds",
+      "status": "PASS",
+      "detail": "[{\"submission_id\":\"sub_fb2839ee30c7\",\"user_id\":\"user_d9499443932b\",\"user_email\":\"recp_1785848564@lovreski.ru\",\"user_name\":\"Receipt Tester\",\"package_id\":null,\"me"
+    },
+    {
+      "name": "GET /support/my strips receipt_data_url",
+      "status": "PASS",
+      "detail": "[{\"submission_id\": \"sub_fb2839ee30c7\", \"user_id\": \"user_d9499443932b\", \"user_email\": \"recp_1785848564@lovreski.ru\", \"user_name\": \"Receipt Tester\", \"package_id\": null, \"message\": \"receipt message 4\", \"status\": \"pending\", \"created_at\": \"2026-"
+    },
+    {
+      "name": "GET /support/my newest-first",
+      "status": "PASS",
+      "detail": "[\"2026-08-04T13:02:56.973033+00:00\", \"2026-08-04T13:02:56.838948+00:00\", \"2026-08-04T13:02:56.706071+00:00\", \"2026-08-04T13:02:56.572909+00:00\", \"2026-08-04T13:02:56.449117+00:00\"]"
+    },
+    {
+      "name": "non-admin GET /admin/support/pending returns 403",
+      "status": "PASS",
+      "detail": "{\"detail\":\"Admin only\"}"
+    },
+    {
+      "name": "admin pending list includes submissions with receipt bytes and user info",
+      "status": "PASS",
+      "detail": "pending_count=5"
+    },
+    {
+      "name": "admin pending-count returns count >= created pending",
+      "status": "PASS",
+      "detail": "{\"count\": 5}"
+    },
+    {
+      "name": "admin approve receipt returns ok",
+      "status": "PASS",
+      "detail": "{\"ok\":true,\"coins_added\":100}"
+    },
+    {
+      "name": "approve increments user.coins by 100 and activates premium_until ~30d",
+      "status": "PASS",
+      "detail": "{\"coins\": 105, \"is_premium\": true, \"premium_until\": \"2026-09-03T13:02:57.800134+00:00\"}"
+    },
+    {
+      "name": "approve inserts admin_audit entry",
+      "status": "PASS",
+      "detail": "audit_count=1"
+    },
+    {
+      "name": "approve creates success notification",
+      "status": "PASS",
+      "detail": "[{\"id\":\"n_0d108e2a740e\",\"user_id\":\"user_d9499443932b\",\"message\":\"🎉 Payment verified! 100 coins added. Your Premium is now ACTIVE! 👑\",\"kind\":\"success\",\"read\":false,\"created_at\":\"2026-08-04T13:02:57.800773+00:00\"}]"
+    },
+    {
+      "name": "second approve returns 404 and no double-credit",
+      "status": "PASS",
+      "detail": "status=404 coins=105"
+    },
+    {
+      "name": "admin reject receipt returns ok",
+      "status": "PASS",
+      "detail": "{\"ok\":true}"
+    },
+    {
+      "name": "second reject returns 404",
+      "status": "PASS",
+      "detail": "{\"detail\":\"Submission not found or already processed\"}"
+    },
+    {
+      "name": "reject creates rejection notification",
+      "status": "PASS",
+      "detail": "[{\"id\":\"n_e705683c0d7c\",\"user_id\":\"user_d9499443932b\",\"message\":\"❌ Receipt rejected. Reason: Blurry receipt. Please contact support.\",\"kind\":\"error\",\"read\":false,\"created_at\":\"2026-08-04T13:02:58.615086+00:00\"},{\"id\":\"n_0d108e2a740e\",\"user_"
+    },
+    {
+      "name": "admin add-coins rejects 0",
+      "status": "PASS",
+      "detail": "{\"detail\":[{\"type\":\"greater_than\",\"loc\":[\"body\",\"coins\"],\"msg\":\"Input should be greater than 0\",\"input\":0,\"ctx\":{\"gt\":0}"
+    },
+    {
+      "name": "admin add-coins rejects negative",
+      "status": "PASS",
+      "detail": "{\"detail\":[{\"type\":\"greater_than\",\"loc\":[\"body\",\"coins\"],\"msg\":\"Input should be greater than 0\",\"input\":-5,\"ctx\":{\"gt\":0"
+    },
+    {
+      "name": "admin add-coins valid body increments coins and keeps premium",
+      "status": "PASS",
+      "detail": "add={\"ok\":true,\"new_balance\":112} final_coins=112"
+    },
+    {
+      "name": "manual-only contract: /coins/webhook must not auto-credit coins/premium",
+      "status": "FAIL",
+      "detail": "webhook_status=200 initial=5 after=105 premium=True"
+    }
+  ]
+}

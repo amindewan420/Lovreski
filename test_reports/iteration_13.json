@@ -1,0 +1,60 @@
+{
+  "verdict": "not_fixed",
+  "user_reported_bug": "Rebuild the Premium/Coin flow: (1) CRITICAL — clicking a coin package must NO LONGER trigger automatic payment or auto-credit coins; a click ONLY visually selects the package. (2) SBP payment card shows phone +79783069381 with copy button, recipient 'Al Amin Dewan', and a note 'any bank choose' (bank selector REMOVED). (3) 6-item numbered Premium Activation Rules list. (4) 'Premium Activation Support' button opens a receipt-upload panel (JPG/PNG/PDF mandatory, message optional, submit disabled until file uploaded). (5) On submit, receipt goes to admin. (6) Admin Panel new 'Verification' tab shows pending submissions with viewable receipt image, user info, message, timestamp. (7) Custom Coin Add modal — admin enters coin amount + mandatory reason + live preview; on confirm coins credit + Premium auto-activates + user gets notification. (8) Reject flow — admin picks a reason radio or types Other; user gets rejection notification. (9) Red badge on Verification tab = pending count. (10) Coins never negative; one receipt = one approval (no duplicates); Premium only via manual admin add — never automatic.",
+  "summary": "No relevant testing skill found. Focused backend + UI verification covered checkout no-auto-credit, receipt upload/rate-limit, my submissions stripping receipt bytes, admin pending/count, approval idempotency, rejection, add-coins validation, Premium/Admin UI, badge, modal approval, and balance refresh. Most requested flow works, but the old /api/coins/webhook still auto-credits coins and activates Premium with a valid webhook secret, violating the manual-approval-only requirement.",
+  "backend_issues": {
+    "critical": [
+      {
+        "endpoint": "POST /api/coins/webhook",
+        "issue": "Still credits coins and sets is_premium=true automatically when called with a valid SBP webhook secret. Runtime proof: a fresh user went from 5 to 105 coins and Premium=true after webhook success, without admin support approval or /admin/users/add-coins.",
+        "priority": "CRITICAL"
+      }
+    ],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [
+      {
+        "screen": "PremiumPage rules-box",
+        "issues": [
+          "rule-2 text says users can select a preferred bank even though the bank selector was removed and the SBP card says any bank. This is visible contradictory copy."
+        ]
+      }
+    ]
+  },
+  "test_report_links": [
+    "/app/test_reports/test_premium_flow_iter13.py",
+    "/app/test_reports/premium_backend_iter13_results.json",
+    "/app/test_reports/frontend_premium_flow_iter13.py",
+    "/app/test_reports/bug_verification_13.json",
+    "/app/test_reports/iteration_13.json"
+  ],
+  "action_items": [
+    "Disable/remove the auto-crediting logic in POST /api/coins/webhook or make it create/admin-review a pending receipt only; it must not directly increment coins or activate Premium under the manual approval contract.",
+    "Review legacy POST /api/admin/payments/{tx_id} approve crediting path and ensure the only intended coin-credit paths are admin support approval and /api/admin/users/add-coins.",
+    "Update PremiumPage rule-2 copy so it does not mention selecting a bank after the bank selector removal."
+  ],
+  "critical_code_review_comments": [
+    "/app/backend/server.py lines 1001-1030: /coins/webhook remains a direct success -> $inc coins + is_premium=true path outside the new receipt verification flow.",
+    "/app/backend/server.py lines 1281-1291: legacy admin payment approval also still credits checkout transactions; confirm whether this should remain or be disabled under the manual receipt workflow."
+  ],
+  "updated_files": [
+    "/app/test_reports/test_premium_flow_iter13.py",
+    "/app/test_reports/premium_backend_iter13_results.json",
+    "/app/test_reports/frontend_premium_flow_iter13.py",
+    "/app/test_reports/ui_receipt_iter13.png",
+    "/app/test_reports/bug_verification_13.json",
+    "/app/test_reports/iteration_13.json"
+  ],
+  "success_rate": {
+    "backend": "96.67%",
+    "frontend": "100%"
+  },
+  "seed_data_creation": "Created fresh users recp_1785848564@lovreski.ru, webhook_1785848564@lovreski.ru, and ui_recp_1785848657@lovreski.ru; created multiple receipt submissions for rate-limit/idempotency/admin UI tests.",
+  "retest_needed": true,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "Backend results are in premium_backend_iter13_results.json. UI automation passed all requested PremiumPage/AdminPage selectors and end-to-end receipt approval/balance refresh. Re-test specifically that /api/coins/webhook no longer credits coins/premium after the fix, then rerun core approval/idempotency checks.",
+  "rca_of_the_issue": "The new checkout/status auto-confirm path is disabled by AUTO_CREDIT_ENABLED=0 and passed. However, the legacy SBP webhook endpoint was left active and still treats a signed success webhook as payment confirmation, directly updating users with $inc coins and is_premium=true. That bypasses the new receipt-upload/admin-verification flow."
+}
