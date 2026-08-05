@@ -44,15 +44,19 @@ Build a complete, production-ready dating web app called "Lovreski" — mobile-f
 - P2: Email/SMS notifications via Resend/Twilio for refund status & matches
 
 ## Changelog
-- 2026-02 · **Priority Feeds + Install Banner + Auto-Session (Iter 24)** — 
-  **F1 Discover/Search**: `/api/discover/feed` sorts candidates by `is_online DESC → distance ASC → last_seen DESC` with 4 tiers (Online+Nearby > Online > Offline+Nearby > Offline). 
-  **F2 Home**: `/api/home/feed` HARD-filters by the viewer's `distance_km` when `distance_mode='limited'`, then ranks in 5 tiers (Online+Premium > Online+Nearby > Online (any, sub-sorted by `online_at DESC`) > Offline+Nearby > Offline). Prominent gradient PWA install banner on `/home` — mobile UA only, dismiss X persisted in `localStorage.lovreski_pwa_dismissed`. 
-  **F3 Persistent auto-session**: new `LandingOrHome` wrapper; visiting `/` with a valid JWT auto-redirects to `/home`; logout clears the token and shows Landing again. 
-  **Backend infra**: `is_online` derived from open WS + 60 s HTTP-active fallback; new stored fields `is_online` (bool), `online_at` (transition timestamp). New MongoDB indexes: `{is_online:-1, is_premium:-1}`, `last_active`, `online_at`, `{lat:1, lng:1}`. Iteration 24 backend 6/6 pytest pass + frontend 8/8 pass, zero bugs.
-- 2026-02 · **Delete Message v1** — `DELETE /api/messages/{id}?scope=me|everyone`. `me` hides for viewer (idempotent `$addToSet` on `hidden_for`). `everyone` tombstones (sender-only, 1-h window, admins bypass), broadcasts `{type:"message_deleted"}` WS. Deleted bubbles render italic "Это сообщение было удалено"; reply preview shows "Исходное сообщение удалено". Iteration 23 backend 11/11 pass, frontend 100 %.
-- 2026-02 · **Full-App Translation (DOM Auto-Translator)** — Iteration 22.
-- 2026-02 · **Telegram-Style Chat + i18n v1** — Iteration 21.
-- 2026-02 · **Complete Chat System v1** — Iteration 20.
+- 2026-02 · **Admin Panel v2 (Iter 25)** — 
+  **Coin management**: `POST /api/admin/users/deduct-coins` (with mandatory reason, confirmation, floors at 0, notification to user). 
+  **Payments tab**: All/Pending/Approved/Rejected filter tabs + username/email search. 
+  **Dashboard**: added "Approved this month" stat card. 
+  **Moderation**: `POST /api/admin/users/{id}/warn` (warn_count + push), `POST /api/admin/users/{id}/ban7` (temporary ban, invalidates sessions, blocks login with Russian message), `POST /api/admin/users/{id}/deactivate-permanent` (soft deactivation, invalidates sessions, filtered out of all feeds, blocks login). 
+  **Legal docs manager**: full CRUD (`GET /api/legal` public, `GET/POST/PUT/DELETE /api/admin/legal[/{slug}]`), slug regex enforced, duplicate = 409. 
+  **Admin audit log**: new `db.admin_audit` collection + `GET /api/admin/audit` — every mutation (deduct, warn, ban, deactivate, settings update, legal CRUD, SBP reveal) inserts a row with admin_id/action/target/at. 
+  Iteration 25 backend **23/23 pytest pass**, frontend **100 %**, zero bugs.
+- 2026-02 · **Priority Feeds + Install Banner + Auto-Session (Iter 24)** — 4/5-tier priority sorts on discover/home feeds, mobile PWA install banner, persistent auto-session on `/`. Backend 6/6 + frontend 8/8 pass.
+- 2026-02 · **Delete Message v1 (Iter 23)** — DELETE for me / everyone with 1-h window, WS-broadcast tombstone. Backend 11/11 + frontend 100%.
+- 2026-02 · **Full-App Translation (Iter 22)** — DOM auto-translator + `/api/i18n/translate-batch`.
+- 2026-02 · **Telegram Chat + i18n v1 (Iter 21)** — full chat redesign. Backend 18/18 + frontend 38/38.
+- 2026-02 · **Complete Chat System v1 (Iter 20)** — text/emoji/image/gift/voice/video + WS. Backend 13/13.
 
 ## Deploy
 Currently on Emergent (React + FastAPI + MongoDB). For amvera.cloud deployment, see `/app/backend/requirements.txt` + `/app/frontend/package.json`.

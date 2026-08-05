@@ -1799,13 +1799,15 @@ async def admin_settings_get(_: dict = Depends(require_admin)):
     }
 
 @api.get("/admin/settings/reveal")
-async def admin_settings_reveal(_: dict = Depends(require_admin)):
+async def admin_settings_reveal(admin: dict = Depends(require_admin)):
     """Explicit reveal — returns the raw admin SBP phone. Requires admin role.
-    Rate-limited implicitly by admin session. Log this event for audit."""
+    Rate-limited implicitly by admin session. Every reveal is audit-logged."""
     s = await db.settings.find_one({"key": "app"}, {"_id": 0}) or {}
     enc = s.get('sbp_phone_enc')
     phone = decrypt_str(enc) if enc else os.environ.get('SBP_PHONE', '')
-    logger.warning(f"[audit] admin revealed SBP phone at {iso(now_utc())}")
+    await db.admin_audit.insert_one({
+        "admin_id": admin['user_id'], "action": "sbp_reveal", "at": iso(now_utc()),
+    })
     return {"sbp_phone": phone}
 
 @api.post("/admin/users/deduct-coins")
