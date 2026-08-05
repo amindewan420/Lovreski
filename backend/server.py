@@ -605,6 +605,43 @@ def _compress_image_data_url(data_url: str, max_dim: int = 1600, quality: int = 
         logger.warning(f"Image compression failed, falling back to original: {e}")
         return data_url, b""
 
+# ────────────────────────────── GridFS Object Storage ──────────────────────────────
+# Files live in the same MongoDB via GridFS (fs.files + fs.chunks). No external
+# service, no keys. Files served through /api/files/{file_id} with proper MIME.
+from motor.motor_asyncio import AsyncIOMotorGridFSBucket  # noqa: E402
+from bson import ObjectId as _ObjectId  # noqa: E402
+gridfs_bucket = AsyncIOMotorGridFSBucket(db)
+
+async def gridfs_put(content: bytes, filename: str, content_type: str, metadata: Optional[dict] = None) -> str:
+    """Store raw bytes in GridFS and return the file_id as a hex string."""
+    meta = {"content_type": content_type, **(metadata or {})}
+    file_id = await gridfs_bucket.upload_from_stream(filename, content, metadata=meta)
+    return str(file_id)
+
+def gridfs_url(file_id: str) -> str:
+    """Client-facing URL for a stored file."""
+    return f"/api/files/{file_id}"
+
+def _guess_ext(content_type: str) -> str:
+    return {
+        "image/jpeg": ".jpg", "image/png": ".png", "image/webp": ".webp", "image/gif": ".gif",
+        "audio/webm": ".webm", "audio/mp4": ".m4a", "audio/mpeg": ".mp3", "audio/wav": ".wav",
+        "video/mp4": ".mp4", "video/webm": ".webm", "video/quicktime": ".mov",
+        "application/pdf": ".pdf",
+    }.get(content_type, "")
+
+async def store_data_url_in_gridfs(data_url: str, owner_id: Optional[str], kind: str) -> str:
+    """Decode a data:URL and store it in GridFS. Returns the client-facing URL."""
+    if not data_url.startswith("data:"):
+        raise ValueError("Not a data URL")
+    header, b64 = data_url.split(",", 1)
+    # header = "data:<mime>;base64"
+    content_type = header[5:].split(";")[0] or "application/octet-stream"
+    raw = base64.b64decode(b64)
+    filename = f"{kind}_{uuid.uuid4().hex[:12]}{_guess_ext(content_type)}"
+    file_id = await gridfs_put(raw, filename, content_type, {"owner_id": owner_id, "kind": kind})
+    return gridfs_url(file_id)
+
 async def _verify_gender_from_photo(image_data_url: str, user_gender: str) -> dict:
     """AI gender check via Emergent LLM vision. Returns {ok, reason}.
     Fails-open on any error / low confidence."""
@@ -658,14 +695,21 @@ async def upload_photo(body: PhotoBody, user: dict = Depends(get_current_user)):
         raise HTTPException(status_code=400, detail="Maximum 4 photos")
 
     # Compress FIRST — smaller image also speeds up the AI check
-    compressed_url, _ = _compress_image_data_url(body.data_url)
+    compressed_url, compressed_bytes = _compress_image_data_url(body.data_url)
 
     # AI gender verification
     verdict = await _verify_gender_from_photo(compressed_url, (fresh or {}).get('gender', ''))
     if not verdict.get('ok'):
         raise HTTPException(status_code=422, detail=verdict.get('message') or "Photo rejected")
 
-    photos.append(compressed_url)
+    # Persist to GridFS instead of base64
+    if compressed_bytes:
+        fid = await gridfs_put(compressed_bytes, f"photo_{uuid.uuid4().hex[:12]}.jpg", "image/jpeg",
+                               {"owner_id": user['user_id'], "kind": "profile_photo"})
+        stored_url = gridfs_url(fid)
+    else:
+        stored_url = await store_data_url_in_gridfs(compressed_url, user['user_id'], "profile_photo")
+    photos.append(stored_url)
     await db.users.update_one({"user_id": user['user_id']}, {"$set": {"photos": photos, "last_active": iso(now_utc())}})
     return {"photos": photos, "verification": verdict}
 
@@ -1144,9 +1188,15 @@ async def upload_chat_media(body: ChatMediaBody, user: dict = Depends(get_curren
     if body.kind == 'image':
         if not body.data_url.startswith('data:image/'):
             raise HTTPException(status_code=400, detail="Ожидается изображение")
-        media_url, _ = _compress_image_data_url(body.data_url, max_dim=1200, quality=78)
+        _, compressed_bytes = _compress_image_data_url(body.data_url, max_dim=1200, quality=78)
+        if compressed_bytes:
+            fid = await gridfs_put(compressed_bytes, f"chat_image_{uuid.uuid4().hex[:10]}.jpg", "image/jpeg",
+                                    {"owner_id": user['user_id'], "kind": "chat_image"})
+            media_url = gridfs_url(fid)
+        else:
+            media_url = await store_data_url_in_gridfs(body.data_url, user['user_id'], f"chat_{body.kind}")
     else:
-        media_url = body.data_url
+        media_url = await store_data_url_in_gridfs(body.data_url, user['user_id'], f"chat_{body.kind}")
     return {"media_url": media_url, "kind": body.kind, "size_bytes": approx_bytes, "file_name": body.file_name}
 
 @api.get("/chat/status/{other_id}")
@@ -1174,6 +1224,65 @@ async def chat_status(other_id: str, user: dict = Depends(get_current_user)):
 async def gifts_list():
     """Public gift catalog: key, name, emoji, cost, tailwind gradient."""
     return GIFT_CATALOG
+
+# ────────────────────────────── File endpoints ──────────────────────────────
+from fastapi import UploadFile, File as UploadFileParam  # noqa: E402
+from fastapi.responses import StreamingResponse  # noqa: E402
+
+@api.get("/files/{file_id}")
+async def get_file(file_id: str):
+    """Stream a file from GridFS with its stored MIME type. Publicly reachable
+    by URL — we intentionally don't require auth so <img>/<audio>/<video> in
+    chat bubbles work without extra headers. File IDs are 24-hex opaque tokens
+    so are not enumerable."""
+    try:
+        oid = _ObjectId(file_id)
+    except Exception:
+        raise HTTPException(status_code=400, detail="Bad file id")
+    try:
+        gout = await gridfs_bucket.open_download_stream(oid)
+    except Exception:
+        raise HTTPException(status_code=404, detail="File not found")
+    meta = gout.metadata or {}
+    content_type = meta.get("content_type") or "application/octet-stream"
+
+    async def iter_chunks():
+        try:
+            while True:
+                chunk = await gout.readchunk()
+                if not chunk:
+                    break
+                yield chunk
+        finally:
+            await gout.close()
+
+    headers = {
+        "Content-Length": str(gout.length),
+        "Cache-Control": "public, max-age=31536000, immutable",
+    }
+    return StreamingResponse(iter_chunks(), media_type=content_type, headers=headers)
+
+@api.post("/files/upload")
+async def upload_file(file: UploadFile = UploadFileParam(...), user: dict = Depends(get_current_user)):
+    """Generic authenticated file upload. Used by the frontend when uploading
+    via <input type=file>. Images are auto-compressed; other kinds stored
+    as-is. Returns {file_id, url, content_type, size}."""
+    content_type = file.content_type or "application/octet-stream"
+    raw = await file.read()
+    max_bytes = 4 * 1024 * 1024 if content_type.startswith("image/") else 10 * 1024 * 1024
+    if len(raw) > max_bytes:
+        raise HTTPException(status_code=413, detail=f"File too large (max {max_bytes // (1024 * 1024)} MB)")
+    if content_type.startswith("image/"):
+        # Compress to JPEG before storing
+        try:
+            data_url = "data:" + content_type + ";base64," + base64.b64encode(raw).decode()
+            _, raw = _compress_image_data_url(data_url, max_dim=1200, quality=78)
+            content_type = "image/jpeg"
+        except Exception:
+            pass  # store original on failure
+    filename = f"{file.filename or 'file'}_{uuid.uuid4().hex[:8]}"
+    file_id = await gridfs_put(raw, filename, content_type, {"owner_id": user['user_id'], "orig_name": file.filename})
+    return {"file_id": file_id, "url": gridfs_url(file_id), "content_type": content_type, "size": len(raw)}
 
 # ────────────────────────────── Premium & Coins ──────────────────────────────
 # ⚠️ Auto-crediting DISABLED per updated flow — coins are added ONLY by admin
@@ -1415,13 +1524,21 @@ async def submit_receipt(body: ReceiptBody, user: dict = Depends(get_current_use
     recent = await db.receipt_submissions.count_documents({"user_id": user['user_id'], "created_at": {"$gte": iso(since)}})
     if recent >= 5:
         raise HTTPException(status_code=429, detail="Too many submissions. Try again later.")
-    # Optional compression for image receipts
+    # Store receipt in GridFS (was base64 in Mongo doc)
     receipt = body.receipt_data_url
     if receipt.startswith("data:image/"):
         try:
-            receipt, _ = _compress_image_data_url(receipt, max_dim=1800, quality=85)
+            _, compressed_bytes = _compress_image_data_url(receipt, max_dim=1800, quality=85)
+            if compressed_bytes:
+                fid = await gridfs_put(compressed_bytes, f"receipt_{uuid.uuid4().hex[:10]}.jpg", "image/jpeg",
+                                        {"owner_id": user['user_id'], "kind": "support_receipt"})
+                receipt_url = gridfs_url(fid)
+            else:
+                receipt_url = await store_data_url_in_gridfs(receipt, user['user_id'], "support_receipt")
         except Exception:
-            pass
+            receipt_url = await store_data_url_in_gridfs(receipt, user['user_id'], "support_receipt")
+    else:
+        receipt_url = await store_data_url_in_gridfs(receipt, user['user_id'], "support_receipt")
     sub_id = f"sub_{uuid.uuid4().hex[:12]}"
     await db.receipt_submissions.insert_one({
         "submission_id": sub_id,
@@ -1429,7 +1546,7 @@ async def submit_receipt(body: ReceiptBody, user: dict = Depends(get_current_use
         "user_email": user.get('email'),
         "user_name": user.get('name'),
         "package_id": body.package_id,
-        "receipt_data_url": receipt,
+        "receipt_data_url": receipt_url,
         "message": body.message,
         "status": "pending",  # pending → verified | rejected
         "created_at": iso(now_utc()),
@@ -1578,15 +1695,25 @@ async def submit_refund(body: RefundBody, request: Request, user: dict = Depends
         raise HTTPException(status_code=429, detail="Too many refund requests. Try again tomorrow.")
     receipt = body.receipt_data_url
     if receipt.startswith("data:image/"):
-        try: receipt, _ = _compress_image_data_url(receipt, max_dim=1800, quality=85)
-        except Exception: pass
+        try:
+            _, compressed_bytes = _compress_image_data_url(receipt, max_dim=1800, quality=85)
+            if compressed_bytes:
+                fid = await gridfs_put(compressed_bytes, f"refund_{uuid.uuid4().hex[:10]}.jpg", "image/jpeg",
+                                        {"owner_id": user['user_id'], "kind": "refund_receipt"})
+                receipt_url = gridfs_url(fid)
+            else:
+                receipt_url = await store_data_url_in_gridfs(receipt, user['user_id'], "refund_receipt")
+        except Exception:
+            receipt_url = await store_data_url_in_gridfs(receipt, user['user_id'], "refund_receipt")
+    else:
+        receipt_url = await store_data_url_in_gridfs(receipt, user['user_id'], "refund_receipt")
     rid = f"ref_{uuid.uuid4().hex[:12]}"
     await db.refund_requests.insert_one({
         "refund_id": rid,
         "user_id": user['user_id'],
         "full_name": body.full_name,
         "email": body.email.lower(),
-        "receipt_data_url": receipt,
+        "receipt_data_url": receipt_url,
         "reason": body.reason,
         "status": "pending",
         "created_at": iso(now_utc()),
@@ -1943,6 +2070,65 @@ async def admin_audit_list(_: dict = Depends(require_admin), limit: int = 200):
     """Chronological audit log of admin mutations. Newest first."""
     rows = await db.admin_audit.find({}, {"_id": 0}).sort("at", -1).limit(limit).to_list(limit)
     return rows
+
+# ────────── GridFS Backfill ──────────
+@api.post("/admin/migrate/gridfs")
+async def admin_backfill_gridfs(admin: dict = Depends(require_admin)):
+    """One-shot: replace every base64 `data:` URL in users/messages/receipts/refunds
+    with a GridFS-served /api/files/{id} URL. Idempotent — already-migrated URLs
+    are left alone. Returns per-collection counts."""
+    stats = {"users_photos": 0, "messages_media": 0, "receipts": 0, "refunds": 0, "errors": 0}
+
+    async def migrate(data_url: str, kind: str, owner: Optional[str]) -> str:
+        if not isinstance(data_url, str) or not data_url.startswith("data:"):
+            return data_url
+        try:
+            return await store_data_url_in_gridfs(data_url, owner, kind)
+        except Exception as e:
+            stats["errors"] += 1
+            logger.warning(f"backfill {kind} failed: {e}")
+            return data_url
+
+    # 1. User profile photos
+    async for u in db.users.find({"photos": {"$elemMatch": {"$regex": "^data:"}}}, {"_id": 0, "user_id": 1, "photos": 1}):
+        new_photos = []
+        changed = False
+        for p in u.get('photos') or []:
+            if isinstance(p, str) and p.startswith("data:"):
+                new_photos.append(await migrate(p, "profile_photo", u['user_id']))
+                changed = True
+                stats["users_photos"] += 1
+            else:
+                new_photos.append(p)
+        if changed:
+            await db.users.update_one({"user_id": u['user_id']}, {"$set": {"photos": new_photos}})
+
+    # 2. Chat messages media_url
+    async for m in db.messages.find({"media_url": {"$regex": "^data:"}}, {"_id": 0, "message_id": 1, "media_url": 1, "from_user": 1, "kind": 1}):
+        new_url = await migrate(m['media_url'], f"chat_{m.get('kind', 'file')}", m.get('from_user'))
+        if new_url != m['media_url']:
+            await db.messages.update_one({"message_id": m['message_id']}, {"$set": {"media_url": new_url}})
+            stats["messages_media"] += 1
+
+    # 3. Receipt submissions
+    async for r in db.receipt_submissions.find({"receipt_data_url": {"$regex": "^data:"}}, {"_id": 0, "submission_id": 1, "receipt_data_url": 1, "user_id": 1}):
+        new_url = await migrate(r['receipt_data_url'], "support_receipt", r.get('user_id'))
+        if new_url != r['receipt_data_url']:
+            await db.receipt_submissions.update_one({"submission_id": r['submission_id']}, {"$set": {"receipt_data_url": new_url}})
+            stats["receipts"] += 1
+
+    # 4. Refund requests
+    async for r in db.refund_requests.find({"receipt_data_url": {"$regex": "^data:"}}, {"_id": 0, "refund_id": 1, "receipt_data_url": 1, "user_id": 1}):
+        new_url = await migrate(r['receipt_data_url'], "refund_receipt", r.get('user_id'))
+        if new_url != r['receipt_data_url']:
+            await db.refund_requests.update_one({"refund_id": r['refund_id']}, {"$set": {"receipt_data_url": new_url}})
+            stats["refunds"] += 1
+
+    await db.admin_audit.insert_one({
+        "admin_id": admin['user_id'], "action": "gridfs_backfill",
+        "stats": stats, "at": iso(now_utc()),
+    })
+    return {"ok": True, "migrated": stats}
 
 # ────────────────────────────── Translation ──────────────────────────────
 @api.post("/translate")

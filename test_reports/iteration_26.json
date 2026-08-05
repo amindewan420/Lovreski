@@ -1,0 +1,37 @@
+{
+  "summary": "Iter 26 GridFS storage integration verified end-to-end. Backend: 22/22 pytest cases passing in test_gridfs_iter26.py covering (a) POST /chat/media returning /api/files/{24-hex} for base64 PNG, (b) GET /api/files/{id} → 200 with proper Content-Type/Content-Length and body length matching header (backend directly returns Cache-Control: 'public, max-age=31536000, immutable'), (c) bad-id 400 + missing-id 404, (d) authenticated POST /files/upload multipart JPEG returns {file_id, url:/api/files/…, content_type:image/jpeg, size}, (e) 401 unauthenticated, (f) 413 for >4MB image and >10MB non-image, (g) profile photo (non_binary user to bypass AI-face check) persists to GridFS and photos[0] starts with /api/files/, fetchable 200, (h) chat send kind=image with GridFS media_url end-to-end, (i) support/receipt visible in /admin/support/pending with receipt_data_url=/api/files/, (j) support/refund persisted with /api/files/ URL in /admin/refunds, (k) /admin/migrate/gridfs is admin-only (403 for user) and idempotent (2nd call returns all zeros; admin_audit row inserted), (l) post-migration DB invariants: 0 users/messages/receipts/refunds contain data: URLs (verified directly against MongoDB: fs.files=65 docs, admin_audit gridfs_backfill=6 rows), (m) regression smoke: /home/feed, /discover/feed, /chats, /auth/me, /admin/stats all 200. Frontend: logged in as testuser1, /home /discover /chats /profile render, opening a chat with the admin (a media message chat) loads 2 GridFS images successfully in the DOM (naturalWidth=32, src=https://.../api/files/6a7333d5… and 6a733...) — cross-origin <img src='/api/files/…'> works through the ingress. Zero data: URLs found in DOM on any tested route.",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {"endpoint": "GET /api/files/{id}", "issue": "Backend correctly sets Cache-Control: 'public, max-age=31536000, immutable' (confirmed via curl localhost:8001), but the preview Cloudflare edge rewrites it to 'no-store, no-cache, must-revalidate' on the public URL. Images still load fine, but no CDN/browser caching benefit in preview env. Likely infra-level (Cloudflare cache rule / preview-env header injection), not a backend bug — flag for main agent to confirm in production."}
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_gridfs_iter26.py",
+    "/app/test_reports/pytest/iter26_results.xml"
+  ],
+  "action_items": [
+    "(Optional) Investigate why the preview ingress (Cloudflare) rewrites Cache-Control to no-store on /api/files/*. Backend header is correct; likely a global 'no-cache API' rule at the edge. Confirm behavior in production deployment.",
+    "server.py is now 2539 lines — well over the 700-line guideline. Consider splitting GridFS helpers, admin routes, and chat routes into separate modules (nice-to-have, not blocking)."
+  ],
+  "critical_code_review_comments": [
+    "gridfs_bucket is a module-level singleton bound at import time to the current motor db handle — good and idempotent.",
+    "GET /api/files/{id} is intentionally unauthenticated (documented in-code) so <img>/<audio>/<video> tags work without auth headers. IDs are 24-hex opaque tokens so not enumerable — acceptable tradeoff, but note there is no per-owner ACL: anyone with a file id can fetch it. If any file kind is sensitive (e.g. refund receipts, chat images between two users), a signed-token or ownership check should be added later.",
+    "POST /files/upload does size check AFTER file.read() into memory, so a malicious client can still force the server to buffer up to (max_bytes+1) bytes before the 413. For 10 MB caps this is fine, but consider streaming size checks.",
+    "admin_backfill_gridfs inserts an admin_audit row on EVERY call, even when 0 blobs migrated. Spec said 'Running once inserts an admin_audit row with action=gridfs_backfill' — current behavior over-counts audit rows (6 rows for 6 invocations). Not a bug, but consider only auditing when stats has any non-zero counter.",
+    "server.py is 2539 lines — needs to be split (guideline: <700)."
+  ],
+  "updated_files": ["/app/backend/tests/test_gridfs_iter26.py"],
+  "success_rate": {"backend": "100% (22/22)", "frontend": "100% (all rendered, GridFS <img> loaded cross-origin, no data: URLs in DOM)"},
+  "test_credentials": "admin@lovreski.ru / LovreskiAdmin2026! ; testuser1@lovreski.ru / password123 ; ephemeral TEST_iter26_*@lovreski.ru (non_binary) for profile-photo test",
+  "seed_data_creation": "Test uploads: 1 profile photo (fresh TEST_iter26_* user), 4+ chat/media images, 1 support receipt, 1 refund receipt. GridFS fs.files count = 65. admin_audit contains 6 'gridfs_backfill' rows from prior + current test runs (all idempotent).",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Iter 26 GridFS is green. Backfill endpoint is stable and idempotent. test_gridfs_iter26.py is self-cleaning (uses TEST_ prefixed refund reason + ephemeral non_binary user for photo test). DB invariants can be re-verified with the inline script in this iteration's summary. Note: Cloudflare edge overrides Cache-Control on /api/files/*, so any future test that asserts CDN caching should hit localhost:8001 directly (as this suite does).",
+  "rca of the issue": "N/A — no unresolved bugs. Cache-Control override observation is infra-level, not backend."
+}
