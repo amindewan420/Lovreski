@@ -1,0 +1,22 @@
+{
+  "summary": "Iter 23 Delete Message feature — comprehensive backend + frontend testing. All 11 pytest backend tests pass (scope=me hides only for caller, scope=everyone tombstones for both with cleared text/media_url/file_name/gift_key, sender-only enforcement 403, 1-hour window enforcement 403 for non-admin, admin bypass, 404 bogus id, 400 invalid scope, idempotent scope=me, media_url cleared, reply chain, WS broadcast within ~2s). Frontend: contextmenu opens delete-sheet with all 3 buttons, long-press (~750ms) also opens sheet, delete-me removes bubble from viewer without reload, delete-everyone converts to deleted-{id} placeholder with 'Это сообщение было удалено' + trash icon, two-context WS test — receiver's bubble converts to placeholder in real-time without refresh, reply preview shows 'Исходное сообщение удалено', ChatsListPage shows deleted preview.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {"ui_bugs": [], "integration_issues": [], "design_issues": []},
+  "test_report_links": [
+    "/app/backend/tests/test_delete_message_iter23.py",
+    "/app/test_reports/pytest/iter23_delete.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "delete_message endpoint correctly uses $addToSet for hidden_for making scope=me idempotent. Good.",
+    "_do_send_message endpoint is at /api/chats/{other_id}/send (not /messages) — tests updated accordingly.",
+    "WSManager.broadcast_deletion sends to both participants — verified live in two-context test."
+  ],
+  "updated_files": ["/app/backend/tests/test_delete_message_iter23.py"],
+  "success_rate": {"backend": "100% (11/11)", "frontend": "100%"},
+  "test_credentials": "testuser1@lovreski.ru/password123, admin@lovreski.ru/LovreskiAdmin2026!, fresh deltest_* users registered on the fly",
+  "seed_data_creation": "Test-created messages prefixed TEST_. Fresh u2 users registered via API. u1 & u2 granted coins=500,is_premium=true via direct Mongo update in fixture (required to bypass 402 message-send paywall).",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Iter 23 delete-message fully verified. If retesting, run: MONGO_URL=mongodb://localhost:27017 DB_NAME=test_database python -m pytest /app/backend/tests/test_delete_message_iter23.py -v -o addopts=  — 11 tests. Frontend testing pattern: dispatch synthetic contextmenu on '[data-testid=msg-<id>] .rounded-2xl', or page.mouse down+700ms+up on bubble bounding box for long-press. All data-testids present: delete-sheet, delete-me-btn, delete-everyone-btn, delete-cancel, deleted-{id}."
+}

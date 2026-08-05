@@ -43,6 +43,7 @@ export default function ChatsListPage() {
           chats.map((c) => {
             const last = c.last_message || {};
             const preview =
+              last.deleted        ? t("chat.deleted") :
               last.kind === "gift"  ? t("chat.preview_gift") :
               last.kind === "image" ? t("chat.preview_image") :
               last.kind === "voice" ? t("chat.preview_voice") :

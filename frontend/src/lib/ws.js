@@ -10,7 +10,7 @@ function wsUrl() {
   return `${base}/api/ws?token=${encodeURIComponent(token || "")}`;
 }
 
-export function createChatSocket({ onMessage, onTyping, onRead, onOpen, onClose }) {
+export function createChatSocket({ onMessage, onTyping, onRead, onDeleted, onOpen, onClose }) {
   let ws = null;
   let closedByUser = false;
   let retryDelay = 1000;
@@ -36,6 +36,7 @@ export function createChatSocket({ onMessage, onTyping, onRead, onOpen, onClose 
         if (data.type === "message") onMessage?.(data.data);
         else if (data.type === "typing") onTyping?.(data.from);
         else if (data.type === "read") onRead?.(data.from);
+        else if (data.type === "message_deleted") onDeleted?.(data.data);
       } catch { /* noop */ }
     };
     ws.onclose = () => {

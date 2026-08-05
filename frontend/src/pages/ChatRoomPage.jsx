@@ -9,7 +9,7 @@ import GiftPanel from "@/components/lovreski/GiftPanel";
 import LanguageSheet from "@/components/lovreski/LanguageSheet";
 import {
   ArrowLeft, Send, Plus, Image as ImageIcon, File as FileIcon, Video, Mic, Square,
-  Smile, Gift, Globe, Reply, X, Check, CheckCheck, Lock, ShoppingBag,
+  Smile, Gift, Globe, Reply, X, Check, CheckCheck, Lock, ShoppingBag, Trash2,
 } from "lucide-react";
 import { toast } from "sonner";
 
@@ -51,6 +51,8 @@ export default function ChatRoomPage() {
   const [showGifts, setShowGifts] = useState(false);
   const [showLang, setShowLang] = useState(false);
   const [showBlockPopup, setShowBlockPopup] = useState(false);
+  const [deleteTarget, setDeleteTarget] = useState(null);
+  const longPressTimerRef = useRef(null);
 
   const scrollRef = useRef(null);
   const socketRef = useRef(null);
@@ -98,6 +100,12 @@ export default function ChatRoomPage() {
       },
       onRead: (fromId) => {
         if (fromId === id) setMsgs((prev) => prev.map((m) => m.from_user === user?.user_id ? { ...m, read: true } : m));
+      },
+      onDeleted: (info) => {
+        // Tombstone the message locally so all viewers see the placeholder instantly.
+        setMsgs((prev) => prev.map((m) => m.message_id === info.message_id
+          ? { ...m, deleted: true, text: "", media_url: null, file_name: null, gift_key: null }
+          : m));
       },
     });
     socketRef.current = sock;
@@ -173,6 +181,43 @@ export default function ChatRoomPage() {
     } catch { toast.error("Не удалось перевести"); }
   };
 
+  // ─── Delete ──────────────────────────────────────────────────────────
+  const doDelete = async (scope) => {
+    if (!deleteTarget) return;
+    const m = deleteTarget;
+    setDeleteTarget(null);
+    try {
+      await api.delete(`/messages/${m.message_id}?scope=${scope}`);
+      if (scope === "everyone") {
+        // WS will broadcast to both — but update ours immediately for snappiness.
+        setMsgs((prev) => prev.map((x) => x.message_id === m.message_id
+          ? { ...x, deleted: true, text: "", media_url: null, file_name: null, gift_key: null } : x));
+      } else {
+        setMsgs((prev) => prev.filter((x) => x.message_id !== m.message_id));
+      }
+      toast.success(t("chat.deleted"));
+    } catch (e) {
+      toast.error(e.response?.data?.detail || t("common.error"));
+    }
+  };
+
+  const canDeleteEveryone = (m) => {
+    if (!user) return false;
+    if (m.from_user !== user.user_id && !user.is_admin) return false;
+    if (m.deleted) return false;
+    if (user.is_admin) return true;
+    const age = (Date.now() - new Date(m.created_at).getTime()) / 1000;
+    return age <= 3600;
+  };
+
+  const startLongPress = (m) => {
+    clearTimeout(longPressTimerRef.current);
+    longPressTimerRef.current = setTimeout(() => {
+      if (!m.deleted) setDeleteTarget(m);
+    }, 550);
+  };
+  const cancelLongPress = () => { clearTimeout(longPressTimerRef.current); };
+
   // ─── Input auto-grow + typing broadcast ──────────────────────────────
   const onInput = (e) => {
     setText(e.target.value);
@@ -232,12 +277,17 @@ export default function ChatRoomPage() {
             const m = row.m; const mine = m.from_user === user?.user_id;
             const replied = m.reply_to ? msgs.find((x) => x.message_id === m.reply_to) : null;
             const locked = m.locked && !mine;
+            const canLongPress = mine || user?.is_admin;
             return (
               <div key={m.message_id} data-testid={`msg-${m.message_id}`} className={`flex ${mine ? "justify-end" : "justify-start"}`}>
                 <div className="max-w-[78%] group">
                   {replied && (
                     <div className={`px-2 py-1 mb-1 text-[11px] rounded border-l-2 ${mine ? "bg-sky-50 border-sky-400 text-slate-700" : "bg-slate-50 border-slate-300 text-slate-600"}`}>
-                      <p className="truncate"><span className="opacity-70">{t("chat.reply_prefix")}</span> <span className="no-translate">{replied.text || replied.kind}</span></p>
+                      {replied.deleted ? (
+                        <p className="italic opacity-70">{t("chat.original_deleted")}</p>
+                      ) : (
+                        <p className="truncate"><span className="opacity-70">{t("chat.reply_prefix")}</span> <span className="no-translate">{replied.text || replied.kind}</span></p>
+                      )}
                     </div>
                   )}
                   {locked ? (
@@ -246,8 +296,25 @@ export default function ChatRoomPage() {
                       <Lock className="w-4 h-4 text-primary" />
                       <span className="text-sm text-slate-700">{t("chat.premium_locked")}</span>
                     </button>
+                  ) : m.deleted ? (
+                    <div
+                      data-testid={`deleted-${m.message_id}`}
+                      className={`px-3 py-2 rounded-2xl italic text-[13px] flex items-center gap-1.5 ${
+                        mine ? "bg-sky-50 text-slate-500 border border-sky-100" : "bg-slate-50 text-slate-500 border border-slate-200"
+                      }`}
+                    >
+                      <Trash2 className="w-3.5 h-3.5" />
+                      <span>{t("chat.deleted")}</span>
+                      <span className="text-[10px] not-italic ml-2 text-slate-400">{fmtTime(m.created_at)}</span>
+                    </div>
                   ) : (
                     <div
+                      onMouseDown={canLongPress ? () => startLongPress(m) : undefined}
+                      onMouseUp={cancelLongPress}
+                      onMouseLeave={cancelLongPress}
+                      onTouchStart={canLongPress ? () => startLongPress(m) : undefined}
+                      onTouchEnd={cancelLongPress}
+                      onContextMenu={canLongPress ? (e) => { e.preventDefault(); setDeleteTarget(m); } : undefined}
                       className={`relative px-3 py-2 rounded-2xl shadow-sm ${
                         mine
                           ? "bg-[#DCF2FF] text-slate-900 rounded-br-md"
@@ -280,10 +347,11 @@ export default function ChatRoomPage() {
                       </div>
                     </div>
                   )}
-                  {!locked && (
+                  {!locked && !m.deleted && (
                     <div className={`flex gap-2 mt-0.5 text-[10px] text-slate-400 opacity-0 group-hover:opacity-100 transition-opacity ${mine ? "justify-end" : ""}`}>
                       <button onClick={() => setReply(m)} data-testid={`reply-${m.message_id}`}>{t("chat.reply")}</button>
                       {!mine && m.text && <button onClick={() => translate(m)} data-testid={`translate-${m.message_id}`}>{t("chat.translate")}</button>}
+                      {canLongPress && <button onClick={() => setDeleteTarget(m)} data-testid={`delete-${m.message_id}`}>{t("chat.delete_me")}</button>}
                     </div>
                   )}
                 </div>
@@ -399,6 +467,29 @@ export default function ChatRoomPage() {
                 <ShoppingBag className="w-4 h-4" /> {t("chat.buy_coins")}
               </button>
               <button data-testid="popup-close" onClick={() => setShowBlockPopup(false)} className="mt-2 w-full py-2 text-sm text-slate-500">{t("chat.close")}</button>
+            </div>
+          </div>
+        )}
+
+        {/* Delete-message action sheet */}
+        {deleteTarget && (
+          <div className="fixed inset-0 z-[80] flex items-end sm:items-center sm:justify-center px-4" data-testid="delete-sheet">
+            <div className="absolute inset-0 bg-black/60" onClick={() => setDeleteTarget(null)} />
+            <div className="relative bg-white rounded-t-3xl sm:rounded-3xl w-full sm:max-w-xs p-5">
+              <div className="mx-auto w-12 h-12 rounded-full bg-red-100 flex items-center justify-center mb-2">
+                <Trash2 className="w-5 h-5 text-red-500" />
+              </div>
+              <p className="text-center font-semibold text-slate-900">{t("chat.delete_title")}</p>
+              <p className="text-center text-[11px] text-slate-500 mt-1 mb-4">{t("chat.delete_note")}</p>
+              <button data-testid="delete-me-btn" onClick={() => doDelete("me")} className="w-full py-3 rounded-2xl bg-slate-100 text-slate-800 font-medium text-sm mb-2">
+                {t("chat.delete_me")}
+              </button>
+              {canDeleteEveryone(deleteTarget) && (
+                <button data-testid="delete-everyone-btn" onClick={() => doDelete("everyone")} className="w-full py-3 rounded-2xl bg-red-500 text-white font-semibold text-sm mb-2">
+                  {t("chat.delete_everyone")}
+                </button>
+              )}
+              <button data-testid="delete-cancel" onClick={() => setDeleteTarget(null)} className="w-full py-2 text-sm text-slate-500">{t("chat.cancel")}</button>
             </div>
           </div>
         )}

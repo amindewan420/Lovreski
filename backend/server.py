@@ -301,6 +301,15 @@ class WSManager:
         for uid in msg.get('participants', []):
             await self.send_to(uid, payload)
 
+    async def broadcast_deletion(self, chat_id_val: str, participants: list, message_id: str, scope: str, deleted_by: str):
+        """Notify both participants that a message was deleted for everyone."""
+        payload = {"type": "message_deleted", "data": {
+            "message_id": message_id, "chat_id": chat_id_val,
+            "scope": scope, "deleted_by": deleted_by,
+        }}
+        for uid in participants:
+            await self.send_to(uid, payload)
+
 ws_manager = WSManager()
 
 def calc_age(dob: str) -> int:
@@ -882,18 +891,28 @@ def _decorate_msg(m: dict, viewer_id: str, viewer_is_premium: bool) -> dict:
 @api.get("/chats/{other_id}/messages")
 async def get_messages(other_id: str, user: dict = Depends(get_current_user), limit: int = 200):
     cid = chat_id(user['user_id'], other_id)
-    msgs = await db.messages.find({"chat_id": cid}, {"_id": 0}).sort("created_at", 1).to_list(limit)
-    await db.messages.update_many({"chat_id": cid, "to_user": user['user_id']}, {"$set": {"read": True}})
-    # Compute locked flag efficiently: incoming messages beyond first FREE_MSGS from partner are locked for free users
+    uid = user['user_id']
+    msgs = await db.messages.find(
+        {"chat_id": cid, "hidden_for": {"$ne": uid}},
+        {"_id": 0}
+    ).sort("created_at", 1).to_list(limit)
+    await db.messages.update_many({"chat_id": cid, "to_user": uid, "deleted": {"$ne": True}}, {"$set": {"read": True}})
     is_premium = bool(user.get('is_premium'))
     partner_seen = 0
     for m in msgs:
         m.pop('_id', None)
-        if m.get('from_user') != user['user_id']:
+        # Normalize deleted-for-everyone messages so the client can render a placeholder
+        if m.get('deleted'):
+            m['text'] = ''
+            m['media_url'] = None
+            m['file_name'] = None
+            m['gift_key'] = None
+            m['locked'] = False
+            continue
+        if m.get('from_user') != uid:
             partner_seen += 1
             if not is_premium and partner_seen > FREE_MSGS:
                 m['locked'] = True
-                # Strip sensitive fields so free users cannot read
                 m['text'] = ''
                 m['media_url'] = None
             else:
@@ -901,6 +920,60 @@ async def get_messages(other_id: str, user: dict = Depends(get_current_user), li
         else:
             m['locked'] = False
     return msgs
+
+@api.delete("/messages/{message_id}")
+async def delete_message(message_id: str, scope: str = "me", user: dict = Depends(get_current_user)):
+    """Delete a message.
+
+    - scope='me'       → hide only for the current user (any message the user can see).
+    - scope='everyone' → tombstone the message for both participants. Allowed only
+                          within 1 hour of send and only by the sender (or an admin).
+                          Broadcasts a WS `message_deleted` event.
+    """
+    if scope not in {"me", "everyone"}:
+        raise HTTPException(status_code=400, detail="Invalid scope")
+    m = await db.messages.find_one({"message_id": message_id}, {"_id": 0})
+    if not m:
+        raise HTTPException(status_code=404, detail="Message not found")
+    uid = user['user_id']
+    is_admin = bool(user.get('is_admin'))
+    if uid not in (m.get('participants') or []) and not is_admin:
+        raise HTTPException(status_code=403, detail="Not your chat")
+
+    if scope == "me":
+        await db.messages.update_one({"message_id": message_id}, {"$addToSet": {"hidden_for": uid}})
+        return {"ok": True, "scope": "me", "message_id": message_id}
+
+    # scope == "everyone"
+    if m.get('deleted'):
+        return {"ok": True, "scope": "everyone", "message_id": message_id, "already": True}
+    if m.get('from_user') != uid and not is_admin:
+        raise HTTPException(status_code=403, detail="Only the sender can delete for everyone")
+    # 1-hour window (admins bypass)
+    try:
+        created = datetime.fromisoformat(m['created_at'].replace('Z', '+00:00'))
+    except Exception:
+        created = now_utc()
+    if not is_admin and (now_utc() - created).total_seconds() > 3600:
+        raise HTTPException(status_code=403, detail="Прошло больше часа — нельзя удалить у всех")
+
+    await db.messages.update_one(
+        {"message_id": message_id},
+        {"$set": {
+            "deleted": True,
+            "deleted_at": iso(now_utc()),
+            "deleted_by": uid,
+            "text": "",
+            "media_url": None,
+            "file_name": None,
+            "gift_key": None,
+        }},
+    )
+    try:
+        await ws_manager.broadcast_deletion(m['chat_id'], m.get('participants') or [], message_id, "everyone", uid)
+    except Exception as e:
+        logger.warning(f"ws deletion broadcast failed: {e}")
+    return {"ok": True, "scope": "everyone", "message_id": message_id}
 
 async def _do_send_message(sender: dict, other_id: str, body: MessageBody) -> dict:
     other = await db.users.find_one({"user_id": other_id}, {"_id": 0})
@@ -1023,19 +1096,6 @@ async def chat_status(other_id: str, user: dict = Depends(get_current_user)):
 async def gifts_list():
     """Public gift catalog: key, name, emoji, cost, tailwind gradient."""
     return GIFT_CATALOG
-
-@api.delete("/messages/{message_id}")
-async def delete_message(message_id: str, user: dict = Depends(get_current_user)):
-    # Deletion costs 1 coin per problem statement
-    m = await db.messages.find_one({"message_id": message_id, "from_user": user['user_id']}, {"_id": 0})
-    if not m:
-        raise HTTPException(status_code=404, detail="Message not found")
-    if user.get('coins', 0) < 1 and not user.get('is_admin'):
-        raise HTTPException(status_code=402, detail="Недостаточно монет для удаления")
-    if not user.get('is_admin'):
-        await db.users.update_one({"user_id": user['user_id']}, {"$inc": {"coins": -1}})
-    await db.messages.delete_one({"message_id": message_id})
-    return {"ok": True}
 
 # ────────────────────────────── Premium & Coins ──────────────────────────────
 # ⚠️ Auto-crediting DISABLED per updated flow — coins are added ONLY by admin
@@ -1790,6 +1850,12 @@ I18N_BASE_RU = {
     "chat.preview_file": "📁 Файл",
     "chat.premium_locked": "Оформите Premium, чтобы прочитать",
     "chat.premium_cta": "Оформить Premium",
+    "chat.deleted": "Это сообщение было удалено",
+    "chat.original_deleted": "Исходное сообщение удалено",
+    "chat.delete_title": "Удалить сообщение?",
+    "chat.delete_me": "Удалить у меня",
+    "chat.delete_everyone": "Удалить у всех",
+    "chat.delete_note": "Удалить у всех можно только в течение 1 часа после отправки",
     # settings
     "settings.title": "Настройки", "settings.back": "← Назад",
     "settings.section.personal": "Личная информация",
