@@ -44,10 +44,15 @@ Build a complete, production-ready dating web app called "Lovreski" — mobile-f
 - P2: Email/SMS notifications via Resend/Twilio for refund status & matches
 
 ## Changelog
-- 2026-02 · **Delete Message v1** — Long-press or right-click own message → sheet with **Delete for Me** + **Delete for Everyone** (sender-only, 1-hour window, admins bypass). New `DELETE /api/messages/{id}?scope=me|everyone`: `me` adds viewer to `hidden_for` array (idempotent via $addToSet); `everyone` sets `deleted:true`, clears text/media_url/file_name/gift_key, and broadcasts `{type:"message_deleted"}` over WebSocket. `get_messages` filters `hidden_for` and normalizes deleted bubbles. Deleted bubbles render as italic `"Это сообщение было удалено"` placeholder with trash icon. Reply preview shows `"Исходное сообщение удалено"` when the referenced message was deleted. ChatsListPage last-message preview honors the deleted flag. Iteration 23 backend 11/11 pytest + frontend 100% pass, zero bugs.
-- 2026-02 · **Full-App Translation (DOM Auto-Translator)** — `POST /api/i18n/translate-batch` (LLM-cached in `db.i18n_dynamic`) + MutationObserver in `I18nProvider` that walks Cyrillic text nodes and attributes (placeholder/title/aria-label/alt), swaps them in place. Chat message content marked `.no-translate` per spec. Iteration 22 backend 7/7 pytest pass + French switch verified end-to-end.
-- 2026-02 · **Telegram-Style Chat + Global i18n v1** — White-bg Telegram-style bubbles, +/tray composer, 6-tab EmojiPanel, 18-gift GiftPanel with per-gift cost, `file` message kind, hard-block after 2 free messages (any kind), LanguageSheet with 60+ languages, `/api/i18n/{lang}` LLM-translated dictionary. Iteration 21 backend 18/18 + frontend 38/38 pass.
-- 2026-02 · **Complete Chat System v1** — text/emoji/image/gift/voice/video with per-kind costs, `/api/ws?token=<JWT>` real-time, `/api/chat/media` uploads, AI Translate button. Iteration 20 backend 13/13 pass.
+- 2026-02 · **Priority Feeds + Install Banner + Auto-Session (Iter 24)** — 
+  **F1 Discover/Search**: `/api/discover/feed` sorts candidates by `is_online DESC → distance ASC → last_seen DESC` with 4 tiers (Online+Nearby > Online > Offline+Nearby > Offline). 
+  **F2 Home**: `/api/home/feed` HARD-filters by the viewer's `distance_km` when `distance_mode='limited'`, then ranks in 5 tiers (Online+Premium > Online+Nearby > Online (any, sub-sorted by `online_at DESC`) > Offline+Nearby > Offline). Prominent gradient PWA install banner on `/home` — mobile UA only, dismiss X persisted in `localStorage.lovreski_pwa_dismissed`. 
+  **F3 Persistent auto-session**: new `LandingOrHome` wrapper; visiting `/` with a valid JWT auto-redirects to `/home`; logout clears the token and shows Landing again. 
+  **Backend infra**: `is_online` derived from open WS + 60 s HTTP-active fallback; new stored fields `is_online` (bool), `online_at` (transition timestamp). New MongoDB indexes: `{is_online:-1, is_premium:-1}`, `last_active`, `online_at`, `{lat:1, lng:1}`. Iteration 24 backend 6/6 pytest pass + frontend 8/8 pass, zero bugs.
+- 2026-02 · **Delete Message v1** — `DELETE /api/messages/{id}?scope=me|everyone`. `me` hides for viewer (idempotent `$addToSet` on `hidden_for`). `everyone` tombstones (sender-only, 1-h window, admins bypass), broadcasts `{type:"message_deleted"}` WS. Deleted bubbles render italic "Это сообщение было удалено"; reply preview shows "Исходное сообщение удалено". Iteration 23 backend 11/11 pass, frontend 100 %.
+- 2026-02 · **Full-App Translation (DOM Auto-Translator)** — Iteration 22.
+- 2026-02 · **Telegram-Style Chat + i18n v1** — Iteration 21.
+- 2026-02 · **Complete Chat System v1** — Iteration 20.
 
 ## Deploy
 Currently on Emergent (React + FastAPI + MongoDB). For amvera.cloud deployment, see `/app/backend/requirements.txt` + `/app/frontend/package.json`.
