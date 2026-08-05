@@ -337,7 +337,10 @@ def user_public(u: dict, viewer: Optional[dict] = None) -> dict:
     if last_active:
         if last_active.tzinfo is None:
             last_active = last_active.replace(tzinfo=timezone.utc)
-        online = (now_utc() - last_active).total_seconds() < 180
+        # A user counts as "online" if a live WebSocket is open (real-time),
+        # OR they had HTTP activity in the last 60 s (fallback for browsers
+        # that just page-loaded without opening the WS yet).
+        online = ws_manager.is_online(u['user_id']) or (now_utc() - last_active).total_seconds() < 60
     return {
         "user_id": u['user_id'],
         "name": u.get('name', 'Пользователь'),
@@ -741,58 +744,120 @@ async def get_profile(user_id: str, user: dict = Depends(get_current_user)):
     return user_public(target, viewer=user)
 
 # ────────────────────────────── Discovery / Home / Likes ──────────────────────────────
-async def _filter_feed(user: dict, limit: int, skip: int = 0):
+def _is_online(u: dict) -> bool:
+    """True iff user has an open WS OR was HTTP-active in the last 60 s."""
+    if ws_manager.is_online(u.get('user_id')):
+        return True
+    la = _parse_dt(u.get('last_active'))
+    return bool(la and (now_utc() - la).total_seconds() < 60)
+
+def _parse_dt(v):
+    if not v: return None
+    if isinstance(v, datetime):
+        return v if v.tzinfo else v.replace(tzinfo=timezone.utc)
+    try:
+        d = datetime.fromisoformat(str(v).replace('Z', '+00:00'))
+        return d if d.tzinfo else d.replace(tzinfo=timezone.utc)
+    except Exception:
+        return None
+
+def _dist_km(viewer: dict, u: dict) -> Optional[float]:
+    if viewer.get('lat') is None or u.get('lat') is None:
+        return None
+    return haversine_km(viewer['lat'], viewer['lng'], u['lat'], u['lng'])
+
+async def _base_candidates(user: dict, pool_limit: int = 500) -> list[dict]:
+    """Common candidate pool: gender filter, no blocked/self, no already-swiped, no admins."""
     show_me = user.get('show_me', 'both')
-    gender_q: dict = {}
-    if show_me in ('male', 'female'):
-        gender_q = {"gender": show_me}
+    gender_q: dict = {"gender": show_me} if show_me in ('male', 'female') else {}
     blocked = user.get('blocked', []) + [user['user_id']]
-    # Get already-liked/passed
     swipes = await db.likes.find({"from_user": user['user_id']}, {"_id": 0, "to_user": 1}).to_list(2000)
     already = {s['to_user'] for s in swipes}
     already.update(blocked)
     q = {"user_id": {"$nin": list(already)}, "is_admin": {"$ne": True}, **gender_q}
-    users = await db.users.find(q, {"_id": 0, "password_hash": 0}).skip(skip).limit(limit * 3).to_list(limit * 3)
-    # Priority sort
-    def score(u):
-        la = u.get('last_active')
-        if isinstance(la, str):
-            try: la = datetime.fromisoformat(la)
-            except Exception: la = None
-        if la and la.tzinfo is None: la = la.replace(tzinfo=timezone.utc)
-        online_bonus = 0
-        if la:
-            secs = (now_utc() - la).total_seconds()
-            if secs < 180: online_bonus = 1000
-            elif secs < 3600: online_bonus = 500
-            elif secs < 86400: online_bonus = 200
-        dist = 0
-        if user.get('lat') and u.get('lat'):
-            d = haversine_km(user['lat'], user['lng'], u['lat'], u['lng']) or 9999
-            dist = -d
-        return online_bonus + dist
-    users.sort(key=score, reverse=True)
-    # Distance radius filter (only when user picked "Рядом" + numeric radius)
-    if user.get('distance_mode') == 'limited' and user.get('lat') is not None:
-        max_km = user.get('distance_km')
-        if isinstance(max_km, (int, float)):
-            filtered = []
-            for u in users:
-                if u.get('lat') is None:
-                    continue  # skip users without geo when limited
-                d = haversine_km(user['lat'], user['lng'], u['lat'], u['lng'])
-                if d is not None and d <= max_km:
-                    filtered.append(u)
-            users = filtered
-    return [user_public(u, viewer=user) for u in users[:limit]]
-
-@api.get("/home/feed")
-async def home_feed(user: dict = Depends(get_current_user), limit: int = 6, skip: int = 0):
-    return await _filter_feed(user, limit, skip)
+    return await db.users.find(q, {"_id": 0, "password_hash": 0}).limit(pool_limit).to_list(pool_limit)
 
 @api.get("/discover/feed")
 async def discover_feed(user: dict = Depends(get_current_user), limit: int = 20):
-    return await _filter_feed(user, limit)
+    """Search page (swipe cards). Priority:
+       1. Online + Nearby, 2. Online (any), 3. Offline + Nearby, 4. Offline (any).
+       Sort formula: is_online DESC, distance ASC, last_seen DESC.
+       Nearby = within `distance_km` when the user picked 'limited' mode
+       (default: 100 km when unset)."""
+    pool = await _base_candidates(user)
+    nearby_km = user.get('distance_km') if user.get('distance_mode') == 'limited' else 100
+    if not isinstance(nearby_km, (int, float)):
+        nearby_km = 100
+    now = now_utc()
+    scored = []
+    for u in pool:
+        online = _is_online(u)
+        d = _dist_km(user, u)
+        nearby = (d is not None and d <= nearby_km)
+        # Tier: lower value = higher priority
+        if online and nearby:
+            tier = 0
+        elif online:
+            tier = 1
+        elif nearby:
+            tier = 2
+        else:
+            tier = 3
+        last_seen = _parse_dt(u.get('last_active'))
+        last_seen_score = (now - last_seen).total_seconds() if last_seen else 10 ** 9
+        scored.append((tier, d if d is not None else 10 ** 9, last_seen_score, u))
+    scored.sort(key=lambda t: (t[0], t[1], t[2]))
+    return [user_public(t[3], viewer=user) for t in scored[:limit]]
+
+@api.get("/home/feed")
+async def home_feed(user: dict = Depends(get_current_user), limit: int = 6, skip: int = 0):
+    """Home page (grid). HARD-filters by the user's selected distance range
+       when `distance_mode='limited'` — profiles outside the range are hidden.
+       Priority within the range:
+         1. Public users inside selected range (always included; sorted below)
+         2. Online + Premium
+         3. Online + Nearby (Nearby = <= radius / 100 km fallback)
+         4. Recently came Online (online_at DESC)
+         5. Offline + Nearby
+         6. Offline (any)"""
+    pool = await _base_candidates(user, pool_limit=800)
+    hard_limit = user.get('distance_km') if user.get('distance_mode') == 'limited' else None
+    if hard_limit is not None and not isinstance(hard_limit, (int, float)):
+        hard_limit = None
+    # For "nearby" tiers when no hard limit picked, treat 100 km as nearby.
+    nearby_km = hard_limit if hard_limit is not None else 100
+    now = now_utc()
+    scored: list = []
+    for u in pool:
+        d = _dist_km(user, u)
+        # HARD distance filter (Priority 1 rule)
+        if hard_limit is not None:
+            if d is None:
+                continue  # no geo → cannot verify within range
+            if d > hard_limit:
+                continue
+        online = _is_online(u)
+        premium = bool(u.get('is_premium'))
+        nearby = (d is not None and d <= nearby_km)
+        online_at = _parse_dt(u.get('online_at'))
+        if online and premium:
+            tier = 1
+        elif online and nearby:
+            tier = 2
+        elif online:
+            tier = 3  # includes "recently came online" — sub-sorted by online_at
+        elif nearby:
+            tier = 4
+        else:
+            tier = 5
+        # secondary sort keys
+        online_at_score = -(online_at.timestamp() if online_at else 0)
+        last_seen = _parse_dt(u.get('last_active'))
+        last_seen_score = (now - last_seen).total_seconds() if last_seen else 10 ** 9
+        dist_score = d if d is not None else 10 ** 9
+        scored.append((tier, online_at_score, dist_score, last_seen_score, u))
+    scored.sort(key=lambda t: (t[0], t[1], t[2], t[3]))
+    return [user_public(t[4], viewer=user) for t in scored[skip:skip + limit]]
 
 @api.post("/like/{target_id}")
 async def like_user(target_id: str, user: dict = Depends(get_current_user)):
@@ -2068,9 +2133,14 @@ async def ws_endpoint(websocket: WebSocket, token: Optional[str] = None):
         await websocket.close(code=4401)
         return
     await ws_manager.connect(user_id, websocket)
-    # Mark online
+    # Mark online. Only bump `online_at` on a fresh transition (offline → online).
     try:
-        await db.users.update_one({"user_id": user_id}, {"$set": {"last_active": iso(now_utc())}})
+        prev = await db.users.find_one({"user_id": user_id}, {"_id": 0, "is_online": 1})
+        now_iso = iso(now_utc())
+        set_fields = {"is_online": True, "last_active": now_iso}
+        if not (prev or {}).get('is_online'):
+            set_fields["online_at"] = now_iso
+        await db.users.update_one({"user_id": user_id}, {"$set": set_fields})
         await websocket.send_json({"type": "hello", "user_id": user_id})
         while True:
             # Client may send { type: "ping" } or { type: "typing", to: <uid> }
@@ -2081,6 +2151,7 @@ async def ws_endpoint(websocket: WebSocket, token: Optional[str] = None):
                 continue
             if data.get('type') == 'ping':
                 await websocket.send_json({"type": "pong"})
+                await db.users.update_one({"user_id": user_id}, {"$set": {"last_active": iso(now_utc())}})
             elif data.get('type') == 'typing' and data.get('to'):
                 await ws_manager.send_to(data['to'], {"type": "typing", "from": user_id})
             elif data.get('type') == 'read' and data.get('chat_with'):
@@ -2093,6 +2164,9 @@ async def ws_endpoint(websocket: WebSocket, token: Optional[str] = None):
         logger.warning(f"ws loop error: {e}")
     finally:
         await ws_manager.disconnect(user_id, websocket)
+        # Only flip is_online=false if no other sockets remain for this user
+        if not ws_manager.is_online(user_id):
+            await db.users.update_one({"user_id": user_id}, {"$set": {"is_online": False, "last_active": iso(now_utc())}})
 
 app.add_middleware(
     CORSMiddleware,
@@ -2106,9 +2180,17 @@ app.add_middleware(
 async def on_start():
     await db.users.create_index("user_id", unique=True)
     await db.users.create_index("email")
+    # Feed / discovery indexes
+    await db.users.create_index([("is_online", -1), ("is_premium", -1)])
+    await db.users.create_index("last_active")
+    await db.users.create_index("online_at")
+    await db.users.create_index([("lat", 1), ("lng", 1)])
     await db.sessions.create_index("session_token", unique=True)
     await db.likes.create_index([("from_user", 1), ("to_user", 1)], unique=True)
     await db.messages.create_index("chat_id")
+    await db.messages.create_index([("chat_id", 1), ("created_at", 1)])
+    await db.i18n_cache.create_index("lang", unique=True)
+    await db.i18n_dynamic.create_index([("lang", 1), ("key", 1)], unique=True)
 
 @app.on_event("shutdown")
 async def on_stop():

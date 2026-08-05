@@ -26,13 +26,21 @@ const Protected = ({ children }) => {
   return children;
 };
 
+// Persistent auto-session: if a valid token/session exists → skip Landing and go straight to Home.
+const LandingOrHome = () => {
+  const { user, loading } = useAuth();
+  if (loading) return <div className="min-h-screen flex items-center justify-center text-muted-foreground">Загрузка...</div>;
+  if (user) return <Navigate to="/home" replace />;
+  return <Landing />;
+};
+
 const AppRouter = () => {
   const location = useLocation();
   // Handle Emergent OAuth callback synchronously during render
   if (location.hash?.includes("session_id=")) return <AuthCallback />;
   return (
     <Routes>
-      <Route path="/" element={<Landing />} />
+      <Route path="/" element={<LandingOrHome />} />
       <Route path="/home" element={<Protected><HomePage /></Protected>} />
       <Route path="/discover" element={<Protected><DiscoverPage /></Protected>} />
       <Route path="/likes" element={<Protected><LikesPage /></Protected>} />

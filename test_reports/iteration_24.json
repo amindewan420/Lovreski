@@ -1,0 +1,46 @@
+{
+  "summary": "Iter 24 tested end-to-end: (a) backend Discover/Home feed ordering & priority, hard distance filter, unlimited mode, is_online tracking, and the 4 required Mongo indexes; (b) frontend F3 persistent auto-session (LandingOrHome), (c) frontend F2 PWA install banner mobile-only + dismiss+localStorage persistence. All 6 pytest cases pass. All targeted frontend flows pass. Zero console errors observed.",
+  "backend_issues": { "critical": [], "minor": [] },
+  "frontend_issues": { "ui_bugs": [], "integration_issues": [], "design_issues": [] },
+  "test_report_links": [
+    "/app/backend/tests/test_online_feed_iter24.py",
+    "/app/test_reports/pytest/iter24_results.xml",
+    "/app/test_reports/iter24_desktop.png",
+    "/app/test_reports/iter24_mobile_home.png",
+    "/app/test_reports/iter24_mobile_discover.png"
+  ],
+  "backend_test_results": {
+    "test_discover_feed_online_first": "PASS - online candidates (is_online=true, last_active=now) sort ahead of offline (last_active=2020) in /discover/feed",
+    "test_home_feed_hard_filter_limited": "PASS - viewer at (55.75,37.61) with distance_mode=limited distance_km=50 -> ~29km candidate included, ~250km candidate hidden",
+    "test_home_feed_unlimited_returns_all": "PASS - distance_mode=unlimited returns far candidate",
+    "test_home_feed_priority_tiers": "PASS - order Online+Premium < Online+Nearby < Offline+Nearby < Offline+Far",
+    "test_auth_me_returns_online_fields": "PASS - /auth/me exposes is_online/online_at",
+    "test_users_indexes_present": "PASS - {is_online:-1,is_premium:-1}, last_active, online_at, {lat:1,lng:1} all present"
+  },
+  "frontend_test_results": {
+    "F3_no_token_shows_landing": "PASS - visiting / without lovreski_token shows Login form (Войти/пароль fields visible)",
+    "F3_with_token_redirects_home": "PASS - after fetch /api/auth/login and localStorage.setItem, visiting / auto-navigates to /home",
+    "F3_reload_persists": "PASS - full reload on /home stays on /home",
+    "F3_logout_clears_and_lands_on_landing": "PASS - Settings logout clears lovreski_token; next visit to / shows Landing",
+    "F2_mobile_banner_visible": "PASS - iPhone UA + /home renders data-testid=pwa-install-banner with 'Install Lovreski App / for a better experience' + pwa-install-btn + pwa-install-dismiss",
+    "F2_mobile_dismiss_persists": "PASS - clicking pwa-install-dismiss hides banner, sets localStorage.lovreski_pwa_dismissed='1', banner stays hidden after reload",
+    "F2_desktop_hidden": "PASS - desktop UA on /home does NOT show banner even without dismiss flag",
+    "F1_F2_grid_and_swipe_render": "PASS - /home shows 6 profile cards (data-testid=profile-card-*), /discover renders swipe card(s) with data-testid=swipe-*",
+    "console_errors": "None observed"
+  },
+  "critical_code_review_comments": [
+    "server.py /auth/register (line 390) IGNORES the request body's show_me and always sets show_me to the opposite gender. This is unrelated to iter24 but caused initial test failures - main agent should decide whether registration should honor client-provided show_me.",
+    "_base_candidates uses hard pool_limit=500/800. For a large user base future-scaling should consider Mongo aggregation with tier scoring instead of Python in-memory sort.",
+    "HomePage.jsx shouldShowInstallBanner runs on module init via useState default, plus a beforeinstallprompt listener; both correctly re-check the dismiss localStorage flag - looks solid."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_online_feed_iter24.py (new pytest suite)"
+  ],
+  "success_rate": { "backend": "100% (6/6)", "frontend": "100% (8/8 checks)" },
+  "test_credentials": "testuser1@lovreski.ru / password123 works. Registration requires field 'dob' (YYYY-MM-DD); backend overrides show_me based on gender.",
+  "seed_data_creation": "Test suite registers ephemeral users with prefix tst_iter24_* and cleans up via teardown_module. Mongo is /app/backend/.env test_database.",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Iter24 is fully green. When registering users via /api/auth/register: (1) dob is REQUIRED (YYYY-MM-DD), (2) show_me is overridden by backend (male->female, female->male), so to add candidates matching a viewer with show_me='both', explicitly set viewer show_me='both' AND set candidate gender to what the viewer wants in Mongo. Home feed default limit=6 & discover=20; use limit>=500 in tests since demo data has ~178 users. Local MongoDB test_database is shared with the preview backend.",
+  "rca of the issue": "N/A - no bugs found in scope."
+}

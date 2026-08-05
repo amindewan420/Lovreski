@@ -3,16 +3,32 @@ import { useAuth } from "@/context/AuthContext";
 import { api } from "@/lib/api";
 import { MobileShell } from "@/components/lovreski/Shell";
 import { ProfileCard } from "@/components/lovreski/ProfileCard";
-import { Search, Bell, SlidersHorizontal, Download } from "lucide-react";
+import { Search, Bell, SlidersHorizontal, Download, X } from "lucide-react";
 import { toast } from "sonner";
 import { useNavigate } from "react-router-dom";
+
+const INSTALL_DISMISS_KEY = "lovreski_pwa_dismissed";
+
+// Show install banner ONLY on mobile browsers that haven't installed the PWA,
+// and haven't been dismissed yet.
+const shouldShowInstallBanner = () => {
+  if (typeof window === "undefined") return false;
+  if (localStorage.getItem(INSTALL_DISMISS_KEY) === "1") return false;
+  // Already installed as PWA?
+  const standalone = window.matchMedia?.("(display-mode: standalone)").matches
+    || window.navigator.standalone === true;
+  if (standalone) return false;
+  // Mobile UA heuristic (iOS/Android/Mobile keywords)
+  const ua = navigator.userAgent || "";
+  return /Android|iPhone|iPad|iPod|Mobile|Opera Mini|IEMobile/i.test(ua);
+};
 
 export default function HomePage() {
   const { user } = useAuth();
   const nav = useNavigate();
   const [feed, setFeed] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [showInstall, setShowInstall] = useState(false);
+  const [showInstall, setShowInstall] = useState(() => shouldShowInstallBanner());
   const [deferred, setDeferred] = useState(null);
 
   useEffect(() => {
@@ -29,7 +45,7 @@ export default function HomePage() {
         } else load();
       } catch { load(); }
     })();
-    const handler = (e) => { e.preventDefault(); setDeferred(e); setShowInstall(true); };
+    const handler = (e) => { e.preventDefault(); setDeferred(e); if (shouldShowInstallBanner()) setShowInstall(true); };
     window.addEventListener("beforeinstallprompt", handler);
     return () => window.removeEventListener("beforeinstallprompt", handler);
     // eslint-disable-next-line
@@ -67,11 +83,16 @@ export default function HomePage() {
   };
 
   const install = async () => {
-    if (!deferred) return;
-    deferred.prompt();
-    const { outcome } = await deferred.userChoice;
-    if (outcome === "accepted") setShowInstall(false);
+    if (deferred) {
+      deferred.prompt();
+      const { outcome } = await deferred.userChoice;
+      if (outcome === "accepted") { setShowInstall(false); localStorage.setItem(INSTALL_DISMISS_KEY, "1"); }
+      return;
+    }
+    // iOS Safari has no beforeinstallprompt — surface the shelf hint instead.
+    toast.info("Нажмите «Поделиться» → «На экран Домой» чтобы установить");
   };
+  const dismissInstall = () => { setShowInstall(false); localStorage.setItem(INSTALL_DISMISS_KEY, "1"); };
 
   return (
     <MobileShell>
@@ -91,14 +112,33 @@ export default function HomePage() {
           </div>
         </div>
         {showInstall && (
-          <button
-            data-testid="pwa-install"
-            onClick={install}
-            className="w-full flex items-center justify-between px-4 py-2 rounded-xl bg-primary/10 border border-primary/30 text-primary text-sm font-semibold hover:bg-primary/15 transition-colors duration-200"
+          <div
+            data-testid="pwa-install-banner"
+            className="flex items-center gap-3 px-3 py-2.5 rounded-2xl bg-gradient-to-r from-primary to-fuchsia-500 text-primary-foreground shadow-lg"
           >
-            <span className="flex items-center gap-2"><Download className="w-4 h-4" /> Установить приложение</span>
-            <span className="text-xs">→</span>
-          </button>
+            <div className="w-9 h-9 rounded-xl bg-white/20 flex items-center justify-center shrink-0">
+              <Download className="w-5 h-5" />
+            </div>
+            <div className="flex-1 min-w-0">
+              <p className="text-sm font-bold leading-tight">Install Lovreski App</p>
+              <p className="text-[11px] opacity-90 leading-tight">for a better experience</p>
+            </div>
+            <button
+              data-testid="pwa-install-btn"
+              onClick={install}
+              className="px-3 py-1.5 rounded-full bg-white text-primary text-xs font-bold hover:bg-white/90"
+            >
+              Install
+            </button>
+            <button
+              data-testid="pwa-install-dismiss"
+              onClick={dismissInstall}
+              aria-label="Закрыть"
+              className="p-1.5 rounded-full hover:bg-white/15"
+            >
+              <X className="w-4 h-4" />
+            </button>
+          </div>
         )}
       </header>
 
