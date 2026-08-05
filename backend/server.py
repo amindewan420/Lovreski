@@ -2124,10 +2124,12 @@ async def admin_backfill_gridfs(admin: dict = Depends(require_admin)):
             await db.refund_requests.update_one({"refund_id": r['refund_id']}, {"$set": {"receipt_data_url": new_url}})
             stats["refunds"] += 1
 
-    await db.admin_audit.insert_one({
-        "admin_id": admin['user_id'], "action": "gridfs_backfill",
-        "stats": stats, "at": iso(now_utc()),
-    })
+    total = sum(stats.values()) - stats["errors"]
+    if total > 0 or stats["errors"] > 0:
+        await db.admin_audit.insert_one({
+            "admin_id": admin['user_id'], "action": "gridfs_backfill",
+            "stats": stats, "at": iso(now_utc()),
+        })
     return {"ok": True, "migrated": stats}
 
 # ────────────────────────────── Translation ──────────────────────────────

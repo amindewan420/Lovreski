@@ -44,17 +44,11 @@ Build a complete, production-ready dating web app called "Lovreski" — mobile-f
 - P2: Email/SMS notifications via Resend/Twilio for refund status & matches
 
 ## Changelog
-- 2026-02 · **Admin Panel v2 (Iter 25)** — 
-  **Coin management**: `POST /api/admin/users/deduct-coins` (with mandatory reason, confirmation, floors at 0, notification to user). 
-  **Payments tab**: All/Pending/Approved/Rejected filter tabs + username/email search. 
-  **Dashboard**: added "Approved this month" stat card. 
-  **Moderation**: `POST /api/admin/users/{id}/warn` (warn_count + push), `POST /api/admin/users/{id}/ban7` (temporary ban, invalidates sessions, blocks login with Russian message), `POST /api/admin/users/{id}/deactivate-permanent` (soft deactivation, invalidates sessions, filtered out of all feeds, blocks login). 
-  **Legal docs manager**: full CRUD (`GET /api/legal` public, `GET/POST/PUT/DELETE /api/admin/legal[/{slug}]`), slug regex enforced, duplicate = 409. 
-  **Admin audit log**: new `db.admin_audit` collection + `GET /api/admin/audit` — every mutation (deduct, warn, ban, deactivate, settings update, legal CRUD, SBP reveal) inserts a row with admin_id/action/target/at. 
-  Iteration 25 backend **23/23 pytest pass**, frontend **100 %**, zero bugs.
-- 2026-02 · **Priority Feeds + Install Banner + Auto-Session (Iter 24)** — 4/5-tier priority sorts on discover/home feeds, mobile PWA install banner, persistent auto-session on `/`. Backend 6/6 + frontend 8/8 pass.
-- 2026-02 · **Delete Message v1 (Iter 23)** — DELETE for me / everyone with 1-h window, WS-broadcast tombstone. Backend 11/11 + frontend 100%.
-- 2026-02 · **Full-App Translation (Iter 22)** — DOM auto-translator + `/api/i18n/translate-batch`.
+- 2026-02 · **File & Media Storage (GridFS) — Iter 26** — All file uploads (profile photos, chat media, support receipts, refund receipts) now persist bytes to MongoDB **GridFS** (`fs.files` + `fs.chunks`) instead of embedding base64 in documents. New helpers `gridfs_put()`, `gridfs_url()`, `store_data_url_in_gridfs()`. New endpoints: `GET /api/files/{id}` streams files with correct MIME + `Cache-Control: immutable`; `POST /api/files/upload` (multipart, JWT-auth) generic upload with image auto-compression to JPEG. All existing upload paths route through the same code so old base64 flow is gone. One-shot `POST /api/admin/migrate/gridfs` (admin, idempotent) walks every legacy base64 blob in users/messages/receipt_submissions/refund_requests, moves it to GridFS, and rewrites the doc's URL. First backfill migrated **49 blobs** in 400 ms with 0 errors; DB invariants: 0 base64 URLs remaining. Backend 22/22 pytest pass, frontend 100 %, zero bugs. Notes: `/api/files/{id}` is intentionally unauthenticated so `<img>`/`<audio>`/`<video>` tags work — IDs are 24-hex opaque tokens (unenumerable); a per-owner ACL layer is a backlog item if any file kind becomes truly sensitive.
+- 2026-02 · **Admin Panel v2 (Iter 25)** — deduct-coins, payments tab filters/search, moderation (warn/ban7/deactivate-permanent), legal docs CRUD, admin audit log. Backend 23/23 + frontend 100 %.
+- 2026-02 · **Priority Feeds + Install Banner + Auto-Session (Iter 24)** — Discover 4-tier + Home 5-tier sorts, mobile PWA install banner, persistent auto-session. Backend 6/6 + frontend 8/8.
+- 2026-02 · **Delete Message v1 (Iter 23)** — DELETE for me / everyone with 1-h window, WS-broadcast tombstone. Backend 11/11 + frontend 100 %.
+- 2026-02 · **Full-App Translation (Iter 22)** — DOM auto-translator + LLM-cached batch.
 - 2026-02 · **Telegram Chat + i18n v1 (Iter 21)** — full chat redesign. Backend 18/18 + frontend 38/38.
 - 2026-02 · **Complete Chat System v1 (Iter 20)** — text/emoji/image/gift/voice/video + WS. Backend 13/13.
 
