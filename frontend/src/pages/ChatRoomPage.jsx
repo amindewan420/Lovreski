@@ -376,7 +376,7 @@ export default function ChatRoomPage() {
         {/* Bottom sheets */}
         <EmojiPanel open={showEmoji} onClose={() => setShowEmoji(false)} onPick={(e) => { setShowEmoji(false); sendEmoji(e); }} />
         <GiftPanel open={showGifts} onClose={() => setShowGifts(false)} onSend={sendGift} coins={status.coins} />
-        <LanguageSheet open={showLang} onClose={() => setShowLang(false)} onSelect={async (l) => { setShowLang(false); const r = await setLang(l.code); if (r?.actualLang !== l.code) toast.error("Перевод недоступен, оставили русский"); else toast.success(`${l.flag} ${l.name}`); }} />
+        <LanguageSheet open={showLang} onClose={() => setShowLang(false)} onSelect={async (l) => { const r = await setLang(l.code); setShowLang(false); if (r?.actualLang !== l.code) toast.error("Перевод недоступен, оставили русский"); else toast.success(`${l.flag} ${l.name}`); }} />
 
         {/* Block popup */}
         {showBlockPopup && (

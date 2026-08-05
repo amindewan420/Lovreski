@@ -1,6 +1,6 @@
 // App-wide i18n. Loads Russian base + on-demand translated bundles from backend.
 // Persists selected language in localStorage AND on the user profile (language_pref).
-import { createContext, useContext, useEffect, useState, useCallback, useMemo } from "react";
+import { createContext, useContext, useEffect, useState, useCallback, useMemo, useRef } from "react";
 import { api } from "./api";
 import { useAuth } from "@/context/AuthContext";
 
@@ -107,16 +107,20 @@ export function I18nProvider({ children }) {
   const [lang, setLangState] = useState(() => localStorage.getItem(LS_KEY) || "ru");
   const [strings, setStrings] = useState({});
   const [loading, setLoading] = useState(false);
+  const userSyncedRef = useRef(false);
 
   const load = useCallback(async (code) => {
     setLoading(true);
     try {
       const { data } = await api.get(`/i18n/${code}`);
       setStrings(data.strings || {});
-      setLangState(data.lang);
-      localStorage.setItem(LS_KEY, data.lang);
-      // If user asked for X but server returned Russian, translation failed.
-      // Return that signal to callers so they can toast.
+      // Only persist the language client-side if the server actually
+      // returned the requested one. Otherwise we would silently overwrite
+      // the user's selection with the fallback (usually Russian).
+      if (data.lang === code) {
+        setLangState(data.lang);
+        localStorage.setItem(LS_KEY, data.lang);
+      }
       return { requestedLang: code, actualLang: data.lang, error: data.error };
     } catch (e) {
       console.warn("i18n load failed:", e);
@@ -127,10 +131,17 @@ export function I18nProvider({ children }) {
   // Initial load
   useEffect(() => { load(lang); }, [load, lang]);
 
-  // Sync from user profile once logged in (server is source of truth)
+  // Sync from user profile ONCE per session after login. Never override a
+  // language the user has explicitly picked later in the same session.
   useEffect(() => {
+    if (userSyncedRef.current) return;
     const pref = user?.language_pref;
-    if (pref && pref !== lang) { load(pref); }
+    if (pref && pref !== lang) {
+      userSyncedRef.current = true;
+      load(pref);
+    } else if (user) {
+      userSyncedRef.current = true;
+    }
     // eslint-disable-next-line
   }, [user?.language_pref]);
 
