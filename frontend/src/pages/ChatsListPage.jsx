@@ -62,10 +62,10 @@ export default function ChatsListPage() {
                 </div>
                 <div className="flex-1 text-left min-w-0">
                   <div className="flex justify-between items-baseline gap-2">
-                    <p className="font-semibold truncate">{c.user.name}, {c.user.age}</p>
+                    <p className="font-semibold truncate no-translate">{c.user.name}, {c.user.age}</p>
                     <p className="text-[10px] text-muted-foreground">{new Date(last.created_at).toLocaleTimeString("ru", { hour: "2-digit", minute: "2-digit" })}</p>
                   </div>
-                  <p className="text-sm text-muted-foreground truncate">{preview}</p>
+                  <p className={`text-sm text-muted-foreground truncate ${(last.kind === 'text' || last.kind === 'emoji') ? 'no-translate' : ''}`}>{preview}</p>
                 </div>
                 {c.unread > 0 && <span className="bg-primary text-primary-foreground text-xs font-bold px-2 py-0.5 rounded-full">{c.unread}</span>}
               </button>

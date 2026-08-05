@@ -1681,6 +1681,88 @@ async def translate(body: TranslateBody, user: dict = Depends(get_current_user))
         logger.exception("translate failed")
         raise HTTPException(status_code=500, detail=str(e))
 
+class I18nBatchBody(BaseModel):
+    lang: str
+    strings: list[str]
+
+@api.post("/i18n/translate-batch")
+async def i18n_translate_batch(body: I18nBatchBody):
+    """Translate a batch of Russian UI strings to `lang`.
+    Persists each entry in `db.i18n_dynamic` keyed by (lang, sha16(text))."""
+    lang = body.lang.lower().strip()
+    # Dedupe + strip empties + cap payload
+    raw_strings = [s for s in dict.fromkeys(body.strings or []) if s and s.strip()]
+    if not raw_strings:
+        return {"translations": {}}
+    if lang == "ru":
+        return {"translations": {s: s for s in raw_strings}}
+    # Cap to prevent abuse
+    if len(raw_strings) > 200:
+        raw_strings = raw_strings[:200]
+
+    def key_of(s: str) -> str:
+        return hashlib.sha256(s.encode("utf-8")).hexdigest()[:20]
+
+    # Look up cache
+    keys = [key_of(s) for s in raw_strings]
+    docs = await db.i18n_dynamic.find({"lang": lang, "key": {"$in": keys}}, {"_id": 0, "key": 1, "value": 1}).to_list(len(keys) + 10)
+    cache_map = {d["key"]: d["value"] for d in docs}
+    result: dict[str, str] = {}
+    missing: list[str] = []
+    for s in raw_strings:
+        k = key_of(s)
+        if k in cache_map:
+            result[s] = cache_map[k]
+        else:
+            missing.append(s)
+
+    if missing:
+        try:
+            from emergentintegrations.llm.chat import LlmChat, UserMessage  # type: ignore
+            payload = _json.dumps(missing, ensure_ascii=False)
+            chat = LlmChat(
+                api_key=os.environ['EMERGENT_LLM_KEY'],
+                session_id=f"i18n_batch_{lang}",
+                system_message=(
+                    "You are a professional UI translator. You will receive a JSON array of Russian UI strings. "
+                    f"Translate every element to the target language code '{lang}'. "
+                    "Return ONLY a JSON array of the same length in the same order. "
+                    "Preserve emojis, punctuation, numbers, and any {placeholders}. "
+                    "Never wrap the response in markdown or code fences."
+                ),
+            ).with_model("openai", "gpt-4o-mini")
+            raw = await asyncio.wait_for(chat.send_message(UserMessage(text=payload)), timeout=30.0)
+            txt = str(raw).strip()
+            if txt.startswith("```"):
+                txt = txt.strip("`")
+                if txt.lower().startswith("json"):
+                    txt = txt[4:].lstrip()
+            translated = _json.loads(txt)
+            if not isinstance(translated, list) or len(translated) != len(missing):
+                raise ValueError("bad shape")
+            # Persist and merge
+            ops = []
+            for src, dst in zip(missing, translated):
+                if not isinstance(dst, str) or not dst.strip():
+                    continue
+                result[src] = dst
+                ops.append({"lang": lang, "key": key_of(src), "src": src, "value": dst, "updated_at": iso(now_utc())})
+            if ops:
+                # bulk upsert
+                await asyncio.gather(*[
+                    db.i18n_dynamic.update_one(
+                        {"lang": lang, "key": op["key"]},
+                        {"$set": op},
+                        upsert=True,
+                    ) for op in ops
+                ])
+        except Exception as e:
+            logger.warning(f"batch translate failed for {lang}: {e}")
+            # Fail-open: return russian for missing
+            for s in missing:
+                result.setdefault(s, s)
+    return {"translations": result}
+
 # ────────────────────────────── App-wide i18n ──────────────────────────────
 # Canonical Russian UI dictionary. Extend as new strings are added.
 I18N_BASE_RU = {

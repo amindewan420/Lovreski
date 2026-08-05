@@ -210,7 +210,7 @@ export default function ChatRoomPage() {
                 {other.online && <span className="absolute bottom-0 right-0 w-2.5 h-2.5 rounded-full bg-emerald-500 border-2 border-white" />}
               </div>
               <div className="flex-1 min-w-0" onClick={() => nav(`/u/${other.user_id}`)}>
-                <p className="font-semibold text-slate-900 truncate">{other.name}, {other.age}</p>
+                <p className="font-semibold text-slate-900 truncate no-translate">{other.name}, {other.age}</p>
                 <p className="text-[11px] text-emerald-600">
                   {typingPeer ? t("chat.typing") : (other.online ? t("chat.online") : t("chat.recent"))}
                 </p>
@@ -237,7 +237,7 @@ export default function ChatRoomPage() {
                 <div className="max-w-[78%] group">
                   {replied && (
                     <div className={`px-2 py-1 mb-1 text-[11px] rounded border-l-2 ${mine ? "bg-sky-50 border-sky-400 text-slate-700" : "bg-slate-50 border-slate-300 text-slate-600"}`}>
-                      <p className="truncate">{t("chat.reply_prefix")} {replied.text || replied.kind}</p>
+                      <p className="truncate"><span className="opacity-70">{t("chat.reply_prefix")}</span> <span className="no-translate">{replied.text || replied.kind}</span></p>
                     </div>
                   )}
                   {locked ? (
@@ -268,12 +268,12 @@ export default function ChatRoomPage() {
                       ) : m.kind === "file" && m.media_url ? (
                         <a href={m.media_url} download={m.file_name || "file"} className="flex items-center gap-2 text-sm">
                           <FileIcon className="w-5 h-5" />
-                          <span className="underline truncate max-w-[180px]">{m.file_name || "file"}</span>
+                          <span className="underline truncate max-w-[180px] no-translate">{m.file_name || "file"}</span>
                         </a>
                       ) : (
-                        <p className="whitespace-pre-wrap break-words text-[15px] leading-snug">{m.text}</p>
+                        <p className="whitespace-pre-wrap break-words text-[15px] leading-snug no-translate">{m.text}</p>
                       )}
-                      {m.translated && <p className="mt-1 pt-1 border-t border-slate-200 text-[12px] text-slate-500 italic">{m.translated}</p>}
+                      {m.translated && <p className="mt-1 pt-1 border-t border-slate-200 text-[12px] text-slate-500 italic no-translate">{m.translated}</p>}
                       <div className="flex items-center justify-end gap-1 mt-0.5 text-[10px] text-slate-500">
                         <span>{fmtTime(m.created_at)}</span>
                         {mine && (m.read ? <CheckCheck className="w-3.5 h-3.5 text-sky-500" /> : <Check className="w-3.5 h-3.5" />)}
@@ -301,7 +301,7 @@ export default function ChatRoomPage() {
         {reply && (
           <div className="px-3 py-2 flex items-center gap-2 bg-slate-50 border-t border-slate-200">
             <Reply className="w-4 h-4 text-slate-500" />
-            <div className="flex-1 text-xs text-slate-700 truncate border-l-2 border-primary pl-2">{t("chat.reply_prefix")} {reply.text || reply.kind}</div>
+            <div className="flex-1 text-xs text-slate-700 truncate border-l-2 border-primary pl-2"><span>{t("chat.reply_prefix")}</span> <span className="no-translate">{reply.text || reply.kind}</span></div>
             <button onClick={() => setReply(null)} data-testid="cancel-reply"><X className="w-4 h-4 text-slate-500" /></button>
           </div>
         )}

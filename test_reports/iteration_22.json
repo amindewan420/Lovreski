@@ -1,0 +1,55 @@
+{
+  "summary": "Iter 22 — Verified backend POST /api/i18n/translate-batch (7/7 pytest passing) and frontend DOM auto-translator. Confirmed Settings page, Premium page, bottom nav, and chat input placeholder all translate to English when lovreski_lang='en' is set BEFORE React initializes. Preserved tokens (₽, +79780369381, 'Al Amin Dewan') are intact. Chat message bodies (.no-translate) remain untranslated as intended. RU restore via LanguageSheet works. FR switch via LanguageSheet was inconclusive due to a timing/persistence issue (see below).",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [
+      {
+        "flow": "Language switch to French via LanguageSheet",
+        "issue": "After clicking data-testid='lang-fr', localStorage.lovreski_lang did NOT change to 'fr' (remained 'en' or reverted). Subsequent navigation to /settings still rendered in English rather than French. Suspected race: onSelect calls setShowLang(false) which unmounts the sheet, then awaits setLang(l.code). The `setLang` -> `load('fr')` fetches /api/i18n/fr which returns {lang:'fr'} on success; if server returns a fallback lang (e.g., 'en' or 'ru'), that overwrites LS. Also, on subsequent test runs, user.language_pref set from earlier switch to 'ru' overrides localStorage 'en' at login (i18n.jsx line 131-135). This causes stale/wrong lang on re-visits.",
+        "affected_selectors": ["[data-testid=\"lang-fr\"]", "[data-testid=\"lang-sheet\"]", "[data-testid=\"settings-language-row\"]"]
+      }
+    ],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_i18n_batch_iter22.py",
+    "/app/test_reports/pytest/i18n_batch_iter22.xml"
+  ],
+  "action_items": [
+    "Investigate why setLang('fr') via LanguageSheet does not persist localStorage to 'fr'. Verify GET /api/i18n/fr response actually returns lang='fr' and not a fallback. Consider awaiting the PUT /profile { language_pref } before closing the sheet, or capturing errors from load().",
+    "Consider making i18n.jsx prefer localStorage over user.language_pref on initial load OR sync only when user explicitly changes it, to avoid the profile pref clobbering the local selection across sessions."
+  ],
+  "critical_code_review_comments": [
+    "i18n.jsx line 131-135: user.language_pref sync forces override of localStorage on every auth-me load. This can undo a just-set language on next mount if profile PUT is delayed or user changes lang while offline.",
+    "i18n.jsx line 111-125: load() writes localStorage even on failure/fallback (setLangState(data.lang)). If backend LLM fails and returns lang='ru', it silently reverts the user's selection. Should probably surface an error toast to user (already partially done via r.actualLang check in SettingsPage onSelect).",
+    "i18n.jsx flush() catch block clears pending but doesn't retry — a transient network error will permanently leave those strings untranslated for the session (until next scan re-enqueues them).",
+    "server.py i18n_translate_batch: correctly caps at 200 and dedupes; fail-open behaves correctly."
+  ],
+  "updated_files": [],
+  "success_rate": {"backend": "100% (7/7 pytest)", "frontend": "~90% (10/11 verified; FR switch inconclusive)"},
+  "test_credentials": "testuser1@lovreski.ru / password123 — used via API login + addInitScript to seed localStorage before React mount",
+  "seed_data_creation": "None; used existing testuser1",
+  "retest_needed": true,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "CRITICAL setup detail: You MUST use page.add_init_script() to set localStorage.lovreski_lang BEFORE navigation. Setting localStorage via page.evaluate() AFTER goto() will NOT work — React reads localStorage in useState initializer on first mount. Also note: user.language_pref on the backend profile persists across sessions and OVERRIDES localStorage on auth-me (i18n.jsx effect at line 131-135). If a previous test set language_pref='ru' on testuser1, subsequent runs will revert to 'ru'. To fully reset, PUT /api/profile with {language_pref: null} before testing, or use a fresh user. Backend translate-batch endpoint is fully working, caches in db.i18n_dynamic keyed by sha256[:20]. Auto-translator debounces 220ms and calls POST /i18n/translate-batch in background; wait ~10-15s after initial page load on a fresh language for the LLM batch to complete.",
+  "verified_functionality": [
+    "POST /api/i18n/translate-batch returns English translations for RU strings",
+    "Batch endpoint is idempotent (cache hits <1.5s)",
+    "Batch endpoint echoes ru->ru verbatim",
+    "Batch endpoint caps at 200 strings (250 sent → ≤200 returned, no 500)",
+    "Batch endpoint fails-open (no 500 to caller)",
+    "Batch endpoint persists to Mongo (verified via 2nd call latency)",
+    "Settings page (/settings) fully translated: 'Settings', 'Personal Information', 'Name', 'Gender', 'Male', 'Date of Birth', 'Search', 'Premium & Coins', 'Manage Premium', 'Notifications', 'Messages', 'Likes', 'Matches', 'AI Translate', 'Auto-translate in chat', 'Translation Language', 'Legal Information', 'Install App', 'Log Out'",
+    "Premium page (/premium) fully translated: 'Premium & Coins', 'Your Balance', 'Activate Premium for all features', 'Purchase history', 'Select a package', 'coins', 'SBP Number For Payment', 'Copy', 'Recipient'",
+    "Preserved unchanged: ₽ symbol, +79780369381 phone, 'Al Amin Dewan' Latin name",
+    "Bottom nav translated: HOME, SEARCH, LIKES, CHATS, PROFILE",
+    "Chat input placeholder translated to 'Message...'",
+    "Chat message bodies (marked .no-translate) remain untranslated",
+    "Language sheet opens on click of settings-language-row",
+    "Switch back to RU via lang-ru works (verified: page fully reverts to Russian, LS='ru')"
+  ]
+}

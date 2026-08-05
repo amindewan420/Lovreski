@@ -140,6 +140,139 @@ export function I18nProvider({ children }) {
     return result;
   }, [load]);
 
+  // ─── Auto DOM translator ─────────────────────────────────────────────
+  // Walks visible text nodes + input/textarea placeholders + button titles /
+  // aria-labels and translates Cyrillic content in the background via
+  // `/api/i18n/translate-batch`. Skips anything inside `.no-translate` and
+  // any elements marked `data-no-translate`. Uses a MutationObserver to
+  // handle React re-renders.
+  useEffect(() => {
+    if (lang === "ru") return;
+    const RU = /[\u0400-\u04FF]/;
+    const seenTextNodes = new WeakSet();
+    const seenAttrs = new WeakMap();          // element -> Set(attr-names seen)
+    const originals = new WeakMap();          // element -> { attr: original }
+    const map = new Map();                    // russian text -> translation
+    const pending = new Map();                // text -> [{ kind, node, attr? }]
+    let flushTimer = null;
+    let disposed = false;
+
+    const inSkipZone = (node) => {
+      let el = node.nodeType === 3 ? node.parentElement : node;
+      while (el) {
+        if (el.dataset && (el.dataset.noTranslate !== undefined)) return true;
+        if (el.classList && el.classList.contains("no-translate")) return true;
+        // Never touch <script>/<style>/<code>/<pre>
+        const tag = el.tagName;
+        if (tag === "SCRIPT" || tag === "STYLE" || tag === "CODE" || tag === "PRE") return true;
+        el = el.parentElement;
+      }
+      return false;
+    };
+
+    const enqueue = (text, node, attr) => {
+      if (!pending.has(text)) pending.set(text, []);
+      pending.get(text).push({ node, attr });
+      if (flushTimer) return;
+      flushTimer = setTimeout(flush, 220);
+    };
+
+    const applyTranslation = (text, translated) => {
+      const targets = pending.get(text) || [];
+      pending.delete(text);
+      for (const { node, attr } of targets) {
+        if (!node || !node.isConnected) continue;
+        try {
+          if (attr) {
+            // Save original once for possible restore on lang="ru"
+            if (!originals.has(node)) originals.set(node, {});
+            const origs = originals.get(node);
+            if (origs[attr] === undefined) origs[attr] = node.getAttribute(attr);
+            node.setAttribute(attr, translated);
+          } else {
+            if (node.nodeType === 3) {
+              // Preserve leading/trailing whitespace of original nodeValue
+              const raw = node.nodeValue || "";
+              const l = raw.match(/^\s*/)?.[0] || "";
+              const r = raw.match(/\s*$/)?.[0] || "";
+              node.nodeValue = `${l}${translated}${r}`;
+            }
+          }
+        } catch { /* noop */ }
+      }
+    };
+
+    const flush = async () => {
+      flushTimer = null;
+      if (pending.size === 0 || disposed) return;
+      const batch = Array.from(pending.keys());
+      // Apply already-known translations synchronously
+      const missing = [];
+      for (const t of batch) {
+        if (map.has(t)) applyTranslation(t, map.get(t));
+        else missing.push(t);
+      }
+      if (missing.length === 0) return;
+      try {
+        const { data } = await api.post("/i18n/translate-batch", { lang, strings: missing });
+        if (disposed) return;
+        const trans = data.translations || {};
+        for (const t of missing) {
+          const dst = trans[t] || t;
+          map.set(t, dst);
+          applyTranslation(t, dst);
+        }
+      } catch (e) {
+        // clear pending to avoid infinite retry loop for this batch
+        for (const t of missing) { map.set(t, t); pending.delete(t); }
+      }
+    };
+
+    const scan = () => {
+      if (disposed) return;
+      // Text nodes
+      const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT, {
+        acceptNode: (n) => (n.nodeValue && RU.test(n.nodeValue) && !seenTextNodes.has(n) && !inSkipZone(n))
+          ? NodeFilter.FILTER_ACCEPT : NodeFilter.FILTER_REJECT,
+      });
+      let node;
+      while ((node = walker.nextNode())) {
+        seenTextNodes.add(node);
+        const txt = node.nodeValue.trim();
+        if (txt) enqueue(txt, node);
+      }
+      // Attributes: placeholder / title / aria-label / alt on inputs, buttons, images
+      const attrTargets = document.querySelectorAll("[placeholder], [title], [aria-label], [alt]");
+      attrTargets.forEach((el) => {
+        if (inSkipZone(el)) return;
+        const seen = seenAttrs.get(el) || new Set();
+        for (const attr of ["placeholder", "title", "aria-label", "alt"]) {
+          const v = el.getAttribute(attr);
+          if (v && RU.test(v) && !seen.has(attr)) {
+            seen.add(attr);
+            enqueue(v.trim(), el, attr);
+          }
+        }
+        seenAttrs.set(el, seen);
+      });
+    };
+
+    scan();
+    const observer = new MutationObserver(() => scan());
+    observer.observe(document.body, {
+      childList: true,
+      subtree: true,
+      characterData: true,
+      attributes: true,
+      attributeFilter: ["placeholder", "title", "aria-label", "alt"],
+    });
+    return () => {
+      disposed = true;
+      observer.disconnect();
+      if (flushTimer) clearTimeout(flushTimer);
+    };
+  }, [lang]);
+
   const t = useCallback((key, vars) => {
     let v = strings[key] ?? key;
     if (vars) for (const [k, val] of Object.entries(vars)) v = v.replace(`{${k}}`, val);
