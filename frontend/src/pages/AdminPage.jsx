@@ -3,7 +3,7 @@ import { api } from "@/lib/api";
 import { useAuth } from "@/context/AuthContext";
 import { useNavigate } from "react-router-dom";
 import { LineChart, Line, BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid } from "recharts";
-import { Shield, Users, Crown, Clock, TrendingUp, Check, X, Flag, LogOut } from "lucide-react";
+import { Shield, Users, Crown, Clock, TrendingUp, Check, X, Flag, LogOut, Search as SearchIcon, MinusCircle, AlertTriangle, Ban, UserX, FileText, Trash2, Plus, Pencil } from "lucide-react";
 import { toast } from "sonner";
 
 export default function AdminPage() {
@@ -26,6 +26,19 @@ export default function AdminPage() {
   const [coinAmt, setCoinAmt] = useState("");
   const [modalReason, setModalReason] = useState("");
   const [viewImg, setViewImg] = useState(null);
+  // NEW: search / filter for payments
+  const [payQ, setPayQ] = useState("");
+  const [payStatus, setPayStatus] = useState("all");
+  // NEW: deduct-coins + moderation actions
+  const [deductTarget, setDeductTarget] = useState(null);
+  const [deductAmt, setDeductAmt] = useState("");
+  const [deductReason, setDeductReason] = useState("");
+  const [modAction, setModAction] = useState(null); // { kind:'warn'|'ban'|'deactivate', user_id, user_name }
+  const [modReason, setModReason] = useState("");
+  const [modDays, setModDays] = useState(7);
+  // NEW: legal docs
+  const [legal, setLegal] = useState([]);
+  const [legalEdit, setLegalEdit] = useState(null); // {slug,title,body,isNew}
 
   useEffect(() => {
     if (!user) return;
@@ -53,7 +66,57 @@ export default function AdminPage() {
       setSbpPhoneInput(""); setSbpRevealed(null);
       setPendingSubs(pend.data); setSupportHistory(hist.data);
       setPendingCount(cnt.data?.count || 0);
+      // Legal docs — best-effort, don't fail whole load if endpoint absent
+      try { const l = await api.get("/admin/legal"); setLegal(l.data || []); } catch { /* noop */ }
     } catch (e) { toast.error("Требуются права администратора"); nav("/home"); }
+  };
+
+  // ─── Deduct coins ───────────────────────────────────────────────────
+  const submitDeduct = async () => {
+    const coins = parseInt(deductAmt, 10);
+    if (!coins || coins <= 0) return toast.error("Введите положительное число монет");
+    if (!deductReason.trim()) return toast.error("Причина обязательна");
+    if (!window.confirm(`Списать ${coins} монет у ${deductTarget.name}?`)) return;
+    try {
+      const { data } = await api.post("/admin/users/deduct-coins", { user_id: deductTarget.user_id, coins, reason: deductReason.trim() });
+      toast.success(`✅ Списано ${data.deducted} · Баланс: ${data.new_balance}`);
+      setDeductTarget(null); setDeductAmt(""); setDeductReason(""); load();
+    } catch (e) { toast.error(e.response?.data?.detail || "Ошибка"); }
+  };
+
+  // ─── Moderation (warn / ban7 / deactivate) ──────────────────────────
+  const submitModAction = async () => {
+    if (!modAction) return;
+    if (!modReason.trim()) return toast.error("Причина обязательна");
+    const { kind, user_id } = modAction;
+    const url = kind === "warn" ? `/admin/users/${user_id}/warn`
+      : kind === "ban" ? `/admin/users/${user_id}/ban7`
+      : `/admin/users/${user_id}/deactivate-permanent`;
+    const body = { reason: modReason.trim(), days: modDays };
+    if (kind === "deactivate" && !window.confirm(`Навсегда деактивировать ${modAction.user_name}? Пользователь потеряет доступ.`)) return;
+    try {
+      await api.post(url, body);
+      toast.success(kind === "warn" ? "⚠️ Предупреждение отправлено" : kind === "ban" ? `🚫 Заблокирован на ${modDays} дн.` : "🛑 Аккаунт деактивирован");
+      setModAction(null); setModReason(""); load();
+    } catch (e) { toast.error(e.response?.data?.detail || "Ошибка"); }
+  };
+
+  // ─── Legal docs ─────────────────────────────────────────────────────
+  const saveLegal = async () => {
+    if (!legalEdit) return;
+    const { slug, title, body, isNew } = legalEdit;
+    if (!/^[a-z0-9_-]+$/.test(slug)) return toast.error("Slug: a-z 0-9 - _");
+    if (!title.trim() || !body.trim()) return toast.error("Заполните все поля");
+    try {
+      if (isNew) await api.post("/admin/legal", { slug, title, body });
+      else await api.put(`/admin/legal/${slug}`, { slug, title, body });
+      toast.success("Сохранено"); setLegalEdit(null); load();
+    } catch (e) { toast.error(e.response?.data?.detail || "Ошибка"); }
+  };
+  const removeLegal = async (slug) => {
+    if (!window.confirm(`Удалить документ "${slug}"?`)) return;
+    try { await api.delete(`/admin/legal/${slug}`); toast.success("Удалено"); load(); }
+    catch (e) { toast.error(e.response?.data?.detail || "Ошибка"); }
   };
 
   const openApprove = (s) => { setModal({ kind: "approve", submission: s }); setCoinAmt(""); setModalReason(""); };
@@ -129,7 +192,7 @@ export default function AdminPage() {
 
       <div className="max-w-6xl mx-auto p-6">
         <div className="flex gap-2 mb-6 bg-muted p-1 rounded-full w-fit">
-          {[{k:"dashboard",l:"Дашборд"},{k:"support",l:"Verification",badge:pendingCount},{k:"refunds",l:"Refund Requests"},{k:"reports",l:"Жалобы"},{k:"users",l:"Пользователи"},{k:"settings",l:"Настройки"}].map(t => (
+          {[{k:"dashboard",l:"Дашборд"},{k:"support",l:"Verification",badge:pendingCount},{k:"payments",l:"Платежи"},{k:"refunds",l:"Refund Requests"},{k:"reports",l:"Жалобы"},{k:"users",l:"Пользователи"},{k:"legal",l:"Правовые"},{k:"settings",l:"Настройки"}].map(t => (
             <button key={t.k} data-testid={`admin-tab-${t.k}`} onClick={() => setTab(t.k)} className={`relative px-5 py-2 rounded-full font-semibold text-sm ${tab === t.k ? "bg-card shadow" : "text-muted-foreground"}`}>
               {t.l}
               {t.badge > 0 && (
@@ -148,6 +211,7 @@ export default function AdminPage() {
               <Stat title="Premium" value={stats.premium_users} icon={Crown} accent />
               <Stat title="Выручка" value={`${stats.revenue.toLocaleString("ru")} ₽`} icon={TrendingUp} />
               <Stat title="Ожидают" value={stats.pending} icon={Clock} />
+              <Stat title="Одобрено в этом месяце" value={stats.approved_month} icon={Check} />
             </div>
 
             <div className="bg-card border border-border rounded-2xl p-5">
@@ -189,46 +253,81 @@ export default function AdminPage() {
         )}
 
         {tab === "payments" && (
-          <div className="bg-card border border-border rounded-2xl overflow-hidden">
-            <table className="w-full text-sm">
-              <thead className="bg-muted text-left">
-                <tr><th className="p-3">Пользователь</th><th className="p-3">Пакет</th><th className="p-3">Сумма</th><th className="p-3">Телефон</th><th className="p-3">Статус</th><th className="p-3">Действие</th></tr>
-              </thead>
-              <tbody>
-                {payments.map(t => (
-                  <tr key={t.tx_id} data-testid={`payment-${t.tx_id}`} className="border-t border-border">
-                    <td className="p-3">{t.user_name}<br /><span className="text-xs text-muted-foreground">{t.user_email}</span></td>
-                    <td className="p-3">{t.coins} 💰</td>
-                    <td className="p-3 font-bold">{t.amount_rub} ₽</td>
-                    <td className="p-3">{t.phone}</td>
-                    <td className="p-3"><span className={`text-xs px-2 py-1 rounded-full ${t.status === "approved" ? "bg-emerald-500/15 text-emerald-500" : t.status === "rejected" ? "bg-rose-500/15 text-rose-500" : "bg-amber-500/15 text-amber-500"}`}>{t.status}</span></td>
-                    <td className="p-3">
-                      {t.status === "pending" && (
-                        <div className="flex gap-1">
-                          <button data-testid={`approve-${t.tx_id}`} onClick={() => act(t.tx_id, "approve")} className="p-1.5 rounded bg-emerald-500 text-white"><Check className="w-4 h-4" /></button>
-                          <button data-testid={`reject-${t.tx_id}`} onClick={() => act(t.tx_id, "reject")} className="p-1.5 rounded bg-rose-500 text-white"><X className="w-4 h-4" /></button>
-                        </div>
-                      )}
-                    </td>
-                  </tr>
+          <div>
+            <div className="flex flex-wrap gap-2 mb-4 items-center">
+              <div className="flex bg-muted rounded-full p-1">
+                {[{k:"all",l:"Все"},{k:"pending",l:"Ожидают"},{k:"approved",l:"Одобрены"},{k:"rejected",l:"Отклонены"}].map((s) => (
+                  <button key={s.k} data-testid={`pay-filter-${s.k}`} onClick={() => setPayStatus(s.k)}
+                    className={`px-4 py-1.5 rounded-full text-xs font-semibold ${payStatus === s.k ? "bg-card shadow" : "text-muted-foreground"}`}>
+                    {s.l}
+                  </button>
                 ))}
-                {payments.length === 0 && <tr><td colSpan={6} className="p-8 text-center text-muted-foreground">Нет платежей</td></tr>}
-              </tbody>
-            </table>
+              </div>
+              <div className="flex items-center gap-2 bg-muted rounded-full px-3 py-1.5 flex-1 max-w-xs">
+                <SearchIcon className="w-4 h-4 text-muted-foreground" />
+                <input data-testid="pay-search" value={payQ} onChange={(e) => setPayQ(e.target.value)} placeholder="Имя или email…"
+                  className="flex-1 bg-transparent outline-none text-sm" />
+              </div>
+            </div>
+            <div className="bg-card border border-border rounded-2xl overflow-hidden">
+              <table className="w-full text-sm">
+                <thead className="bg-muted text-left">
+                  <tr><th className="p-3">Пользователь</th><th className="p-3">Пакет</th><th className="p-3">Сумма</th><th className="p-3">Дата</th><th className="p-3">Статус</th><th className="p-3">Действие</th></tr>
+                </thead>
+                <tbody>
+                  {payments
+                    .filter((t) => payStatus === "all" || t.status === payStatus)
+                    .filter((t) => {
+                      const q = payQ.trim().toLowerCase();
+                      if (!q) return true;
+                      return (t.user_name || "").toLowerCase().includes(q) || (t.user_email || "").toLowerCase().includes(q);
+                    })
+                    .map((t) => (
+                    <tr key={t.tx_id} data-testid={`payment-${t.tx_id}`} className="border-t border-border">
+                      <td className="p-3 flex items-center gap-2">
+                        {t.user_photo && <img src={t.user_photo} alt="" className="w-8 h-8 rounded-full object-cover" />}
+                        <span>{t.user_name}<br /><span className="text-xs text-muted-foreground">{t.user_email}</span></span>
+                      </td>
+                      <td className="p-3">{t.coins} 💰</td>
+                      <td className="p-3 font-bold">{t.amount_rub} ₽</td>
+                      <td className="p-3 text-xs">{new Date(t.created_at).toLocaleDateString("ru")}</td>
+                      <td className="p-3"><span className={`text-xs px-2 py-1 rounded-full ${t.status === "approved" ? "bg-emerald-500/15 text-emerald-500" : t.status === "rejected" ? "bg-rose-500/15 text-rose-500" : "bg-amber-500/15 text-amber-500"}`}>{t.status}</span></td>
+                      <td className="p-3">
+                        {t.status === "pending" && (
+                          <div className="flex gap-1">
+                            <button data-testid={`approve-${t.tx_id}`} onClick={() => act(t.tx_id, "approve")} className="p-1.5 rounded bg-emerald-500 text-white"><Check className="w-4 h-4" /></button>
+                            <button data-testid={`reject-${t.tx_id}`} onClick={() => act(t.tx_id, "reject")} className="p-1.5 rounded bg-rose-500 text-white"><X className="w-4 h-4" /></button>
+                          </div>
+                        )}
+                      </td>
+                    </tr>
+                  ))}
+                  {payments.length === 0 && <tr><td colSpan={6} className="p-8 text-center text-muted-foreground">Нет платежей</td></tr>}
+                </tbody>
+              </table>
+            </div>
           </div>
         )}
 
         {tab === "reports" && (
           <div className="grid gap-3">
             {reports.map(r => (
-              <div key={r.target_user} className="p-4 bg-card border border-border rounded-2xl flex items-center gap-4">
-                <img src={r.user?.photos?.[0]} alt="" className="w-16 h-16 rounded-full object-cover" />
-                <div className="flex-1">
-                  <p className="font-bold">{r.user?.name}, {r.user?.age}</p>
-                  <p className="text-xs text-muted-foreground">Жалоб: {r.count}</p>
-                  <p className="text-xs">{r.reasons.slice(0, 3).join(", ")}</p>
+              <div key={r.target_user} data-testid={`report-${r.target_user}`} className="p-4 bg-card border border-border rounded-2xl">
+                <div className="flex items-center gap-4">
+                  <img src={r.user?.photos?.[0]} alt="" className="w-16 h-16 rounded-full object-cover" />
+                  <div className="flex-1 min-w-0">
+                    <p className="font-bold">{r.user?.name}, {r.user?.age}</p>
+                    <p className="text-xs text-muted-foreground truncate">{r.user?.email || r.target_user}</p>
+                    <p className="text-xs mt-0.5"><b>Жалоб: {r.count}</b> · {new Date(r.last).toLocaleDateString("ru")}</p>
+                    <p className="text-xs mt-1 italic line-clamp-2">{r.reasons.slice(0, 3).join(" · ")}</p>
+                  </div>
                 </div>
-                <button onClick={() => deactivate(r.target_user)} className="btn-pill bg-rose-500 text-white text-xs">🚫 Удалить</button>
+                <div className="mt-3 flex flex-wrap gap-2">
+                  <button data-testid={`report-view-${r.target_user}`} onClick={() => nav(`/u/${r.target_user}`)} className="btn-pill bg-muted text-xs !py-1.5 !px-3">👁 Профиль</button>
+                  <button data-testid={`report-warn-${r.target_user}`} onClick={() => { setModAction({ kind: "warn", user_id: r.target_user, user_name: r.user?.name }); setModReason(r.reasons?.[0] || ""); }} className="btn-pill bg-amber-500 text-white text-xs !py-1.5 !px-3"><AlertTriangle className="w-3.5 h-3.5 mr-1" /> Предупредить</button>
+                  <button data-testid={`report-ban-${r.target_user}`} onClick={() => { setModAction({ kind: "ban", user_id: r.target_user, user_name: r.user?.name }); setModDays(7); setModReason(r.reasons?.[0] || ""); }} className="btn-pill bg-orange-500 text-white text-xs !py-1.5 !px-3"><Ban className="w-3.5 h-3.5 mr-1" /> Бан 7 дн.</button>
+                  <button data-testid={`report-deactivate-${r.target_user}`} onClick={() => { setModAction({ kind: "deactivate", user_id: r.target_user, user_name: r.user?.name }); setModReason(r.reasons?.[0] || ""); }} className="btn-pill bg-rose-500 text-white text-xs !py-1.5 !px-3"><UserX className="w-3.5 h-3.5 mr-1" /> Навсегда</button>
+                </div>
               </div>
             ))}
             {reports.length === 0 && <p className="text-center text-muted-foreground py-10">Нет жалоб</p>}
@@ -238,13 +337,40 @@ export default function AdminPage() {
         {tab === "users" && (
           <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
             {users.map(u => (
-              <div key={u.user_id} className="p-3 bg-card border border-border rounded-2xl">
+              <div key={u.user_id} data-testid={`user-card-${u.user_id}`} className="p-3 bg-card border border-border rounded-2xl">
                 <img src={u.photos?.[0]} className="w-full aspect-square rounded-xl object-cover" alt="" />
                 <p className="font-bold text-sm mt-2">{u.name}, {u.age}</p>
-                <p className="text-xs text-muted-foreground">{u.city}</p>
-                <button onClick={() => deactivate(u.user_id)} className="mt-2 text-xs text-rose-500">Удалить</button>
+                <p className="text-xs text-muted-foreground">{u.city} · 💰 {u.coins ?? 0}</p>
+                <div className="mt-2 flex flex-wrap gap-1.5">
+                  <button data-testid={`deduct-${u.user_id}`} onClick={() => { setDeductTarget(u); setDeductAmt(""); setDeductReason(""); }} className="text-[10px] px-2 py-1 rounded-full bg-amber-500/15 text-amber-500 font-semibold"><MinusCircle className="w-3 h-3 inline mr-0.5" /> Списать</button>
+                  <button onClick={() => { setModAction({ kind: "ban", user_id: u.user_id, user_name: u.name }); setModDays(7); setModReason(""); }} className="text-[10px] px-2 py-1 rounded-full bg-orange-500/15 text-orange-500 font-semibold">Бан</button>
+                  <button onClick={() => { setModAction({ kind: "deactivate", user_id: u.user_id, user_name: u.name }); setModReason(""); }} className="text-[10px] px-2 py-1 rounded-full bg-rose-500/15 text-rose-500 font-semibold">Удалить</button>
+                </div>
               </div>
             ))}
+          </div>
+        )}
+
+        {tab === "legal" && (
+          <div className="max-w-3xl">
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="font-display font-bold text-lg">Правовые документы</h3>
+              <button data-testid="legal-new" onClick={() => setLegalEdit({ slug: "", title: "", body: "", isNew: true })} className="btn-pill bg-primary text-primary-foreground text-sm !py-2"><Plus className="w-4 h-4 mr-1" /> Новый</button>
+            </div>
+            <div className="grid gap-2">
+              {legal.length === 0 && <p className="text-sm text-muted-foreground text-center py-8">Документов пока нет</p>}
+              {legal.map((d) => (
+                <div key={d.slug} data-testid={`legal-${d.slug}`} className="p-3 rounded-xl bg-card border border-border flex items-center gap-3">
+                  <FileText className="w-5 h-5 text-muted-foreground" />
+                  <div className="flex-1 min-w-0">
+                    <p className="font-semibold text-sm truncate">{d.title}</p>
+                    <p className="text-[11px] text-muted-foreground">/{d.slug} · {new Date(d.updated_at).toLocaleDateString("ru")}</p>
+                  </div>
+                  <button data-testid={`legal-edit-${d.slug}`} onClick={() => setLegalEdit({ slug: d.slug, title: d.title, body: d.body, isNew: false })} className="p-2 rounded-full hover:bg-muted"><Pencil className="w-4 h-4" /></button>
+                  <button data-testid={`legal-delete-${d.slug}`} onClick={() => removeLegal(d.slug)} className="p-2 rounded-full hover:bg-rose-500/10 text-rose-500"><Trash2 className="w-4 h-4" /></button>
+                </div>
+              ))}
+            </div>
           </div>
         )}
 
@@ -420,6 +546,87 @@ export default function AdminPage() {
         <div className="fixed inset-0 z-[90] bg-black/95 flex items-center justify-center p-4" onClick={() => setViewImg(null)}>
           <img src={viewImg} alt="receipt" className="max-w-full max-h-full object-contain" />
           <button className="absolute top-4 right-4 w-10 h-10 rounded-full bg-white/20 text-white flex items-center justify-center">✕</button>
+        </div>
+      )}
+
+      {/* Deduct-coins modal */}
+      {deductTarget && (
+        <div data-testid="deduct-modal" className="fixed inset-0 z-[80] flex items-center justify-center bg-black/70 backdrop-blur-sm p-4" onClick={() => setDeductTarget(null)}>
+          <div onClick={(e) => e.stopPropagation()} className="w-full max-w-md bg-card border border-border rounded-2xl shadow-2xl p-6">
+            <h3 className="font-display font-black text-lg flex items-center gap-2"><MinusCircle className="w-5 h-5 text-amber-500" /> Списать монеты</h3>
+            <p className="text-xs text-muted-foreground mt-1">Пользователь: <b>{deductTarget.name}</b> · Баланс: <b>{deductTarget.coins ?? 0}</b> 🪙</p>
+            <div className="mt-4 space-y-3">
+              <input data-testid="deduct-amount" type="number" min="1" step="1" value={deductAmt} onChange={(e) => setDeductAmt(e.target.value.replace(/[^\d]/g, ""))} placeholder="Сумма монет" className="w-full px-3 py-2 rounded-xl bg-muted outline-none border border-transparent focus:border-primary text-lg font-bold" />
+              <textarea data-testid="deduct-reason" rows={3} value={deductReason} onChange={(e) => setDeductReason(e.target.value)} placeholder="Причина (обязательно)" className="w-full px-3 py-2 rounded-xl bg-muted outline-none border border-transparent focus:border-primary text-sm resize-none" />
+            </div>
+            <div className="mt-5 flex gap-2">
+              <button data-testid="deduct-cancel" onClick={() => setDeductTarget(null)} className="flex-1 btn-pill bg-muted">Отмена</button>
+              <button data-testid="deduct-submit" onClick={submitDeduct} className="flex-1 btn-pill bg-amber-500 text-white font-bold">Списать</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Moderation-action modal (warn / ban / deactivate) */}
+      {modAction && (
+        <div data-testid="mod-modal" className="fixed inset-0 z-[80] flex items-center justify-center bg-black/70 backdrop-blur-sm p-4" onClick={() => setModAction(null)}>
+          <div onClick={(e) => e.stopPropagation()} className="w-full max-w-md bg-card border border-border rounded-2xl shadow-2xl p-6">
+            <h3 className="font-display font-black text-lg flex items-center gap-2">
+              {modAction.kind === "warn" && <><AlertTriangle className="w-5 h-5 text-amber-500" /> Предупреждение</>}
+              {modAction.kind === "ban" && <><Ban className="w-5 h-5 text-orange-500" /> Временный бан</>}
+              {modAction.kind === "deactivate" && <><UserX className="w-5 h-5 text-rose-500" /> Деактивация навсегда</>}
+            </h3>
+            <p className="text-xs text-muted-foreground mt-1">Пользователь: <b>{modAction.user_name}</b></p>
+            <div className="mt-4 space-y-3">
+              {modAction.kind === "ban" && (
+                <div>
+                  <label className="text-xs font-semibold">Длительность (дней):</label>
+                  <input data-testid="mod-days" type="number" min="1" max="365" value={modDays} onChange={(e) => setModDays(parseInt(e.target.value || "7", 10))} className="mt-1 w-full px-3 py-2 rounded-xl bg-muted outline-none border border-transparent focus:border-primary" />
+                </div>
+              )}
+              <div>
+                <label className="text-xs font-semibold">Причина (обязательно):</label>
+                <textarea data-testid="mod-reason" rows={3} value={modReason} onChange={(e) => setModReason(e.target.value)} className="mt-1 w-full px-3 py-2 rounded-xl bg-muted outline-none border border-transparent focus:border-primary text-sm resize-none" />
+              </div>
+            </div>
+            <div className="mt-5 flex gap-2">
+              <button data-testid="mod-cancel" onClick={() => setModAction(null)} className="flex-1 btn-pill bg-muted">Отмена</button>
+              <button
+                data-testid="mod-submit"
+                onClick={submitModAction}
+                className={`flex-1 btn-pill text-white font-bold ${modAction.kind === "warn" ? "bg-amber-500" : modAction.kind === "ban" ? "bg-orange-500" : "bg-rose-500"}`}
+              >
+                Подтвердить
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Legal editor modal */}
+      {legalEdit && (
+        <div data-testid="legal-modal" className="fixed inset-0 z-[80] flex items-center justify-center bg-black/70 backdrop-blur-sm p-4" onClick={() => setLegalEdit(null)}>
+          <div onClick={(e) => e.stopPropagation()} className="w-full max-w-2xl bg-card border border-border rounded-2xl shadow-2xl p-6 flex flex-col max-h-[85vh]">
+            <h3 className="font-display font-black text-lg flex items-center gap-2"><FileText className="w-5 h-5" /> {legalEdit.isNew ? "Новый документ" : "Редактировать"}</h3>
+            <div className="mt-4 space-y-3 flex-1 overflow-y-auto">
+              <div>
+                <label className="text-xs font-semibold">Slug (URL, латиница):</label>
+                <input data-testid="legal-slug" value={legalEdit.slug} onChange={(e) => setLegalEdit({ ...legalEdit, slug: e.target.value.toLowerCase() })} disabled={!legalEdit.isNew} placeholder="terms" className="mt-1 w-full px-3 py-2 rounded-xl bg-muted outline-none border border-transparent focus:border-primary disabled:opacity-60" />
+              </div>
+              <div>
+                <label className="text-xs font-semibold">Название:</label>
+                <input data-testid="legal-title" value={legalEdit.title} onChange={(e) => setLegalEdit({ ...legalEdit, title: e.target.value })} placeholder="Пользовательское соглашение" className="mt-1 w-full px-3 py-2 rounded-xl bg-muted outline-none border border-transparent focus:border-primary" />
+              </div>
+              <div>
+                <label className="text-xs font-semibold">Текст (Markdown):</label>
+                <textarea data-testid="legal-body" rows={14} value={legalEdit.body} onChange={(e) => setLegalEdit({ ...legalEdit, body: e.target.value })} className="mt-1 w-full px-3 py-2 rounded-xl bg-muted outline-none border border-transparent focus:border-primary text-sm resize-none font-mono" />
+              </div>
+            </div>
+            <div className="mt-4 flex gap-2 shrink-0">
+              <button data-testid="legal-cancel" onClick={() => setLegalEdit(null)} className="flex-1 btn-pill bg-muted">Отмена</button>
+              <button data-testid="legal-save" onClick={saveLegal} className="flex-1 btn-pill bg-primary text-primary-foreground font-bold">Сохранить</button>
+            </div>
+          </div>
         </div>
       )}
     </div>

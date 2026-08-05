@@ -426,6 +426,19 @@ async def login(body: LoginBody):
         raise HTTPException(status_code=404, detail="Account not found. Please sign up first.")
     if not check_pw(body.password, user.get('password_hash', '')):
         raise HTTPException(status_code=401, detail="Incorrect password")
+    if user.get('deactivated'):
+        raise HTTPException(status_code=403, detail="Аккаунт деактивирован. Обратитесь в поддержку.")
+    banned_until = user.get('banned_until')
+    if banned_until:
+        try:
+            bu = datetime.fromisoformat(str(banned_until).replace('Z', '+00:00'))
+            if bu.tzinfo is None: bu = bu.replace(tzinfo=timezone.utc)
+            if bu > now_utc():
+                raise HTTPException(status_code=403, detail=f"Аккаунт заблокирован до {bu.strftime('%Y-%m-%d %H:%M UTC')}. Причина: {user.get('ban_reason','')}")
+        except HTTPException:
+            raise
+        except Exception:
+            pass
     await db.users.update_one({"user_id": user['user_id']}, {"$set": {"last_active": iso(now_utc())}})
     token = make_jwt(user['user_id'], is_admin=user.get('is_admin', False))
     user.pop('password_hash', None); user.pop('_id', None)
@@ -774,7 +787,7 @@ async def _base_candidates(user: dict, pool_limit: int = 500) -> list[dict]:
     swipes = await db.likes.find({"from_user": user['user_id']}, {"_id": 0, "to_user": 1}).to_list(2000)
     already = {s['to_user'] for s in swipes}
     already.update(blocked)
-    q = {"user_id": {"$nin": list(already)}, "is_admin": {"$ne": True}, **gender_q}
+    q = {"user_id": {"$nin": list(already)}, "is_admin": {"$ne": True}, "deactivated": {"$ne": True}, **gender_q}
     return await db.users.find(q, {"_id": 0, "password_hash": 0}).limit(pool_limit).to_list(pool_limit)
 
 @api.get("/discover/feed")
@@ -1736,7 +1749,7 @@ async def admin_ban(user_id: str, days: int = 7, _: dict = Depends(require_admin
     return {"ok": True}
 
 @api.put("/admin/settings")
-async def admin_settings_update(data: dict, _: dict = Depends(require_admin)):
+async def admin_settings_update(data: dict, admin: dict = Depends(require_admin)):
     """Admin can only update whitelisted keys. `sbp_phone` is encrypted before storage."""
     updates: dict = {}
     if 'sbp_phone' in data:
@@ -1758,6 +1771,12 @@ async def admin_settings_update(data: dict, _: dict = Depends(require_admin)):
         raise HTTPException(status_code=400, detail="No valid settings keys provided")
     updates['updated_at'] = iso(now_utc())
     await db.settings.update_one({"key": "app"}, {"$set": {"key": "app", **updates}}, upsert=True)
+    await db.admin_audit.insert_one({
+        "admin_id": admin['user_id'],
+        "action": "settings_update",
+        "keys": list(updates.keys()),
+        "at": iso(now_utc()),
+    })
     return {"ok": True}
 
 @api.get("/admin/settings")
@@ -1788,6 +1807,140 @@ async def admin_settings_reveal(_: dict = Depends(require_admin)):
     phone = decrypt_str(enc) if enc else os.environ.get('SBP_PHONE', '')
     logger.warning(f"[audit] admin revealed SBP phone at {iso(now_utc())}")
     return {"sbp_phone": phone}
+
+@api.post("/admin/users/deduct-coins")
+async def admin_deduct_coins(body: CustomCoinAddBody, admin: dict = Depends(require_admin)):
+    """Deduct coins from a user's balance. Requires a reason.
+    Balance floored at 0. Audit-logged."""
+    if body.coins <= 0:
+        raise HTTPException(status_code=400, detail="Coins must be positive")
+    if not (body.reason or "").strip():
+        raise HTTPException(status_code=400, detail="Reason is required")
+    target = await db.users.find_one({"user_id": body.user_id}, {"_id": 0})
+    if not target:
+        raise HTTPException(status_code=404, detail="User not found")
+    current = int(target.get('coins') or 0)
+    deduct = min(body.coins, current)
+    new_balance = current - deduct
+    await db.users.update_one({"user_id": body.user_id}, {"$set": {"coins": new_balance}})
+    await db.admin_audit.insert_one({
+        "admin_id": admin['user_id'], "action": "custom_coin_deduct",
+        "target_user": body.user_id, "coins": -deduct, "requested": body.coins,
+        "reason": body.reason, "at": iso(now_utc()),
+    })
+    await _push_notification(body.user_id, f"⚠️ {deduct} монет удержано администратором. Причина: {body.reason}", "warning")
+    return {"ok": True, "new_balance": new_balance, "deducted": deduct}
+
+# ────────── User moderation actions ──────────
+class UserActionBody(BaseModel):
+    reason: Optional[str] = None
+    days: Optional[int] = 7
+
+@api.post("/admin/users/{user_id}/warn")
+async def admin_warn(user_id: str, body: UserActionBody, admin: dict = Depends(require_admin)):
+    """Send a warning notification to the user and mark on their record."""
+    reason = (body.reason or "").strip() or "Нарушение правил"
+    target = await db.users.find_one({"user_id": user_id}, {"_id": 0, "user_id": 1})
+    if not target:
+        raise HTTPException(status_code=404, detail="User not found")
+    await db.users.update_one({"user_id": user_id}, {"$inc": {"warn_count": 1}, "$set": {"last_warn_at": iso(now_utc()), "last_warn_reason": reason}})
+    await db.admin_audit.insert_one({"admin_id": admin['user_id'], "action": "warn", "target_user": user_id, "reason": reason, "at": iso(now_utc())})
+    await _push_notification(user_id, f"⚠️ Предупреждение от администрации: {reason}", "warning")
+    return {"ok": True}
+
+# Backwards-compat: keep existing GET ban without body; add richer POST with reason+days
+@api.post("/admin/users/{user_id}/ban7")
+async def admin_ban7(user_id: str, body: UserActionBody, admin: dict = Depends(require_admin)):
+    """Temporarily ban a user for `days` days (default 7). Ban clears sessions."""
+    days = int(body.days or 7)
+    if days <= 0 or days > 365:
+        raise HTTPException(status_code=400, detail="days must be 1-365")
+    reason = (body.reason or "").strip() or "Временная блокировка"
+    until = iso(now_utc() + timedelta(days=days))
+    r = await db.users.update_one({"user_id": user_id}, {"$set": {"banned_until": until, "ban_reason": reason}})
+    if r.matched_count == 0:
+        raise HTTPException(status_code=404, detail="User not found")
+    await db.sessions.delete_many({"user_id": user_id})
+    await db.admin_audit.insert_one({"admin_id": admin['user_id'], "action": "ban", "target_user": user_id, "days": days, "reason": reason, "at": iso(now_utc())})
+    return {"ok": True, "banned_until": until}
+
+@api.post("/admin/users/{user_id}/deactivate-permanent")
+async def admin_deactivate_permanent(user_id: str, body: UserActionBody, admin: dict = Depends(require_admin)):
+    """Soft-deactivate: hide from all feeds, invalidate sessions, prevent future logins.
+    Content stays for audit / moderation review — no hard delete."""
+    reason = (body.reason or "").strip() or "Постоянная деактивация"
+    r = await db.users.update_one({"user_id": user_id}, {"$set": {
+        "deactivated": True,
+        "deactivated_at": iso(now_utc()),
+        "deactivate_reason": reason,
+        "is_online": False,
+    }})
+    if r.matched_count == 0:
+        raise HTTPException(status_code=404, detail="User not found")
+    await db.sessions.delete_many({"user_id": user_id})
+    await db.admin_audit.insert_one({"admin_id": admin['user_id'], "action": "deactivate_permanent", "target_user": user_id, "reason": reason, "at": iso(now_utc())})
+    return {"ok": True}
+
+# ────────── Legal Documents (Admin-managed) ──────────
+class LegalDocBody(BaseModel):
+    slug: str = Field(min_length=1, max_length=64, pattern=r"^[a-z0-9_-]+$")
+    title: str = Field(min_length=1, max_length=200)
+    body: str = Field(min_length=1)
+
+@api.get("/legal")
+async def legal_list_public():
+    """Public: list all published legal docs (slug, title, updated_at)."""
+    docs = await db.legal_docs.find({}, {"_id": 0, "body": 0}).sort("title", 1).to_list(100)
+    return docs
+
+@api.get("/legal/{slug}")
+async def legal_get_public(slug: str):
+    d = await db.legal_docs.find_one({"slug": slug}, {"_id": 0})
+    if not d:
+        raise HTTPException(status_code=404, detail="Document not found")
+    return d
+
+@api.get("/admin/legal")
+async def admin_legal_list(_: dict = Depends(require_admin)):
+    return await db.legal_docs.find({}, {"_id": 0}).sort("title", 1).to_list(200)
+
+@api.post("/admin/legal")
+async def admin_legal_create(body: LegalDocBody, admin: dict = Depends(require_admin)):
+    exists = await db.legal_docs.find_one({"slug": body.slug}, {"_id": 0, "slug": 1})
+    if exists:
+        raise HTTPException(status_code=409, detail="Slug already exists")
+    doc = {**body.model_dump(), "created_at": iso(now_utc()), "updated_at": iso(now_utc())}
+    await db.legal_docs.insert_one(doc)
+    await db.admin_audit.insert_one({"admin_id": admin['user_id'], "action": "legal_create", "slug": body.slug, "at": iso(now_utc())})
+    return {"ok": True, "slug": body.slug}
+
+@api.put("/admin/legal/{slug}")
+async def admin_legal_update(slug: str, body: LegalDocBody, admin: dict = Depends(require_admin)):
+    if body.slug != slug:
+        raise HTTPException(status_code=400, detail="Slug in body must match URL")
+    r = await db.legal_docs.update_one(
+        {"slug": slug},
+        {"$set": {"title": body.title, "body": body.body, "updated_at": iso(now_utc())}},
+    )
+    if r.matched_count == 0:
+        raise HTTPException(status_code=404, detail="Document not found")
+    await db.admin_audit.insert_one({"admin_id": admin['user_id'], "action": "legal_update", "slug": slug, "at": iso(now_utc())})
+    return {"ok": True}
+
+@api.delete("/admin/legal/{slug}")
+async def admin_legal_delete(slug: str, admin: dict = Depends(require_admin)):
+    r = await db.legal_docs.delete_one({"slug": slug})
+    if r.deleted_count == 0:
+        raise HTTPException(status_code=404, detail="Document not found")
+    await db.admin_audit.insert_one({"admin_id": admin['user_id'], "action": "legal_delete", "slug": slug, "at": iso(now_utc())})
+    return {"ok": True}
+
+# ────────── Admin Audit Log (read-only viewer) ──────────
+@api.get("/admin/audit")
+async def admin_audit_list(_: dict = Depends(require_admin), limit: int = 200):
+    """Chronological audit log of admin mutations. Newest first."""
+    rows = await db.admin_audit.find({}, {"_id": 0}).sort("at", -1).limit(limit).to_list(limit)
+    return rows
 
 # ────────────────────────────── Translation ──────────────────────────────
 @api.post("/translate")
