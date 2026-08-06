@@ -1,14 +1,27 @@
-# Amvera Cloud manifest — Lovreski (single-container React + FastAPI + MongoDB GridFS)
-# Docs: https://docs.amvera.ru/
+# Amvera Cloud manifest — Lovreski (React + FastAPI + MongoDB GridFS)
+# Docs: https://docs.amvera.ru/applications/configuration/docker.html
+#
+# IMPORTANT: This is NOT a Node.js app. React is only the front-end (built during
+# the Docker stage) and the running process is FastAPI (Python) via uvicorn.
+# Amvera's `meta.toolchain` section below tells the platform to use our
+# Dockerfile — it must NOT try to run `npm start` / `node scripts/start.js`.
+
 meta:
-  environment: dockerfile
+  environment: docker
+  toolchain:
+    name: docker
+    version: latest
+
 build:
   dockerfile: Dockerfile
+  skip: false
+
 run:
-  port: 8000
   persistenceMount: /app/data
+  containerPort: "8000"
+
+# Every entry below must be filled in the Amvera dashboard → Secrets before deploy.
 env:
-  # Populate every entry in the Amvera dashboard → Secrets before the first deploy.
   - name: MONGO_URL
     required: true
   - name: DB_NAME

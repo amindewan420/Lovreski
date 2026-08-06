@@ -1,0 +1,27 @@
+{
+  "summary": "Iteration 27 — Amvera deploy config verification. Verified /app/amvera.yaml now contains the required meta.toolchain (name=docker, version=latest) and meta.environment=docker, so Amvera will use our Dockerfile instead of auto-detecting Node.js. Confirmed Dockerfile CMD is `uvicorn main:app` (Python) — no reference to scripts/start.js anywhere — with EXPOSE 8000 matching amvera.yaml run.containerPort=8000. All 8 secrets the app reads at startup (MONGO_URL, DB_NAME, JWT_SECRET, ADMIN_EMAIL, ADMIN_PASSWORD, CORS_ORIGINS, SBP_PHONE, SBP_ENCRYPT_KEY) are declared required=true in amvera.yaml env list. backend/main.py imports server.py cleanly (85 routes wired, /health added). Regression smoke on the running preview backend: /api/health, /api/coins/packages, /api/discover/feed (as testuser1) all 200. 11/11 pytest checks pass.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {"ui_bugs": [], "integration_issues": [], "design_issues": []},
+  "test_report_links": [
+    "/app/backend/tests/test_amvera_config_iter27.py",
+    "/app/test_reports/pytest/iter27_amvera.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "amvera.yaml correctly uses meta.toolchain.name=docker per https://docs.amvera.ru/applications/configuration/docker.html — this is the fix for the two reported errors (missing toolchain block + Amvera looking for /app/scripts/start.js).",
+    "Dockerfile is a clean 2-stage build: node:18-alpine builds the SPA, python:3.11-slim runs uvicorn. Only the frontend build stage uses Node, so once Amvera respects the Docker toolchain there is zero chance of a Node runtime being invoked.",
+    "amvera.yaml declares EMERGENT_LLM_KEY as required=false — correct, since server.py only reads it inside AI-generation code paths (chat summary/openers). If those features must work in production, mark it required=true; otherwise the current setting is fine.",
+    "Consider adding `AUTO_CREDIT_ENABLED` (used in server.py) to amvera.yaml env as required=false so ops know it is a valid tunable knob.",
+    "run.containerPort is a string ('8000') per Amvera schema — matches Dockerfile EXPOSE 8000 and the `${PORT}` default set to 8000 in the Dockerfile ENV block. Coherent."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_amvera_config_iter27.py (new)"
+  ],
+  "success_rate": {"backend": "100% (11/11 config + smoke tests)", "frontend": "not tested (config-only scope)"},
+  "test_credentials": "admin@lovreski.ru / LovreskiAdmin2026!, testuser1@lovreski.ru / password123 (from review request; testuser1 login succeeded during discover feed smoke).",
+  "seed_data_creation": "none",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "amvera.yaml + Dockerfile deploy config is verified. If the user pushes to Amvera and still hits the 'meta.toolchain' error, double-check that the amvera.yaml at the repo ROOT (not backend/) is what got committed, and confirm no stale amvera.yaml exists in a sub-path that would override it. The two errors from the user ('Configuration error … meta.toolchain' + 'Cannot find module /app/scripts/start.js') are both addressed by the current amvera.yaml — verified by parsing the file and by grepping the Dockerfile for scripts/start.js (not present).",
+  "rca of the issue": "Root cause: previous amvera.yaml lacked meta.toolchain, so Amvera's platform default kicked in and detected frontend/package.json → tried to run it as a Node app → looked for scripts/start.js which does not exist. Fix (verified): amvera.yaml now sets meta.environment=docker + meta.toolchain.name=docker so Amvera builds and runs the repo Dockerfile (which ends in `uvicorn main:app`). No code change required in backend/server.py; regression smoke on preview backend confirms /api endpoints still work."
+}
