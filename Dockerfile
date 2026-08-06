@@ -2,9 +2,12 @@
 FROM node:18-alpine AS frontend-build
 WORKDIR /build
 
-# Cache deps: copy manifests first, then install
-COPY frontend/package.json frontend/yarn.lock ./
-RUN yarn install --frozen-lockfile --network-timeout 600000
+# Cache deps: copy manifests first. yarn.lock is OPTIONAL (wildcard trick) so
+# the build works whether or not you committed the lockfile. If it's present,
+# yarn honors it; if not, yarn resolves from package.json.
+COPY frontend/package.json ./
+COPY frontend/yarn.lock* ./
+RUN yarn install --network-timeout 600000
 
 # Copy source and build. CI=false keeps ESLint warnings from failing the build.
 COPY frontend/ ./

@@ -1,0 +1,26 @@
+{
+  "summary": "Iteration 28 — Amvera Dockerfile lockfile-optional fix verified. The Dockerfile now uses `COPY frontend/yarn.lock* ./` (wildcard, optional) instead of the hard-required form, and `yarn install` runs WITHOUT `--frozen-lockfile`. Both the lockfile-less and lockfile-present install paths were simulated in scratch /tmp dirs and succeeded (yarn resolved deps and, in the lockfile-less case, generated a fresh yarn.lock). `yarn build` in /app/frontend produced /app/frontend/build/index.html (1428 bytes, plus 304 kB main JS bundle) in 31s — exactly the artifact the Docker runtime stage copies via `COPY --from=frontend-build`. Iter-27 regression checks (amvera.yaml meta.toolchain=docker + backend/main.py import) still pass. Preview backend /api/health returns 200. 8/8 pytest checks green.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {"ui_bugs": [], "integration_issues": [], "design_issues": []},
+  "test_report_links": [
+    "/app/backend/tests/test_amvera_config_iter28.py",
+    "/app/test_reports/pytest/iter28_amvera.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "Wildcard `COPY frontend/yarn.lock* ./` is the standard Docker idiom for making a build-context file optional — verified via regex that no hard-required `COPY frontend/yarn.lock ./` line remains.",
+    "`yarn install` without `--frozen-lockfile` correctly falls back to resolving from package.json when yarn.lock is absent. Note: this means production deps may float within semver ranges if the user never commits a lockfile — recommend the user commit /app/frontend/yarn.lock (551 KB, already exists locally) to get reproducible builds on Amvera.",
+    "Layer-cache ordering preserved: package.json + yarn.lock* copied and `yarn install` run BEFORE `COPY frontend/ ./`, so source-only edits don't invalidate the deps layer.",
+    "Zero regression: amvera.yaml meta.toolchain=docker (iter 27 fix) is intact and backend/main.py imports cleanly."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_amvera_config_iter28.py (new)"
+  ],
+  "success_rate": {"backend": "100% (8/8 config + simulated-install + smoke tests)", "frontend": "yarn build succeeded (index.html generated)"},
+  "test_credentials": "n/a for this iteration (config-only + install simulation)",
+  "seed_data_creation": "none",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Amvera Docker build fixes verified for both iter-27 (meta.toolchain) and iter-28 (optional yarn.lock). If the user reports another Amvera build error, first check the Amvera clone log to see which files landed in /workspace, then compare against /app/Dockerfile's COPY instructions. yarn cache (549M) is populated at /usr/local/share/.cache/yarn/v6 which speeds up install simulations.",
+  "rca of the issue": "Root cause: prior Dockerfile line `COPY frontend/package.json frontend/yarn.lock ./` used the multi-source COPY form which errors out if ANY listed source is missing from the build context. The user's initial Git commit did not include frontend/yarn.lock, so Amvera's kaniko builder failed with `lstat /workspace/frontend/yarn.lock: no such file or directory`. Fix: split into two COPY lines and use the `yarn.lock*` wildcard on the lockfile line — with the wildcard, zero matches is not an error. Additionally removed `--frozen-lockfile` from `yarn install` so the install proceeds even when the lockfile is absent. Both paths (with and without lockfile) are exercised in test_amvera_config_iter28.py."
+}
