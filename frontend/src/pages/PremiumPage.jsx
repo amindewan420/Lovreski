@@ -38,8 +38,19 @@ export default function PremiumPage() {
   useEffect(() => { load(); }, []);
 
   const copyPhone = async () => {
+    // Always copy raw digits — banking apps expect E.164 without spaces
     try { await navigator.clipboard.writeText(sbpPhone); toast.success("Номер скопирован ✓"); }
     catch { toast.error("Не удалось скопировать"); }
+  };
+
+  // Human-readable formatting for RU mobile numbers: +7 XXX XXX XX XX
+  const formatSbpPhone = (raw) => {
+    if (!raw) return "—";
+    const d = raw.replace(/\D/g, "");
+    if (d.length === 11 && (d[0] === "7" || d[0] === "8")) {
+      return `+7 ${d.slice(1, 4)} ${d.slice(4, 7)} ${d.slice(7, 9)} ${d.slice(9, 11)}`;
+    }
+    return raw;
   };
 
   const onPickFile = (file) => {
@@ -133,7 +144,7 @@ export default function PremiumPage() {
             <Phone className="w-3.5 h-3.5" /> Номер СБП для оплаты
           </p>
           <div className="mt-2 flex items-center gap-2">
-            <p data-testid="sbp-phone" className="flex-1 font-display font-semibold text-xl tracking-wide select-all">{sbpPhone || "—"}</p>
+            <p data-testid="sbp-phone" className="flex-1 font-display font-semibold text-xl tracking-wide select-all">{formatSbpPhone(sbpPhone)}</p>
             <button
               data-testid="btn-copy-phone"
               onClick={copyPhone}
