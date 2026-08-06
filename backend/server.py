@@ -979,23 +979,41 @@ def chat_id(a: str, b: str) -> str:
 
 @api.get("/chats")
 async def list_chats(user: dict = Depends(get_current_user)):
-    msgs = await db.messages.find({"participants": user['user_id']}, {"_id": 0}).sort("created_at", -1).to_list(1000)
-    chats: dict = {}
+    uid = user['user_id']
+    # 1) Latest message per chat (single query, dedup client-side).
+    msgs = await db.messages.find({"participants": uid}, {"_id": 0}).sort("created_at", -1).to_list(1000)
+    chats: dict[str, dict] = {}
     for m in msgs:
         cid = m['chat_id']
         if cid not in chats:
             chats[cid] = m
+    if not chats:
+        return []
+    # 2) Batch-fetch every partner user in ONE query (fixes N+1).
+    other_ids = list({[p for p in last['participants'] if p != uid][0] for last in chats.values()})
+    others = await db.users.find(
+        {"user_id": {"$in": other_ids}},
+        {"_id": 0, "password_hash": 0},
+    ).to_list(len(other_ids) + 10)
+    others_by_id = {o['user_id']: o for o in others}
+    # 3) Batch-count unread per chat via aggregation (one query total).
+    pipeline = [
+        {"$match": {"to_user": uid, "read": False, "chat_id": {"$in": list(chats.keys())}}},
+        {"$group": {"_id": "$chat_id", "n": {"$sum": 1}}},
+    ]
+    unread_by_chat = {row["_id"]: row["n"] async for row in db.messages.aggregate(pipeline)}
+    # 4) Assemble result
     result = []
     for cid, last in chats.items():
-        other_id = [p for p in last['participants'] if p != user['user_id']][0]
-        other = await db.users.find_one({"user_id": other_id}, {"_id": 0, "password_hash": 0})
-        if not other: continue
-        unread = await db.messages.count_documents({"chat_id": cid, "to_user": user['user_id'], "read": False})
+        other_id = [p for p in last['participants'] if p != uid][0]
+        other = others_by_id.get(other_id)
+        if not other:
+            continue
         result.append({
             "chat_id": cid,
             "user": user_public(other, viewer=user),
             "last_message": last,
-            "unread": unread,
+            "unread": unread_by_chat.get(cid, 0),
         })
     result.sort(key=lambda x: x['last_message']['created_at'], reverse=True)
     return result
