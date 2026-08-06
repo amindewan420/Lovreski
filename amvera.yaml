@@ -1,20 +1,14 @@
-# Amvera.cloud manifest — Lovreski backend
+# Amvera Cloud manifest — Lovreski (single-container React + FastAPI + MongoDB GridFS)
 # Docs: https://docs.amvera.ru/
 meta:
-  environment: python
-  toolchain:
-    name: pip
-    version: "3.11"
+  environment: dockerfile
 build:
-  requirementsPath: backend/requirements.txt
+  dockerfile: Dockerfile
 run:
-  scriptName: backend/server.py
-  persistenceMount: /data
-  containerPort: 8001
-  command: "uvicorn server:app --host 0.0.0.0 --port 8001 --proxy-headers --forwarded-allow-ips=*"
-  workingDirectory: /app/backend
+  port: 8000
+  persistenceMount: /app/data
 env:
-  # These must be set in the amvera dashboard (Secrets):
+  # Populate every entry in the Amvera dashboard → Secrets before the first deploy.
   - name: MONGO_URL
     required: true
   - name: DB_NAME
@@ -27,11 +21,19 @@ env:
     required: true
   - name: ADMIN_PASSWORD
     required: true
+  - name: FRONTEND_URL
+    required: false
+  - name: CORS_ORIGINS
+    required: true
+  - name: GOOGLE_CLIENT_ID
+    required: false
+  - name: GOOGLE_CLIENT_SECRET
+    required: false
   - name: SBP_PHONE
     required: true
+  - name: SBP_RECIPIENT_NAME
+    required: false
   - name: SBP_ENCRYPT_KEY
     required: true
   - name: SBP_WEBHOOK_SECRET
-    required: true
-  - name: CORS_ORIGINS
-    required: true
+    required: false

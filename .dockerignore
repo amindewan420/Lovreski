@@ -1,0 +1,47 @@
+# Version control
+.git
+.gitignore
+.gitattributes
+
+# Local envs / secrets (never bake into image)
+**/.env
+**/.env.local
+**/.env.*.local
+
+# Node
+**/node_modules
+**/npm-debug.log*
+**/yarn-debug.log*
+**/yarn-error.log*
+frontend/build
+frontend/.cache
+frontend/.eslintcache
+
+# Python
+**/__pycache__
+**/*.pyc
+**/*.pyo
+**/*.pyd
+**/.pytest_cache
+**/.mypy_cache
+**/.ruff_cache
+**/*.egg-info
+**/.venv
+**/venv
+
+# IDE / OS
+.idea
+.vscode
+.DS_Store
+Thumbs.db
+
+# Test artifacts
+test_reports
+backend/tests/__pycache__
+
+# Emergent / preview scaffolding
+.emergent
+memory
+docker-compose.yml
+docker/
+Dockerfile.frontend

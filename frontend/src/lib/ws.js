@@ -1,7 +1,10 @@
 // Chat / presence WebSocket client for Lovreski
 import { getToken } from "./api";
 
-const BACKEND_URL = process.env.REACT_APP_BACKEND_URL;
+const BACKEND_URL =
+  process.env.REACT_APP_BACKEND_URL ||
+  process.env.REACT_APP_API_URL ||
+  window.location.origin;
 
 // Convert https://x.emergent... → wss://x.emergent.../api/ws?token=...
 function wsUrl() {
