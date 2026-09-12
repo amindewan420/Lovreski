@@ -4,9 +4,10 @@ import { api } from "@/lib/api";
 import { MobileShell } from "@/components/lovreski/Shell";
 import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
-import { ChevronRight, User, Search, Crown, Bell, Languages, FileText, Download, Shield, LogOut } from "lucide-react";
+import { ChevronRight, User, Search, Crown, Bell, Languages, FileText, Download, Shield, LogOut, BellRing, BellOff } from "lucide-react";
 import { useI18n, getLangMeta } from "@/lib/i18n";
 import LanguageSheet from "@/components/lovreski/LanguageSheet";
+import { usePushNotifications } from "@/hooks/usePushNotifications";
 
 const LEGAL = {
   terms: {
@@ -36,6 +37,7 @@ export default function SettingsPage() {
   const [showLang, setShowLang] = useState(false);
 
   useEffect(() => { if (user) setForm({ ...user }); }, [user]);
+  const push = usePushNotifications(user);
   useEffect(() => {
     setInstalled(window.matchMedia("(display-mode: standalone)").matches);
   }, []);
@@ -129,6 +131,55 @@ export default function SettingsPage() {
               <input type="checkbox" checked={form.notif_push?.[k] || false} onChange={(e) => { const np = { ...(form.notif_push||{}), [k]: e.target.checked }; setForm({ ...form, notif_push: np }); save({ notif_push: np }); }} className="accent-primary" />
             </Row>
           ))}
+        </Section>
+
+        <Section title={t("settings.section.push")} icon={BellRing}>
+          {!push.serverConfigured ? (
+            <p className="text-xs text-slate-500 py-2 px-1">{t("settings.push_pending")}</p>
+          ) : !push.supported ? (
+            <p className="text-xs text-slate-500 py-2 px-1">{t("settings.push_unsupported")}</p>
+          ) : push.subscribedToken ? (
+            <>
+              <div className="flex items-center gap-2 py-1.5 text-sm text-emerald-600">
+                <BellRing className="w-4 h-4" /> <span>{t("settings.push_on")}</span>
+              </div>
+              <button
+                data-testid="btn-push-test"
+                disabled={push.subscribing}
+                onClick={async () => {
+                  try {
+                    const r = await push.sendTest();
+                    toast.success(t("settings.push_test_sent") + (r?.sent ? ` (${r.sent})` : ""));
+                  } catch (e) { toast.error(e?.response?.data?.detail || t("common.error")); }
+                }}
+                className="w-full text-left text-sm py-2 text-primary"
+              >
+                {t("settings.push_test")}
+              </button>
+              <button
+                data-testid="btn-push-off"
+                disabled={push.subscribing}
+                onClick={async () => {
+                  try { await push.unsubscribe(); toast.success(t("settings.push_off_done")); } catch { toast.error(t("common.error")); }
+                }}
+                className="w-full text-left text-sm py-2 text-red-500 flex items-center gap-2"
+              >
+                <BellOff className="w-4 h-4" /> {t("settings.push_disable")}
+              </button>
+            </>
+          ) : (
+            <button
+              data-testid="btn-push-on"
+              disabled={push.subscribing}
+              onClick={async () => {
+                try { await push.subscribe(); toast.success(t("settings.push_on_done")); }
+                catch (e) { toast.error(e?.message || t("common.error")); }
+              }}
+              className="w-full btn-pill bg-primary text-primary-foreground disabled:opacity-60"
+            >
+              <BellRing className="w-4 h-4 mr-2" /> {push.subscribing ? "..." : t("settings.push_enable")}
+            </button>
+          )}
         </Section>
 
         <Section title={t("settings.section.translate")} icon={Languages}>

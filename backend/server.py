@@ -28,6 +28,9 @@ from datetime import datetime, timezone, timedelta
 ROOT_DIR = Path(__file__).parent
 load_dotenv(ROOT_DIR / '.env')
 
+# FCM Push Notifications module (fails-safe if Firebase env vars are missing)
+import push as fcm
+
 mongo_url = os.environ['MONGO_URL']
 client = AsyncIOMotorClient(mongo_url)
 db = client[os.environ['DB_NAME']]
@@ -937,6 +940,12 @@ async def like_user(target_id: str, user: dict = Depends(get_current_user)):
             {"$set": {"pair": pair, "users": pair, "created_at": iso(now_utc())}},
             upsert=True,
         )
+        # FCM push to both users on match creation
+        try:
+            await fcm.notify_match(db, target_id, user.get("name") or "Someone", user['user_id'])
+            await fcm.notify_match(db, user['user_id'], target.get("name") or "Someone", target_id)
+        except Exception as e:
+            logger.warning(f"[push] match notify failed: {e}")
     return {"ok": True, "match": is_match, "target": user_public(target, viewer=user)}
 
 @api.post("/pass/{target_id}")
@@ -1177,6 +1186,27 @@ async def _do_send_message(sender: dict, other_id: str, body: MessageBody) -> di
         await ws_manager.broadcast_message(msg)
     except Exception as e:
         logger.warning(f"ws broadcast failed: {e}")
+    # FCM push to recipient — only if they are not actively connected.
+    try:
+        preview_map = {
+            "text": body.text or "",
+            "emoji": body.text or "",
+            "image": "🖼 Фото",
+            "video": "🎬 Видео",
+            "voice": "🎤 Голосовое сообщение",
+            "file": f"📎 {body.file_name or 'Файл'}",
+            "gift": "🎁 Подарок",
+        }
+        preview = preview_map.get(body.kind, body.text or "Новое сообщение")
+        await fcm.notify_chat_message(
+            db, ws_manager,
+            recipient_id=other_id,
+            sender_name=sender.get("name") or "Lovreski",
+            preview=preview,
+            other_id=sender['user_id'],
+        )
+    except Exception as e:
+        logger.warning(f"[push] chat notify failed: {e}")
     return msg
 
 @api.post("/chats/{other_id}/send")
@@ -1569,6 +1599,11 @@ async def submit_receipt(body: ReceiptBody, user: dict = Depends(get_current_use
         "status": "pending",  # pending → verified | rejected
         "created_at": iso(now_utc()),
     })
+    # Alert all admins of the new receipt
+    try:
+        await fcm.notify_admin_new_submission(db, "receipt", user.get("name") or user.get("email") or "user")
+    except Exception as e:
+        logger.warning(f"[push] admin receipt notify failed: {e}")
     return {"submission_id": sub_id, "status": "pending"}
 
 @api.get("/support/my")
@@ -1592,6 +1627,62 @@ async def _push_notification(user_id: str, message: str, kind: str = "info"):
         "user_id": user_id, "message": message, "kind": kind, "read": False,
         "created_at": iso(now_utc()),
     })
+    # Also fire a browser Web Push (no-op if Firebase not configured / user offline / no token)
+    try:
+        url_map = {"success": "/premium", "warning": "/settings", "error": "/premium"}
+        await fcm.send_to_user(
+            db, user_id,
+            title="Lovreski",
+            body=message,
+            url=url_map.get(kind, "/"),
+            kind=kind,
+        )
+    except Exception as e:
+        logger.warning(f"[push] _push_notification FCM failed: {e}")
+
+
+# ─── Push Notification Endpoints (FCM tokens) ─────────────────────────────
+class PushTokenBody(BaseModel):
+    token: str = Field(min_length=20, max_length=4096)
+    platform: str = "web"
+
+
+@api.get("/push/status")
+async def push_status(user: dict = Depends(get_current_user)):
+    """Reports whether FCM is configured on the server and if the caller has any tokens saved."""
+    configured = fcm.is_configured()
+    token_count = await db.push_tokens.count_documents({"user_id": user['user_id']})
+    return {
+        "configured": configured,
+        "vapid_public_key": os.environ.get("FIREBASE_VAPID_PUBLIC_KEY", ""),
+        "token_count": token_count,
+    }
+
+
+@api.post("/push/token")
+async def push_save_token(body: PushTokenBody, request: Request, user: dict = Depends(get_current_user)):
+    ua = request.headers.get("user-agent", "")
+    await fcm.save_token(db, user['user_id'], body.token, body.platform, ua)
+    return {"ok": True}
+
+
+@api.delete("/push/token")
+async def push_delete_token(body: PushTokenBody, user: dict = Depends(get_current_user)):
+    await fcm.remove_token(db, user['user_id'], body.token)
+    return {"ok": True}
+
+
+@api.post("/push/test")
+async def push_test(user: dict = Depends(get_current_user)):
+    """Send a test push to the current user's registered devices."""
+    r = await fcm.send_to_user(
+        db, user['user_id'],
+        title="🧪 Тестовое уведомление",
+        body="Push-уведомления работают! Вы получите такие же сообщения о новых чатах и совпадениях.",
+        url="/settings",
+        kind="test",
+    )
+    return r
 
 # ────────── Admin: pending submissions + custom coin add ──────────
 
@@ -1774,6 +1865,10 @@ async def report_user(body: ReportBody, user: dict = Depends(get_current_user)):
         "status": "open",
         "created_at": iso(now_utc()),
     })
+    try:
+        await fcm.notify_admin_new_submission(db, "report", user.get("name") or user.get("email") or "user")
+    except Exception as e:
+        logger.warning(f"[push] admin report notify failed: {e}")
     return {"ok": True}
 
 @api.post("/block/{target_id}")
@@ -2301,6 +2396,16 @@ I18N_BASE_RU = {
     "settings.notif.messages": "Сообщения", "settings.notif.likes": "Лайки",
     "settings.notif.matches": "Матчи", "settings.notif.visits": "Посещения",
     "settings.notif.who_liked": "Кто лайкнул",
+    "settings.section.push": "Push-уведомления",
+    "settings.push_enable": "Включить push-уведомления",
+    "settings.push_disable": "Отключить push-уведомления",
+    "settings.push_on": "Push-уведомления включены",
+    "settings.push_on_done": "Push-уведомления включены",
+    "settings.push_off_done": "Push-уведомления отключены",
+    "settings.push_test": "🧪 Отправить тестовое уведомление",
+    "settings.push_test_sent": "Тестовое уведомление отправлено",
+    "settings.push_pending": "Push-уведомления пока не настроены администратором (нужны ключи Firebase).",
+    "settings.push_unsupported": "Ваш браузер не поддерживает Web Push. Установите приложение как PWA.",
     "settings.auto_translate": "Авто-перевод в чате",
     "settings.language": "Язык перевода",
     "settings.install": "Установить приложение",
@@ -2553,6 +2658,10 @@ async def on_start():
     await db.messages.create_index([("chat_id", 1), ("created_at", 1)])
     await db.i18n_cache.create_index("lang", unique=True)
     await db.i18n_dynamic.create_index([("lang", 1), ("key", 1)], unique=True)
+    await db.push_tokens.create_index("token", unique=True)
+    await db.push_tokens.create_index([("user_id", 1), ("last_seen", -1)])
+    # Initialize Firebase (safe no-op if env vars are missing)
+    fcm.init_fcm()
 
 @app.on_event("shutdown")
 async def on_stop():
