@@ -44,14 +44,23 @@ Build a complete, production-ready dating web app called "Lovreski" — mobile-f
 - P2: Email/SMS notifications via Resend/Twilio for refund status & matches
 
 ## Changelog
-- 2026-02 · **Amvera Deployment Bundle — Iter 27** — Full production bundle for `cloud.amvera.ru` deploys. New `/app/backend/main.py` thin entry that imports the wired FastAPI `app` from `server.py`, exposes `/health`, and serves the compiled React SPA from `FRONTEND_BUILD_DIR`. Multi-stage `/app/Dockerfile` (`node:18-alpine` builds `frontend/build` → `python:3.11-slim` runs `uvicorn main:app --port 8000 --proxy-headers`). New `/app/amvera.yaml` (dockerfile env, port 8000, persistenceMount /app/data, secrets list). New `/app/nginx.conf` for optional split-service deploys. New `/app/.dockerignore` (excludes .env, node_modules, __pycache__, build, tests). New `/app/backend/.env.example` and `/app/frontend/.env.example`. `api.js` + `ws.js` now resolve backend URL from `REACT_APP_BACKEND_URL` → `REACT_APP_API_URL` → same-origin fallback. Preview environment (supervisor + port 8001) is untouched. **Perf fix**: `/api/chats` N+1 query eliminated — 6 chats now served in 219 ms with 3 DB queries (was N+N+1). Deployment scan: **status pass, 0 blockers, 0 findings.**
-- 2026-02 · **File & Media Storage (GridFS) — Iter 26** — All uploads persist to MongoDB GridFS. `GET /api/files/{id}` streams, `POST /api/files/upload` multipart, admin backfill migrated 49 legacy base64 blobs. Backend 22/22 + frontend 100 %.
-- 2026-02 · **Admin Panel v2 (Iter 25)** — deduct-coins, payments filter/search, moderation (warn/ban7/deactivate), legal docs CRUD, audit log. Backend 23/23 + frontend 100 %.
-- 2026-02 · **Priority Feeds + Install Banner + Auto-Session (Iter 24)** — Discover 4-tier + Home 5-tier sorts, PWA banner, persistent auto-session. Backend 6/6 + frontend 8/8.
-- 2026-02 · **Delete Message v1 (Iter 23)** — DELETE for me / everyone with 1-h window, WS-broadcast tombstone. Backend 11/11 + frontend 100 %.
-- 2026-02 · **Full-App Translation (Iter 22)** — DOM auto-translator + LLM-cached batch.
-- 2026-02 · **Telegram Chat + i18n v1 (Iter 21)** — full chat redesign. Backend 18/18 + frontend 38/38.
-- 2026-02 · **Complete Chat System v1 (Iter 20)** — text/emoji/image/gift/voice/video + WS. Backend 13/13.
+- 2026-02 · **WhatsApp-style Reply to Message (Iter 31)** — 
+  **1) Swipe-right gesture**: new touch handlers on each message row (`onMsgTouchStart/Move/End`) with axis-lock (pan-y wins <6px, then x locks). Swiping past 55 px sets that message as the reply target (with `navigator.vibrate(15)` haptic). A small `.swipe-reply-hint` pill with the Reply icon fades in on the leading edge proportional to `dx`. Bubbles translate with `transform: translateX(dx)` and snap back via `.chat-msg-row transition`.
+  **2) Enhanced reply preview above composer**: WhatsApp-style card — 4-px vertical accent bar (sky when replying to own message, emerald when replying to peer), sender name (`chat.you` = "Вы", else peer name), 2-line clamp snippet (with media-kind fallback like "🖼 Галерея"), X-close button. `chatReplyBarIn` slide-up animation.
+  **3) Quoted box inside reply bubbles**: now a `<button>` tappable — calls `scrollToMessage(originalId)` which `scrollIntoView({block:'center'})` and applies a `.chat-msg-flash` (sky-tinted background pulse) to the target for 1.2 s. Deleted-original still gracefully shows `chat.original_deleted`.
+  **4) Action sheet (formerly delete-only)**: long-press / right-click now opens a proper **action-sheet** with three actions: **Reply** (primary, primary/10 bg), Delete for me, Delete for everyone (when eligible). `chatSheetIn` animation reused. State renamed `deleteTarget → actionTarget`.
+  **New i18n key**: `chat.you = "Вы"`.
+  **CSS additions**: `@keyframes chatReplyBarIn`, `@keyframes chatMsgFlash`, `.chat-msg-flash`, `.swipe-reply-hint`, `.chat-msg-row`.
+  Testing agent iter-31: 11/12 flows green, only swipe unverifiable via Playwright touch dispatch (code path reviewed and correct).
+- 2026-02 · **WhatsApp-style Chat Enhancements (Iter 29-30)** — 
+  **1) Attachment tray now a slide-up modal**: previously an always-visible inline row, now hidden by default. Tapping `+` mounts a full-screen modal with backdrop, drag-handle, X-close, and a 4-column grid of 7 items. Backdrop tap or X closes with a smooth `chatSheetIn` keyframe. 
+  **2) Location option added**: new `tray-location` button uses `navigator.geolocation.getCurrentPosition` (with permission-denied handling in Russian) and sends the result as a text message containing an OpenStreetMap link (`https://www.openstreetmap.org/?mlat=...&mlon=...`). 
+  **3) Scroll-to-bottom FAB**: floating circular chevron-down button appears when the user scrolls up more than 120 px from the latest message; tap smooth-scrolls back to bottom; FAB disappears once bottom is reached. 
+  **Layout fix (iter 30)**: wrapper `minHeight:'100vh'` → `height:'100dvh'` so the message list actually overflows internally (was scrolling the body instead — the FAB never fired). `100dvh` chosen for iOS dynamic-viewport safety. 
+  All 13 iter-29 features green after iter-30 retest, zero bugs.
+- 2026-02 · **Amvera Deploy Bundle Hardening (Iter 27-28)** — added `meta.toolchain: docker` in amvera.yaml; made `yarn.lock` optional via wildcard COPY so the build works whether the lockfile is committed or not. Testing agent 11/11 (iter 27) + 8/8 (iter 28) pass.
+- 2026-02 · **File & Media Storage (GridFS) — Iter 26** — All uploads persist to MongoDB GridFS. Backend 22/22 + frontend 100 %.
+- 2026-02 · Iter 20-25 chat/i18n/admin features (see prior entries).
 
 ## Deploy
 Currently on Emergent (React + FastAPI + MongoDB). For amvera.cloud deployment, see `/app/backend/requirements.txt` + `/app/frontend/package.json`.

@@ -103,3 +103,36 @@ body {
 
 /* Prevent overscroll bounce on mobile */
 html, body { overscroll-behavior-y: none; }
+
+/* Chat attachment sheet + scroll-to-bottom FAB animations */
+@keyframes chatSheetIn    { from { transform: translate(-50%, 100%); } to { transform: translate(-50%, 0); } }
+@keyframes chatBackdropIn { from { opacity: 0; } to { opacity: 1; } }
+@keyframes chatFabIn      { from { transform: translateY(20px) scale(.6); opacity: 0; } to { transform: none; opacity: 1; } }
+
+/* WhatsApp-style reply preview + message highlight */
+@keyframes chatReplyBarIn { from { transform: translateY(100%); opacity: 0; } to { transform: none; opacity: 1; } }
+@keyframes chatMsgFlash {
+  0%   { background-color: rgba(56, 189, 248, 0.00); }
+  25%  { background-color: rgba(56, 189, 248, 0.25); }
+  100% { background-color: rgba(56, 189, 248, 0.00); }
+}
+.chat-msg-flash { animation: chatMsgFlash 1200ms ease-out; border-radius: 14px; }
+
+/* Swipe-to-reply hint icon */
+.swipe-reply-hint {
+  position: absolute;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 30px;
+  height: 30px;
+  border-radius: 50%;
+  background: hsl(var(--primary) / 0.15);
+  color: hsl(var(--primary));
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  pointer-events: none;
+  transition: opacity 120ms ease-out;
+}
+.chat-msg-row { transition: transform 180ms cubic-bezier(0.2, 0.9, 0.3, 1); touch-action: pan-y; }
+

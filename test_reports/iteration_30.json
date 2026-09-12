@@ -1,0 +1,23 @@
+{
+  "summary": "Iter 30 focused RETEST of scroll-to-bottom FAB on /chats/user_3ce097eea931. The fix (wrapper style changed from minHeight:100vh → height:100dvh on line 276 of ChatRoomPage.jsx, plus removal of redundant minHeight:60vh on the message list) is VERIFIED WORKING. All 4 requested checks pass: (1) .overflow-y-auto is now internally scrollable — scrollHeight=3400 > clientHeight=724, body height=windowH=844 (no page-body scroll). (2) After sending 6 long padding messages and scrolling the list up ~200px, data-testid='scroll-to-bottom' FAB appears with an SVG chevron-down icon. (3) Clicking the FAB smooth-scrolls the list back to bottom (atBottom=true, scrollTop=2676 = scrollHeight-clientHeight) AND the FAB unmounts within 700ms. (4) No visual regression — header is position:sticky, attach-tray opens on btn-plus and closes on tray-close as before. Iter-29 FAB blocker is fully resolved; entire iter-29 feature set is now green.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "Fix is minimal and correct: `height:'100dvh'` on the max-w-md flex-col wrapper properly constrains the flex-1 message list, letting overflow-y-auto handle internal scroll. 100dvh (vs 100vh) is the right choice for iOS dynamic viewport / Safari safe-area handling.",
+    "Removing the redundant `minHeight:'60vh'` on the message list was also correct — with the parent now height-bounded, flex-1 alone is sufficient and any min-height would re-introduce the old overflow-past-parent behavior."
+  ],
+  "updated_files": [],
+  "success_rate": {"backend": "n/a", "frontend": "4/4 checks passed (13/13 iter-29 features now green)"},
+  "test_credentials": "testuser1@lovreski.ru / password123 — working.",
+  "seed_data_creation": "Sent 6 long padding text messages to user_3ce097eea931 to force list overflow (~3400px scrollHeight).",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Iter-29/30 chat features (attach-tray + 7 buttons + backdrop + chatSheetIn + geolocation share + scroll-to-bottom FAB) all fully verified. No open bugs on /chats/{other_id}. Data-testids present: btn-plus, attach-tray, tray-{gallery,video,file,location,emoji,gifts,lang,close}, scroll-to-bottom, chat-input, btn-send.",
+  "rca of the issue": "Previous iter-29 FAB failure RCA: wrapper used min-height:100vh (no upper bound), so flex-1 message list grew past viewport and body scrolled instead of the container — the onScroll handler on `.overflow-y-auto` never fired. Fix applied by main agent in iter-30: replaced with height:100dvh (fixed upper bound + iOS-safe). Verified: scrollHeight now correctly > clientHeight, onScroll fires, showScrollDown state toggles, FAB mounts/unmounts as designed."
+}

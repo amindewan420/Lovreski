@@ -2260,6 +2260,7 @@ I18N_BASE_RU = {
     "chat.online": "онлайн", "chat.recent": "недавно", "chat.typing": "печатает...",
     "chat.placeholder": "Сообщение...", "chat.placeholder_blocked": "🔒 Купите монеты, чтобы продолжить общение",
     "chat.reply": "Ответить", "chat.translate": "Перевести", "chat.reply_prefix": "Ответ:",
+    "chat.you": "Вы",
     "chat.today": "Сегодня", "chat.yesterday": "Вчера",
     "chat.send_gift": "Отправить подарок",
     "chat.confirm_gift": "Отправить подарок за {cost} монет?",

@@ -9,7 +9,7 @@ import GiftPanel from "@/components/lovreski/GiftPanel";
 import LanguageSheet from "@/components/lovreski/LanguageSheet";
 import {
   ArrowLeft, Send, Plus, Image as ImageIcon, File as FileIcon, Video, Mic, Square,
-  Smile, Gift, Globe, Reply, X, Check, CheckCheck, Lock, ShoppingBag, Trash2,
+  Smile, Gift, Globe, Reply, X, Check, CheckCheck, Lock, ShoppingBag, Trash2, MapPin, ChevronDown,
 } from "lucide-react";
 import { toast } from "sonner";
 
@@ -51,8 +51,15 @@ export default function ChatRoomPage() {
   const [showGifts, setShowGifts] = useState(false);
   const [showLang, setShowLang] = useState(false);
   const [showBlockPopup, setShowBlockPopup] = useState(false);
-  const [deleteTarget, setDeleteTarget] = useState(null);
+  const [actionTarget, setActionTarget] = useState(null);   // message-action sheet (Reply / Delete)
   const longPressTimerRef = useRef(null);
+  const [showScrollDown, setShowScrollDown] = useState(false);
+
+  // Swipe-to-reply state
+  const [swipeState, setSwipeState] = useState({ id: null, dx: 0 });
+  const swipeRef = useRef({ startX: 0, startY: 0, id: null, active: false, locked: null });
+  const [highlightId, setHighlightId] = useState(null);
+  const highlightTimerRef = useRef(null);
 
   const scrollRef = useRef(null);
   const socketRef = useRef(null);
@@ -183,9 +190,9 @@ export default function ChatRoomPage() {
 
   // ─── Delete ──────────────────────────────────────────────────────────
   const doDelete = async (scope) => {
-    if (!deleteTarget) return;
-    const m = deleteTarget;
-    setDeleteTarget(null);
+    if (!actionTarget) return;
+    const m = actionTarget;
+    setActionTarget(null);
     try {
       await api.delete(`/messages/${m.message_id}?scope=${scope}`);
       if (scope === "everyone") {
@@ -213,10 +220,83 @@ export default function ChatRoomPage() {
   const startLongPress = (m) => {
     clearTimeout(longPressTimerRef.current);
     longPressTimerRef.current = setTimeout(() => {
-      if (!m.deleted) setDeleteTarget(m);
+      if (!m.deleted) { setActionTarget(m); navigator.vibrate?.(15); }
     }, 550);
   };
   const cancelLongPress = () => { clearTimeout(longPressTimerRef.current); };
+
+  // ─── Swipe-right to reply ─────────────────────────────────────────────
+  const onMsgTouchStart = (m) => (e) => {
+    if (m.deleted) return;
+    const t0 = e.touches[0];
+    swipeRef.current = { startX: t0.clientX, startY: t0.clientY, id: m.message_id, active: true, locked: null };
+  };
+  const onMsgTouchMove = (m) => (e) => {
+    const s = swipeRef.current;
+    if (!s.active || s.id !== m.message_id) return;
+    const t0 = e.touches[0];
+    const dx = t0.clientX - s.startX;
+    const dy = t0.clientY - s.startY;
+    // Decide gesture axis once, then stick with it (avoids fighting vertical scroll)
+    if (s.locked === null) {
+      if (Math.abs(dx) < 6 && Math.abs(dy) < 6) return;
+      s.locked = Math.abs(dx) > Math.abs(dy) ? "x" : "y";
+    }
+    if (s.locked !== "x") return;
+    if (dx < 0) { setSwipeState({ id: m.message_id, dx: 0 }); return; } // only right-swipe
+    cancelLongPress(); // moving cancels long-press intent
+    const clamped = Math.min(dx, 90);
+    setSwipeState({ id: m.message_id, dx: clamped });
+  };
+  const onMsgTouchEnd = (m) => () => {
+    const s = swipeRef.current;
+    if (!s.active || s.id !== m.message_id) { setSwipeState({ id: null, dx: 0 }); return; }
+    const dx = swipeState.id === m.message_id ? swipeState.dx : 0;
+    swipeRef.current.active = false;
+    if (dx > 55 && !m.deleted) {
+      setReply(m);
+      navigator.vibrate?.(15);
+    }
+    setSwipeState({ id: null, dx: 0 });
+  };
+
+  // ─── Scroll to (and highlight) a specific message ─────────────────────
+  const scrollToMessage = (mid) => {
+    const el = document.getElementById(`m-${mid}`);
+    if (!el) { toast(t("chat.original_deleted")); return; }
+    el.scrollIntoView({ behavior: "smooth", block: "center" });
+    clearTimeout(highlightTimerRef.current);
+    setHighlightId(mid);
+    highlightTimerRef.current = setTimeout(() => setHighlightId(null), 1200);
+  };
+
+  // ─── Scroll-to-bottom FAB ─────────────────────────────────────────────
+  const onScroll = () => {
+    const el = scrollRef.current;
+    if (!el) return;
+    const distanceFromBottom = el.scrollHeight - el.scrollTop - el.clientHeight;
+    setShowScrollDown(distanceFromBottom > 120);
+  };
+
+  // ─── Location share (browser Geolocation → OpenStreetMap link) ───────
+  const shareLocation = () => {
+    setShowTray(false);
+    if (!navigator.geolocation) return toast.error("Геолокация недоступна");
+    toast.loading("Определяем местоположение...", { id: "geo" });
+    navigator.geolocation.getCurrentPosition(
+      (pos) => {
+        toast.dismiss("geo");
+        const { latitude, longitude } = pos.coords;
+        const url = `https://www.openstreetmap.org/?mlat=${latitude}&mlon=${longitude}#map=17/${latitude}/${longitude}`;
+        send({ kind: "text", text: `📍 ${url}` });
+      },
+      (err) => {
+        toast.dismiss("geo");
+        toast.error(err.code === 1 ? "Доступ к геолокации запрещён" : "Не удалось определить местоположение");
+      },
+      { enableHighAccuracy: true, timeout: 10000 }
+    );
+  };
 
   // ─── Input auto-grow + typing broadcast ──────────────────────────────
   const onInput = (e) => {
@@ -244,7 +324,7 @@ export default function ChatRoomPage() {
   // ─── Render ──────────────────────────────────────────────────────────
   return (
     <div className="min-h-screen bg-white flex justify-center">
-      <div className="w-full max-w-md bg-white flex flex-col" style={{ minHeight: "100vh" }}>
+      <div className="w-full max-w-md bg-white flex flex-col relative" style={{ height: "100dvh" }}>
         {/* Header */}
         <header className="sticky top-0 z-30 flex items-center gap-3 px-3 py-2.5 bg-white border-b border-slate-200">
           <button data-testid="chat-back" onClick={() => nav(-1)} className="p-2 -ml-2 rounded-full hover:bg-slate-100"><ArrowLeft className="w-5 h-5 text-slate-700" /></button>
@@ -268,7 +348,7 @@ export default function ChatRoomPage() {
         </header>
 
         {/* Message list */}
-        <div ref={scrollRef} className="flex-1 overflow-y-auto px-3 py-4 space-y-1.5 bg-white" style={{ minHeight: "60vh" }}>
+        <div ref={scrollRef} onScroll={onScroll} className="flex-1 overflow-y-auto px-3 py-4 space-y-1.5 bg-white">
           {grouped.map((row) => row.type === 'sep' ? (
             <div key={row.id} className="flex justify-center py-2" data-testid={`date-sep-${row.id}`}>
               <span className="text-[11px] font-medium px-3 py-1 rounded-full bg-slate-100 text-slate-600">{dateLabel(row.iso, t)}</span>
@@ -277,18 +357,68 @@ export default function ChatRoomPage() {
             const m = row.m; const mine = m.from_user === user?.user_id;
             const replied = m.reply_to ? msgs.find((x) => x.message_id === m.reply_to) : null;
             const locked = m.locked && !mine;
-            const canLongPress = mine || user?.is_admin;
+            const canLongPress = !m.deleted;
+            const swiping = swipeState.id === m.message_id;
+            const dx = swiping ? swipeState.dx : 0;
+            const showHint = swiping && dx > 8;
+            const highlighted = highlightId === m.message_id;
+            const repliedSenderName = replied
+              ? (replied.from_user === user?.user_id ? t("chat.you") : (other?.name || ""))
+              : "";
+            const repliedSnippet = replied
+              ? (replied.text || {
+                  image: "🖼 " + t("chat.gift_gallery"),
+                  video: "🎬 " + t("chat.gift_camera"),
+                  voice: "🎤 " + (t("chat.recording") || ""),
+                  file: "📎 " + (replied.file_name || t("chat.gift_file")),
+                  gift: "🎁",
+                  emoji: replied.text,
+                }[replied.kind] || replied.kind)
+              : "";
             return (
-              <div key={m.message_id} data-testid={`msg-${m.message_id}`} className={`flex ${mine ? "justify-end" : "justify-start"}`}>
+              <div
+                key={m.message_id}
+                id={`m-${m.message_id}`}
+                data-testid={`msg-${m.message_id}`}
+                className={`chat-msg-row flex relative ${mine ? "justify-end" : "justify-start"} ${highlighted ? "chat-msg-flash" : ""}`}
+                style={{ transform: dx ? `translateX(${dx}px)` : undefined }}
+                onTouchStart={onMsgTouchStart(m)}
+                onTouchMove={onMsgTouchMove(m)}
+                onTouchEnd={onMsgTouchEnd(m)}
+                onTouchCancel={onMsgTouchEnd(m)}
+              >
+                {showHint && (
+                  <div
+                    className="swipe-reply-hint"
+                    style={{ left: 4, opacity: Math.min(1, dx / 55) }}
+                    data-testid={`swipe-hint-${m.message_id}`}
+                  >
+                    <Reply className="w-4 h-4" />
+                  </div>
+                )}
                 <div className="max-w-[78%] group">
                   {replied && (
-                    <div className={`px-2 py-1 mb-1 text-[11px] rounded border-l-2 ${mine ? "bg-sky-50 border-sky-400 text-slate-700" : "bg-slate-50 border-slate-300 text-slate-600"}`}>
+                    <button
+                      type="button"
+                      onClick={() => scrollToMessage(replied.message_id)}
+                      data-testid={`quoted-${m.message_id}`}
+                      className={`w-full text-left px-2.5 py-1.5 mb-1 rounded-lg border-l-[3px] active:opacity-70 transition ${
+                        mine ? "bg-sky-50/80 border-sky-500" : "bg-slate-100 border-emerald-500"
+                      }`}
+                    >
                       {replied.deleted ? (
-                        <p className="italic opacity-70">{t("chat.original_deleted")}</p>
+                        <p className="italic opacity-70 text-[11px] text-slate-500">{t("chat.original_deleted")}</p>
                       ) : (
-                        <p className="truncate"><span className="opacity-70">{t("chat.reply_prefix")}</span> <span className="no-translate">{replied.text || replied.kind}</span></p>
+                        <>
+                          <p className={`text-[11px] font-semibold leading-tight ${mine ? "text-sky-700" : "text-emerald-700"} no-translate`}>
+                            {repliedSenderName}
+                          </p>
+                          <p className="text-[12px] text-slate-600 leading-snug line-clamp-2 no-translate">
+                            {repliedSnippet}
+                          </p>
+                        </>
                       )}
-                    </div>
+                    </button>
                   )}
                   {locked ? (
                     <button data-testid={`locked-${m.message_id}`} onClick={() => nav('/premium')}
@@ -314,7 +444,7 @@ export default function ChatRoomPage() {
                       onMouseLeave={cancelLongPress}
                       onTouchStart={canLongPress ? () => startLongPress(m) : undefined}
                       onTouchEnd={cancelLongPress}
-                      onContextMenu={canLongPress ? (e) => { e.preventDefault(); setDeleteTarget(m); } : undefined}
+                      onContextMenu={canLongPress ? (e) => { e.preventDefault(); setActionTarget(m); } : undefined}
                       className={`relative px-3 py-2 rounded-2xl shadow-sm ${
                         mine
                           ? "bg-[#DCF2FF] text-slate-900 rounded-br-md"
@@ -351,7 +481,7 @@ export default function ChatRoomPage() {
                     <div className={`flex gap-2 mt-0.5 text-[10px] text-slate-400 opacity-0 group-hover:opacity-100 transition-opacity ${mine ? "justify-end" : ""}`}>
                       <button onClick={() => setReply(m)} data-testid={`reply-${m.message_id}`}>{t("chat.reply")}</button>
                       {!mine && m.text && <button onClick={() => translate(m)} data-testid={`translate-${m.message_id}`}>{t("chat.translate")}</button>}
-                      {canLongPress && <button onClick={() => setDeleteTarget(m)} data-testid={`delete-${m.message_id}`}>{t("chat.delete_me")}</button>}
+                      {(mine || user?.is_admin) && <button onClick={() => setActionTarget(m)} data-testid={`delete-${m.message_id}`}>{t("chat.delete_me")}</button>}
                     </div>
                   )}
                 </div>
@@ -365,14 +495,44 @@ export default function ChatRoomPage() {
           )}
         </div>
 
-        {/* Reply preview */}
-        {reply && (
-          <div className="px-3 py-2 flex items-center gap-2 bg-slate-50 border-t border-slate-200">
-            <Reply className="w-4 h-4 text-slate-500" />
-            <div className="flex-1 text-xs text-slate-700 truncate border-l-2 border-primary pl-2"><span>{t("chat.reply_prefix")}</span> <span className="no-translate">{reply.text || reply.kind}</span></div>
-            <button onClick={() => setReply(null)} data-testid="cancel-reply"><X className="w-4 h-4 text-slate-500" /></button>
-          </div>
-        )}
+        {/* Reply preview — WhatsApp-style slide-up above the composer */}
+        {reply && (() => {
+          const replyMine = reply.from_user === user?.user_id;
+          const senderName = replyMine ? t("chat.you") : (other?.name || "");
+          const snippet = reply.text || {
+            image: "🖼 " + t("chat.gift_gallery"),
+            video: "🎬 " + t("chat.gift_camera"),
+            voice: "🎤 " + t("chat.recording"),
+            file: "📎 " + (reply.file_name || t("chat.gift_file")),
+            gift: "🎁 " + t("chat.preview_gift"),
+            emoji: reply.text,
+          }[reply.kind] || reply.kind;
+          return (
+            <div
+              className="px-3 py-2 bg-slate-50 border-t border-slate-200 overflow-hidden"
+              style={{ animation: "chatReplyBarIn 200ms cubic-bezier(0.2,0.9,0.3,1)" }}
+              data-testid="reply-preview"
+            >
+              <div className={`flex items-start gap-2 rounded-lg px-3 py-2 border-l-[4px] bg-white ${replyMine ? "border-sky-500" : "border-emerald-500"}`}>
+                <Reply className="w-4 h-4 text-slate-400 mt-0.5 shrink-0" />
+                <div className="flex-1 min-w-0">
+                  <p className={`text-[12px] font-semibold leading-tight no-translate ${replyMine ? "text-sky-700" : "text-emerald-700"}`}>
+                    {senderName}
+                  </p>
+                  <p className="text-[13px] text-slate-600 leading-snug line-clamp-2 no-translate">{snippet}</p>
+                </div>
+                <button
+                  onClick={() => setReply(null)}
+                  data-testid="cancel-reply"
+                  aria-label={t("chat.cancel")}
+                  className="p-1 -mr-1 rounded-full hover:bg-slate-100 shrink-0"
+                >
+                  <X className="w-4 h-4 text-slate-500" />
+                </button>
+              </div>
+            </div>
+          );
+        })()}
 
         {/* Recording bar */}
         {recording && (
@@ -427,16 +587,43 @@ export default function ChatRoomPage() {
           )}
         </div>
 
-        {/* Attachment tray */}
+        {/* Scroll-to-bottom floating button — appears when scrolled up */}
+        {showScrollDown && (
+          <button
+            data-testid="scroll-to-bottom"
+            onClick={() => scrollBottom()}
+            aria-label="К последним сообщениям"
+            className="absolute right-4 bottom-24 z-20 w-11 h-11 rounded-full bg-white shadow-lg border border-slate-200 flex items-center justify-center text-slate-600 hover:bg-slate-50 active:scale-90 transition-transform"
+            style={{ animation: "chatFabIn 180ms ease-out" }}
+          >
+            <ChevronDown className="w-5 h-5" />
+          </button>
+        )}
+
+        {/* Attachment sheet — WhatsApp-style slide-up modal with backdrop */}
         {showTray && !blocked && (
-          <div className="border-t border-slate-200 bg-white" data-testid="attach-tray">
-            <div className="grid grid-cols-6 gap-2 p-4">
-              <TrayBtn testid="tray-emoji"   label={t("chat.gift_emoji")}     onClick={() => { setShowTray(false); setShowEmoji(true); }} bg="bg-amber-100 text-amber-600"><Smile className="w-6 h-6" /></TrayBtn>
-              <TrayBtn testid="tray-gifts"   label={t("chat.gift_gifts")}     onClick={() => { setShowTray(false); setShowGifts(true); }} bg="bg-pink-100 text-pink-600"><Gift className="w-6 h-6" /></TrayBtn>
-              <TrayBtn testid="tray-gallery" label={t("chat.gift_gallery")}   onClick={() => imgRef.current?.click()} bg="bg-violet-100 text-violet-600"><ImageIcon className="w-6 h-6" /></TrayBtn>
-              <TrayBtn testid="tray-file"    label={t("chat.gift_file")}      onClick={() => fileRef.current?.click()} bg="bg-blue-100 text-blue-600"><FileIcon className="w-6 h-6" /></TrayBtn>
-              <TrayBtn testid="tray-video"   label={t("chat.gift_camera")}    onClick={() => vidRef.current?.click()} bg="bg-emerald-100 text-emerald-600"><Video className="w-6 h-6" /></TrayBtn>
-              <TrayBtn testid="tray-lang"    label={t("chat.gift_translate")} onClick={() => { setShowTray(false); setShowLang(true); }} bg="bg-cyan-100 text-cyan-600"><Globe className="w-6 h-6" /></TrayBtn>
+          <div className="fixed inset-0 z-[60]" data-testid="attach-tray" onClick={() => setShowTray(false)}>
+            <div className="absolute inset-0 bg-black/40" style={{ animation: "chatBackdropIn 180ms ease-out" }} />
+            <div
+              onClick={(e) => e.stopPropagation()}
+              className="absolute bottom-0 left-1/2 -translate-x-1/2 w-full max-w-md bg-white rounded-t-3xl shadow-2xl"
+              style={{ animation: "chatSheetIn 220ms cubic-bezier(0.2,0.9,0.3,1)" }}
+            >
+              <div className="flex items-center justify-between px-4 pt-4 pb-1">
+                <p className="text-sm font-semibold text-slate-700">Прикрепить</p>
+                <button data-testid="tray-close" onClick={() => setShowTray(false)} className="p-1.5 rounded-full hover:bg-slate-100"><X className="w-4 h-4 text-slate-500" /></button>
+              </div>
+              {/* Drag handle */}
+              <div className="mx-auto w-10 h-1 rounded-full bg-slate-200 mb-3" />
+              <div className="grid grid-cols-4 gap-y-5 gap-x-2 px-4 pb-6">
+                <TrayBtn testid="tray-gallery" label={t("chat.gift_gallery")}   onClick={() => { setShowTray(false); imgRef.current?.click(); }} bg="bg-violet-100 text-violet-600"><ImageIcon className="w-6 h-6" /></TrayBtn>
+                <TrayBtn testid="tray-video"   label={t("chat.gift_camera")}    onClick={() => { setShowTray(false); vidRef.current?.click(); }} bg="bg-emerald-100 text-emerald-600"><Video className="w-6 h-6" /></TrayBtn>
+                <TrayBtn testid="tray-file"    label={t("chat.gift_file")}      onClick={() => { setShowTray(false); fileRef.current?.click(); }} bg="bg-blue-100 text-blue-600"><FileIcon className="w-6 h-6" /></TrayBtn>
+                <TrayBtn testid="tray-location" label="Локация"                 onClick={shareLocation} bg="bg-rose-100 text-rose-600"><MapPin className="w-6 h-6" /></TrayBtn>
+                <TrayBtn testid="tray-emoji"   label={t("chat.gift_emoji")}     onClick={() => { setShowTray(false); setShowEmoji(true); }} bg="bg-amber-100 text-amber-600"><Smile className="w-6 h-6" /></TrayBtn>
+                <TrayBtn testid="tray-gifts"   label={t("chat.gift_gifts")}     onClick={() => { setShowTray(false); setShowGifts(true); }} bg="bg-pink-100 text-pink-600"><Gift className="w-6 h-6" /></TrayBtn>
+                <TrayBtn testid="tray-lang"    label={t("chat.gift_translate")} onClick={() => { setShowTray(false); setShowLang(true); }} bg="bg-cyan-100 text-cyan-600"><Globe className="w-6 h-6" /></TrayBtn>
+              </div>
             </div>
           </div>
         )}
@@ -471,25 +658,32 @@ export default function ChatRoomPage() {
           </div>
         )}
 
-        {/* Delete-message action sheet */}
-        {deleteTarget && (
-          <div className="fixed inset-0 z-[80] flex items-end sm:items-center sm:justify-center px-4" data-testid="delete-sheet">
-            <div className="absolute inset-0 bg-black/60" onClick={() => setDeleteTarget(null)} />
-            <div className="relative bg-white rounded-t-3xl sm:rounded-3xl w-full sm:max-w-xs p-5">
-              <div className="mx-auto w-12 h-12 rounded-full bg-red-100 flex items-center justify-center mb-2">
-                <Trash2 className="w-5 h-5 text-red-500" />
-              </div>
-              <p className="text-center font-semibold text-slate-900">{t("chat.delete_title")}</p>
-              <p className="text-center text-[11px] text-slate-500 mt-1 mb-4">{t("chat.delete_note")}</p>
-              <button data-testid="delete-me-btn" onClick={() => doDelete("me")} className="w-full py-3 rounded-2xl bg-slate-100 text-slate-800 font-medium text-sm mb-2">
-                {t("chat.delete_me")}
+        {/* Message actions sheet — Reply / Delete for me / Delete for everyone */}
+        {actionTarget && (
+          <div className="fixed inset-0 z-[80] flex items-end sm:items-center sm:justify-center px-4" data-testid="action-sheet">
+            <div className="absolute inset-0 bg-black/60" onClick={() => setActionTarget(null)} />
+            <div className="relative bg-white rounded-t-3xl sm:rounded-3xl w-full sm:max-w-xs p-5" style={{ animation: "chatSheetIn 220ms cubic-bezier(0.2,0.9,0.3,1)" }}>
+              <div className="mx-auto w-10 h-1 rounded-full bg-slate-200 mb-3 sm:hidden" />
+              <button
+                data-testid="action-reply-btn"
+                onClick={() => { const m = actionTarget; setActionTarget(null); setReply(m); }}
+                className="w-full py-3 rounded-2xl bg-primary/10 text-primary font-semibold text-sm mb-2 flex items-center justify-center gap-2"
+              >
+                <Reply className="w-4 h-4" /> {t("chat.reply")}
               </button>
-              {canDeleteEveryone(deleteTarget) && (
-                <button data-testid="delete-everyone-btn" onClick={() => doDelete("everyone")} className="w-full py-3 rounded-2xl bg-red-500 text-white font-semibold text-sm mb-2">
-                  {t("chat.delete_everyone")}
-                </button>
+              {(actionTarget.from_user === user?.user_id || user?.is_admin) && (
+                <>
+                  <button data-testid="delete-me-btn" onClick={() => doDelete("me")} className="w-full py-3 rounded-2xl bg-slate-100 text-slate-800 font-medium text-sm mb-2 flex items-center justify-center gap-2">
+                    <Trash2 className="w-4 h-4" /> {t("chat.delete_me")}
+                  </button>
+                  {canDeleteEveryone(actionTarget) && (
+                    <button data-testid="delete-everyone-btn" onClick={() => doDelete("everyone")} className="w-full py-3 rounded-2xl bg-red-500 text-white font-semibold text-sm mb-2 flex items-center justify-center gap-2">
+                      <Trash2 className="w-4 h-4" /> {t("chat.delete_everyone")}
+                    </button>
+                  )}
+                </>
               )}
-              <button data-testid="delete-cancel" onClick={() => setDeleteTarget(null)} className="w-full py-2 text-sm text-slate-500">{t("chat.cancel")}</button>
+              <button data-testid="action-cancel" onClick={() => setActionTarget(null)} className="w-full py-2 text-sm text-slate-500">{t("chat.cancel")}</button>
             </div>
           </div>
         )}
