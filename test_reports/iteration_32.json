@@ -1,0 +1,24 @@
+{
+  "summary": "Iteration 32 — FCM Web Push scaffold in unconfigured (fail-safe) state. Verified backend endpoints, presence-aware no-op behavior, MongoDB unique-index upsert semantics, and regressions on chat/like/receipt. Verified frontend Settings 'PUSH-УВЕДОМЛЕНИЯ' section renders pending-admin message and correctly hides enable/off/test buttons when Firebase env vars are empty. Existing reply-feature test IDs remain intact.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {"ui_bugs": [], "integration_issues": [], "design_issues": []},
+  "test_report_links": [
+    "/app/backend/tests/test_push_iter32.py",
+    "/app/test_reports/pytest/pytest_iter32.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "push.py is clean, fail-safe, and small (~250 LOC). init_fcm caches _fcm_ready; is_configured() checks both PROJECT_ID + (inline JSON or GOOGLE_APPLICATION_CREDENTIALS). Good.",
+    "should_push() correctly falls back to DB last_active > 60s when ws_manager is absent — safe default.",
+    "send_to_user prunes UnregisteredError/InvalidArgumentError tokens — good hygiene once real FCM is wired.",
+    "Pre-existing (unrelated to iter-32): backend.err.log shows a legacy TypeError in /api/... GridFS stream close path (server.py:1305 'await gout.close()' where gout is None). Not triggered by push flows, but worth cleaning up in a future iteration.",
+    "DELETE /api/push/token accepts token in JSON body — non-standard for DELETE; consider a query param or path segment for stricter REST clients, but current impl works and is tested."
+  ],
+  "updated_files": ["/app/backend/tests/test_push_iter32.py"],
+  "success_rate": {"backend": "100% (9/9)", "frontend": "100% (settings push section + reply testids)"},
+  "test_credentials": "admin@lovreski.ru / LovreskiAdmin2026!, testuser1@lovreski.ru / password123, testuser2@lovreski.ru / password123 (auto-registered by tests)",
+  "seed_data_creation": "Auto-registers testuser2@lovreski.ru if missing; also creates a like/match between testuser1 and testuser2 and one chat message. Push token doc for testuser1 is created then deleted (clean).",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "When Firebase creds are pasted into backend/.env (FIREBASE_PROJECT_ID + FIREBASE_SERVICE_ACCOUNT_JSON) and frontend/.env (REACT_APP_FIREBASE_*), re-run tests: /api/push/status should return configured:true with a vapid_public_key; /api/push/test should return sent:1 for a real device token. Also verify the Settings UI shows the btn-push-on button (unconfigured→configured transition) and that after enabling, btn-push-off + btn-push-test appear. The Reply testids (reply-preview, action-sheet, quoted-<id>) live in /app/frontend/src/pages/ChatRoomPage.jsx and are unchanged."
+}

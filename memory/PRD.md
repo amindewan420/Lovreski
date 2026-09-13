@@ -44,6 +44,20 @@ Build a complete, production-ready dating web app called "Lovreski" — mobile-f
 - P2: Email/SMS notifications via Resend/Twilio for refund status & matches
 
 ## Changelog
+- 2026-02 · **Push Notifications (FCM Web Push) — Iter 32** —
+  **New `/app/backend/push.py` module** implementing FCM sending via `firebase-admin==7.5.0` with fail-safe design: if `FIREBASE_PROJECT_ID` + service-account credential are missing, every `send_*` call is a no-op. Presence-aware: `should_push()` returns `False` when the user's WebSocket is currently connected via `ws_manager.is_online(uid)` OR their `last_active` is within 60 s.
+  **4 event triggers wired**:
+  1. `_do_send_message` → `notify_chat_message` (recipient only, if idle) — snippet respects message kind ("🖼 Фото", "🎁 Подарок", etc.).
+  2. `like_user` (when match created) → `notify_match(both users)`.
+  3. `_push_notification` (existing helper for payment/warn/refund) now also fires an FCM.
+  4. `submit_receipt` + `report_user` → `notify_admin_new_submission("receipt"|"report")` broadcasts to all admins.
+  **New endpoints** (all `/api/push/*`): `GET /status` (returns `{configured, vapid_public_key, token_count}`), `POST /token`, `DELETE /token`, `POST /test`.
+  **DB**: new `push_tokens` collection with unique index on `token` (upserted per browser/device, stale tokens auto-purged on `UnregisteredError`).
+  **Frontend**: added `firebase@12.18.0`, `/src/lib/firebase.js`, `/src/hooks/usePushNotifications.js`, `/public/firebase-messaging-sw.js` (config passed via `?firebaseConfig=<base64>` query param since CRA doesn't process env vars in `/public/`). Foreground `onMessage` → sonner toast with Open-in-place action.
+  **Settings page**: new "PUSH-УВЕДОМЛЕНИЯ" section with 3 UI states — pending-admin (shows explanation if server not configured), unsupported (browser), and configured (shows Enable / Test / Disable buttons).
+  **New i18n keys**: `chat.you`, `settings.section.push`, `settings.push_enable`, `settings.push_disable`, `settings.push_on`, `settings.push_test`, `settings.push_pending`, `settings.push_unsupported`, plus 4 more.
+  **Env vars to fill later** (`/app/backend/.env`): `FIREBASE_PROJECT_ID`, `FIREBASE_VAPID_PUBLIC_KEY`, `FIREBASE_SERVICE_ACCOUNT_JSON`. And `/app/frontend/.env`: `REACT_APP_FIREBASE_*` (7 vars).
+  Testing agent iter-32: backend 9/9, frontend 100%. Zero regressions.
 - 2026-02 · **WhatsApp-style Reply to Message (Iter 31)** — 
   **1) Swipe-right gesture**: new touch handlers on each message row (`onMsgTouchStart/Move/End`) with axis-lock (pan-y wins <6px, then x locks). Swiping past 55 px sets that message as the reply target (with `navigator.vibrate(15)` haptic). A small `.swipe-reply-hint` pill with the Reply icon fades in on the leading edge proportional to `dx`. Bubbles translate with `transform: translateX(dx)` and snap back via `.chat-msg-row transition`.
   **2) Enhanced reply preview above composer**: WhatsApp-style card — 4-px vertical accent bar (sky when replying to own message, emerald when replying to peer), sender name (`chat.you` = "Вы", else peer name), 2-line clamp snippet (with media-kind fallback like "🖼 Галерея"), X-close button. `chatReplyBarIn` slide-up animation.
