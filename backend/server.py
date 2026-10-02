@@ -844,7 +844,7 @@ I18N_VERSION = hashlib.sha256(_json.dumps(I18N_BASE_RU, sort_keys=True, ensure_a
 
 # ────────────────────────────── Router Registration ──────────────────────────────
 # Importing routers triggers their @api.X decorators to register routes on the shared api instance.
-from routers import auth, profile, discover, chat, files, notifications, reports, admin, i18n, demo, misc  # noqa: E402,F401
+from routers import auth, profile, discover, chat, files, notifications, reports, admin, i18n, demo, misc, cron  # noqa: E402,F401
 from routers import coins as _coins_router  # noqa: E402,F401 — aliased to avoid F811 with `coins` local in _do_send_message
 
 app.include_router(api)

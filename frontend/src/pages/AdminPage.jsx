@@ -72,6 +72,8 @@ export default function AdminPage() {
   const [legalEdit, setLegalEdit] = useState(null); // {slug,title,body,isNew}
   // NEW: GridFS storage widget
   const [storage, setStorage] = useState(null);
+  const [cleanupLog, setCleanupLog] = useState([]);
+  const [cleaning, setCleaning] = useState(false);
 
   useEffect(() => {
     if (!user) return;
@@ -103,7 +105,22 @@ export default function AdminPage() {
       try { const l = await api.get("/admin/legal"); setLegal(l.data || []); } catch { /* noop */ }
       // Storage usage — best-effort
       try { const st = await api.get("/admin/storage"); setStorage(st.data || null); } catch { /* noop */ }
+      try { const cl = await api.get("/admin/storage/cleanup-log"); setCleanupLog(cl.data || []); } catch { /* noop */ }
     } catch (e) { toast.error("Требуются права администратора"); nav("/home"); }
+  };
+
+  // ─── Storage cleanup (manual trigger) ───────────────────────────────
+  const runCleanup = async () => {
+    if (!window.confirm("Удалить осиротевшие файлы старше 7 дней?")) return;
+    setCleaning(true);
+    try {
+      const { data } = await api.post("/admin/storage/cleanup");
+      toast.success(`Очистка завершена: удалено ${data.deleted_files} файлов, освобождено ${fmtBytes(data.freed_bytes)}`);
+      const [st, cl] = await Promise.all([api.get("/admin/storage"), api.get("/admin/storage/cleanup-log")]);
+      setStorage(st.data); setCleanupLog(cl.data || []);
+    } catch (e) {
+      toast.error(e.response?.data?.detail || "Ошибка очистки");
+    } finally { setCleaning(false); }
   };
 
   // ─── Deduct coins ───────────────────────────────────────────────────
@@ -290,6 +307,25 @@ export default function AdminPage() {
                 {storage.by_kind.length === 0 && (
                   <p className="text-sm text-muted-foreground text-center py-4">Файлов пока нет.</p>
                 )}
+
+                {/* Cleanup controls + last run */}
+                <div className="mt-4 pt-3 border-t border-border/60 flex flex-wrap items-center justify-between gap-3">
+                  <div className="text-xs text-muted-foreground" data-testid="storage-last-run">
+                    {cleanupLog.length > 0 ? (() => {
+                      const r = cleanupLog[0];
+                      const dt = new Date(r.started_at);
+                      return <>Последняя очистка: {dt.toLocaleDateString("ru")} {dt.toLocaleTimeString("ru", { hour: "2-digit", minute: "2-digit" })} · удалено {r.deleted_files} · освобождено {fmtBytes(r.freed_bytes)}</>;
+                    })() : "Автоочистка: ежедневно в 03:00 UTC (файлы старше 7 дней)"}
+                  </div>
+                  <button
+                    data-testid="btn-storage-cleanup"
+                    onClick={runCleanup}
+                    disabled={cleaning}
+                    className="px-4 py-1.5 rounded-full text-xs font-semibold bg-muted hover:bg-muted/70 text-foreground disabled:opacity-50 flex items-center gap-1.5"
+                  >
+                    <Trash2 className="w-3.5 h-3.5" /> {cleaning ? "Очистка..." : "Очистить сейчас"}
+                  </button>
+                </div>
               </div>
             )}
 

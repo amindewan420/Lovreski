@@ -2,11 +2,11 @@
  * Config values are passed in via the ?firebaseConfig=<base64-json> query string
  * during navigator.serviceWorker.register(). This avoids hard-coding secrets
  * and works with CRA (which doesn't process env vars inside /public/).
+ * Note: `importScripts` and `firebase` are service-worker globals — accessed
+ * via self.* so linters that don't know SW globals stay quiet.
  */
-/* eslint-disable no-restricted-globals */
-/* global firebase, importScripts, self */
-importScripts("https://www.gstatic.com/firebasejs/12.18.0/firebase-app-compat.js");
-importScripts("https://www.gstatic.com/firebasejs/12.18.0/firebase-messaging-compat.js");
+self.importScripts("https://www.gstatic.com/firebasejs/12.18.0/firebase-app-compat.js");
+self.importScripts("https://www.gstatic.com/firebasejs/12.18.0/firebase-messaging-compat.js");
 
 let messagingInstance = null;
 try {
@@ -15,8 +15,8 @@ try {
   if (raw) {
     const cfg = JSON.parse(atob(raw));
     if (cfg && cfg.apiKey && cfg.projectId) {
-      firebase.initializeApp(cfg);
-      messagingInstance = firebase.messaging();
+      self.firebase.initializeApp(cfg);
+      messagingInstance = self.firebase.messaging();
     }
   }
 } catch (e) {

@@ -1,0 +1,8 @@
+crons:
+  - name: storage-cleanup
+    description: "Nightly purge of orphaned GridFS files (deleted chat media, unreferenced uploads) older than 7 days"
+    cron: "0 3 * * *"
+    endpoint: "{{BASE_URL}}/api/cron/storage-cleanup"
+    method: POST
+    # Cron endpoints must ack 2xx immediately; enqueue/background the actual work.
+    enabled: true
