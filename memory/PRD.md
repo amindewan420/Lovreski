@@ -44,6 +44,10 @@ Build a complete, production-ready dating web app called "Lovreski" — mobile-f
 - P2: Email/SMS notifications via Resend/Twilio for refund status & matches
 
 ## Changelog
+- 2026-02 · **Server.py Modular Router Refactor (Iter 33)** —
+  Split the 2668-line monolith `/app/backend/server.py` into **13 route modules under `/app/backend/routers/`** (`auth.py`, `profile.py`, `discover.py`, `chat.py`, `files.py`, `coins.py`, `notifications.py`, `reports.py`, `admin.py`, `i18n.py`, `demo.py`, `misc.py`, `__init__.py`). Pattern used: `server.py` defines all shared primitives (db, api APIRouter, Pydantic models, constants, security helpers, WSManager, GridFS, user_public, _push_notification, _do_send_message, _try_auto_confirm, I18N_BASE_RU) in the top ~830 lines, then imports all routers at line 847 — this triggers their `@api.X` decorators to register routes on the shared `api` router (no behaviour change).
+  **Result:** `server.py` 2668 → 935 lines. Largest router: `admin.py` (541 lines). Zero route changes, zero API surface changes.
+  **Testing agent iter-33** caught 4 real refactor regressions during pytest (missing imports in router files: `datetime` in auth.py, `timedelta` in demo.py, `uuid/base64/_compress_image_data_url` in files.py, shadowing redef in profile.py) and fixed them automatically. Final: **backend 36/36 pytest green, frontend 100%, WhatsApp reply + Push Settings sections unchanged**.
 - 2026-02 · **Push Notifications (FCM Web Push) — Iter 32** —
   **New `/app/backend/push.py` module** implementing FCM sending via `firebase-admin==7.5.0` with fail-safe design: if `FIREBASE_PROJECT_ID` + service-account credential are missing, every `send_*` call is a no-op. Presence-aware: `should_push()` returns `False` when the user's WebSocket is currently connected via `ws_manager.is_online(uid)` OR their `last_active` is within 60 s.
   **4 event triggers wired**:

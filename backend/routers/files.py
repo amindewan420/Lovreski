@@ -5,9 +5,12 @@ from fastapi import File as UploadFileParam
 from fastapi.responses import StreamingResponse
 from bson import ObjectId as _ObjectId
 import io
+import uuid
+import base64
 from server import (
     api, db, logger, now_utc, iso,
     get_current_user, gridfs_bucket, gridfs_put, gridfs_url,
+    _compress_image_data_url,
 )
 
 @api.get("/files/{file_id}")

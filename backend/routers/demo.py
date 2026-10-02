@@ -1,5 +1,6 @@
 """Demo profile seed route — /demo/seed"""
 import uuid
+from datetime import timedelta
 from server import (
     api, db, logger, now_utc, iso,
     hash_pw,

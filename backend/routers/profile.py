@@ -82,23 +82,8 @@ async def delete_photo(index: int, user: dict = Depends(get_current_user)):
     await db.users.update_one({"user_id": user['user_id']}, {"$set": {"photos": photos}})
     return {"photos": photos}
 
-def _profile_completion(u: dict) -> int:
-    """Percent completion — used to nudge users to fill the profile."""
-    checks = [
-        bool(u.get('photos')),
-        bool(u.get('about')),
-        bool(u.get('job')),
-        bool(u.get('education')),
-        bool(u.get('language')),
-        bool(u.get('height')),
-        bool(u.get('goal')),
-        bool(u.get('relationship')),
-        bool(u.get('kids')),
-        bool(u.get('smoking') and u.get('alcohol')),
-        bool(u.get('interests') and len(u['interests']) >= 3),
-        bool(u.get('lat')),
-    ]
-    return int(round(100 * sum(1 for c in checks if c) / len(checks)))
+def _profile_completion_legacy_removed(u: dict) -> int:  # noqa: unused — kept for history
+    return _profile_completion(u)
 
 @api.get("/profile/me/stats")
 async def profile_stats(user: dict = Depends(get_current_user)):

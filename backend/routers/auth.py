@@ -1,7 +1,7 @@
 """Auth routes — /auth/*  (register, login, forgot, reset, session, me, logout)"""
 from fastapi import HTTPException, Response, Cookie, Depends
 from typing import Optional
-from datetime import timedelta
+from datetime import timedelta, datetime, timezone
 import os, uuid, hashlib
 import httpx
 import jwt as pyjwt

@@ -1,0 +1,37 @@
+{
+  "summary": "Iter-33 refactor regression: Routers split into /app/backend/routers/*.py. Caught 4 real refactor regressions (missing imports in router files) during pytest; fixed them. After fixes: 36/36 backend tests pass, covering all 13 router modules + WS endpoint + 79 unique /api/* paths parity with pre-refactor server.py.bak. Frontend regression: Settings 'PUSH-УВЕДОМЛЕНИЯ' section renders pending-admin text as expected (configured:false). Chat reply flow (reply-preview, msg-<id>, reply-<id>, delete-<id> testids) works correctly via inline reply button.",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {"endpoint": "/api/push/token DELETE", "issue": "Accepts JSON body for DELETE (works but non-standard REST)."},
+      {"endpoint": "/api/admin/settings PUT", "issue": "Returns 400 on empty body — fine, but consider explicit no-op validation message."}
+    ]
+  },
+  "frontend_issues": {"ui_bugs": [], "integration_issues": [], "design_issues": []},
+  "test_report_links": [
+    "/app/backend/tests/test_refactor_iter33.py",
+    "/app/test_reports/pytest/pytest_iter33.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "REGRESSION FIXED (was shipped broken): routers/files.py was missing `import uuid`, `import base64`, and `from server import _compress_image_data_url` — /api/files/upload would 500 on every image upload. Added imports.",
+    "REGRESSION FIXED: routers/auth.py was missing `from datetime import datetime, timezone` — login path for a user with `banned_until` set would raise NameError. Added imports.",
+    "REGRESSION FIXED: routers/demo.py was missing `from datetime import timedelta` — POST /api/demo/seed would NameError on first seed (second-call 'already' short-circuit happened to hide it). Added import.",
+    "LINT: routers/profile.py locally re-defined `_profile_completion` (which it also imports from server) — redundant shadow. Replaced the local def with a thin wrapper to avoid F811 and keep behaviour consistent with the authoritative definition in server.py.",
+    "Consider adding a smoke import test (`python -c 'import server; import routers.auth; ...'`) to CI to catch these NameErrors at startup instead of at first-request.",
+    "Pre-existing (unchanged by refactor): backend.err.log had a legacy `TypeError: await gout.close()` where gout is None — still present in routers/files.py get_file streaming path's finally block. Non-blocking (stream completes), but worth guarding."
+  ],
+  "updated_files": [
+    "/app/backend/routers/auth.py (added datetime, timezone imports)",
+    "/app/backend/routers/demo.py (added timedelta import)",
+    "/app/backend/routers/files.py (added uuid, base64, _compress_image_data_url imports)",
+    "/app/backend/routers/profile.py (removed shadowing _profile_completion redef)",
+    "/app/backend/tests/test_refactor_iter33.py (new comprehensive regression suite)"
+  ],
+  "success_rate": {"backend": "100% (36/36)", "frontend": "100% (settings push + chat reply verified)"},
+  "test_credentials": "admin@lovreski.ru / LovreskiAdmin2026!, testuser1@lovreski.ru / password123, testuser2@lovreski.ru / password123",
+  "seed_data_creation": "Auto-registers testuser2 if missing. Creates like/match between testuser1↔testuser2, sends test chat message, uploads a tiny PNG to GridFS, creates a receipt submission, creates coin checkout tx, add/deduct 5 coins to testuser1, writes/deletes push token row.",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Route parity: 79 unique /api/* paths = 83 route decorators (some paths have multi-method). Confirmed via diff of server.py.bak vs server.py+routers/*.py. The /api/openapi.json route doesn't exist (and never did pre-refactor) — docs live at /openapi.json, /docs, /redoc which go via FastAPI root, not under the /api APIRouter. WebSocket endpoint remains in server.py at /api/ws and responds to JSON {type:'ping'} with {type:'pong'}. Frontend uses localStorage key `lovreski_token` (not `token` or `auth_token`)."
+}
