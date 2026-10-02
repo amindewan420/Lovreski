@@ -29,6 +29,51 @@ class CustomCoinAddBody(BaseModel):
 async def admin_pending_count(_: dict = Depends(require_admin)):
     return {"count": await db.receipt_submissions.count_documents({"status": "pending"})}
 
+
+@api.get("/admin/storage")
+async def admin_storage(_: dict = Depends(require_admin)):
+    """GridFS usage aggregated by `metadata.kind` (profile_photo | chat_image |
+    chat_voice | chat_video | chat_file | support_receipt | refund_receipt | other).
+    Falls back to content_type prefix when kind is absent.
+    Returns: {total_files, total_bytes, by_kind: [{kind, files, bytes}], by_content_type: [...]}."""
+    # $group on fs.files metadata.kind; sum file.length; count
+    pipeline = [
+        {"$group": {
+            "_id": {"kind": "$metadata.kind", "content_type": "$metadata.content_type"},
+            "files": {"$sum": 1},
+            "bytes": {"$sum": "$length"},
+        }},
+        {"$sort": {"bytes": -1}},
+    ]
+    rows = await db["fs.files"].aggregate(pipeline).to_list(1000)
+    by_kind: dict = {}
+    by_ct: dict = {}
+    total_files = 0
+    total_bytes = 0
+    for r in rows:
+        kind = r["_id"].get("kind") or "other"
+        ct = r["_id"].get("content_type") or "application/octet-stream"
+        files = r["files"]
+        size = int(r["bytes"] or 0)
+        total_files += files
+        total_bytes += size
+        # aggregate by kind
+        k = by_kind.setdefault(kind, {"kind": kind, "files": 0, "bytes": 0})
+        k["files"] += files
+        k["bytes"] += size
+        # aggregate by content-type bucket
+        ct_bucket = ct.split("/")[0] if "/" in ct else ct
+        c = by_ct.setdefault(ct_bucket, {"content_type": ct_bucket, "files": 0, "bytes": 0})
+        c["files"] += files
+        c["bytes"] += size
+    return {
+        "total_files": total_files,
+        "total_bytes": total_bytes,
+        "by_kind": sorted(by_kind.values(), key=lambda x: x["bytes"], reverse=True),
+        "by_content_type": sorted(by_ct.values(), key=lambda x: x["bytes"], reverse=True),
+    }
+
+
 @api.get("/admin/support/pending")
 async def admin_pending(_: dict = Depends(require_admin)):
     subs = await db.receipt_submissions.find({"status": "pending"}, {"_id": 0}).sort("created_at", -1).to_list(200)

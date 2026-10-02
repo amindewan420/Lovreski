@@ -4,6 +4,7 @@
  * and works with CRA (which doesn't process env vars inside /public/).
  */
 /* eslint-disable no-restricted-globals */
+/* global firebase, importScripts, self */
 importScripts("https://www.gstatic.com/firebasejs/12.18.0/firebase-app-compat.js");
 importScripts("https://www.gstatic.com/firebasejs/12.18.0/firebase-messaging-compat.js");
 

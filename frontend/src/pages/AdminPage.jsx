@@ -3,8 +3,39 @@ import { api } from "@/lib/api";
 import { useAuth } from "@/context/AuthContext";
 import { useNavigate } from "react-router-dom";
 import { LineChart, Line, BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid } from "recharts";
-import { Shield, Users, Crown, Clock, TrendingUp, Check, X, Flag, LogOut, Search as SearchIcon, MinusCircle, AlertTriangle, Ban, UserX, FileText, Trash2, Plus, Pencil } from "lucide-react";
+import { Shield, Users, Crown, Clock, TrendingUp, Check, X, Flag, LogOut, Search as SearchIcon, MinusCircle, AlertTriangle, Ban, UserX, FileText, Trash2, Plus, Pencil, Database } from "lucide-react";
 import { toast } from "sonner";
+
+// Format bytes for human readability
+const fmtBytes = (b) => {
+  if (!b && b !== 0) return "—";
+  if (b < 1024) return `${b} Б`;
+  if (b < 1024 * 1024) return `${(b / 1024).toFixed(1)} КБ`;
+  if (b < 1024 * 1024 * 1024) return `${(b / 1024 / 1024).toFixed(2)} МБ`;
+  return `${(b / 1024 / 1024 / 1024).toFixed(2)} ГБ`;
+};
+
+const KIND_LABELS = {
+  profile_photo: "Фото профиля",
+  chat_image: "Чат — фото",
+  chat_voice: "Чат — голосовые",
+  chat_video: "Чат — видео",
+  chat_file: "Чат — файлы",
+  support_receipt: "Чеки оплаты",
+  refund_receipt: "Чеки возврата",
+  other: "Прочее",
+};
+
+const KIND_COLORS = {
+  profile_photo: "bg-rose-500",
+  chat_image: "bg-sky-500",
+  chat_voice: "bg-emerald-500",
+  chat_video: "bg-purple-500",
+  chat_file: "bg-slate-500",
+  support_receipt: "bg-amber-500",
+  refund_receipt: "bg-orange-500",
+  other: "bg-slate-400",
+};
 
 export default function AdminPage() {
   const { user, logout } = useAuth();
@@ -39,6 +70,8 @@ export default function AdminPage() {
   // NEW: legal docs
   const [legal, setLegal] = useState([]);
   const [legalEdit, setLegalEdit] = useState(null); // {slug,title,body,isNew}
+  // NEW: GridFS storage widget
+  const [storage, setStorage] = useState(null);
 
   useEffect(() => {
     if (!user) return;
@@ -68,6 +101,8 @@ export default function AdminPage() {
       setPendingCount(cnt.data?.count || 0);
       // Legal docs — best-effort, don't fail whole load if endpoint absent
       try { const l = await api.get("/admin/legal"); setLegal(l.data || []); } catch { /* noop */ }
+      // Storage usage — best-effort
+      try { const st = await api.get("/admin/storage"); setStorage(st.data || null); } catch { /* noop */ }
     } catch (e) { toast.error("Требуются права администратора"); nav("/home"); }
   };
 
@@ -213,6 +248,50 @@ export default function AdminPage() {
               <Stat title="Ожидают" value={stats.pending} icon={Clock} />
               <Stat title="Одобрено в этом месяце" value={stats.approved_month} icon={Check} />
             </div>
+
+            {/* GridFS Storage widget */}
+            {storage && (
+              <div className="bg-card border border-border rounded-2xl p-5 mb-6" data-testid="admin-storage-widget">
+                <div className="flex flex-wrap items-center justify-between mb-3">
+                  <h3 className="font-display font-bold text-lg flex items-center gap-2">
+                    <Database className="w-5 h-5" /> Хранилище (GridFS)
+                  </h3>
+                  <span className="text-sm text-muted-foreground" data-testid="admin-storage-total">
+                    Всего: <strong>{fmtBytes(storage.total_bytes)}</strong> · {storage.total_files} файлов
+                  </span>
+                </div>
+                {/* Stacked bar */}
+                <div className="flex h-3 w-full rounded-full overflow-hidden mb-4" aria-hidden="true">
+                  {storage.by_kind.map((k) => (
+                    <div
+                      key={k.kind}
+                      title={`${KIND_LABELS[k.kind] || k.kind} — ${fmtBytes(k.bytes)}`}
+                      style={{ width: storage.total_bytes ? `${(k.bytes / storage.total_bytes) * 100}%` : 0 }}
+                      className={`${KIND_COLORS[k.kind] || KIND_COLORS.other} transition-all`}
+                    />
+                  ))}
+                </div>
+                {/* Per-kind table */}
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-2 text-sm">
+                  {storage.by_kind.map((k) => (
+                    <div key={k.kind} data-testid={`storage-row-${k.kind}`} className="flex items-center justify-between py-1 border-b border-border/50">
+                      <span className="flex items-center gap-2 text-muted-foreground">
+                        <span className={`w-2 h-2 rounded-full ${KIND_COLORS[k.kind] || KIND_COLORS.other}`} />
+                        {KIND_LABELS[k.kind] || k.kind}
+                      </span>
+                      <span className="text-foreground">
+                        <span className="text-muted-foreground">{k.files}</span>
+                        <span className="mx-1.5 text-muted-foreground">·</span>
+                        <span className="font-medium">{fmtBytes(k.bytes)}</span>
+                      </span>
+                    </div>
+                  ))}
+                </div>
+                {storage.by_kind.length === 0 && (
+                  <p className="text-sm text-muted-foreground text-center py-4">Файлов пока нет.</p>
+                )}
+              </div>
+            )}
 
             <div className="bg-card border border-border rounded-2xl p-5">
               <div className="flex flex-wrap gap-3 items-center justify-between mb-4">
