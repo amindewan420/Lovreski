@@ -438,7 +438,7 @@ export default function AdminPage() {
                   </div>
                 </div>
                 <div className="mt-3 flex flex-wrap gap-2">
-                  <button data-testid={`report-view-${r.target_user}`} onClick={() => nav(`/u/${r.target_user}`)} className="btn-pill bg-muted text-xs !py-1.5 !px-3">👁 Профиль</button>
+                  <button data-testid={`report-view-${r.target_user}`} onClick={() => nav(`/profile/${r.target_user}`)} className="btn-pill bg-muted text-xs !py-1.5 !px-3">👁 Профиль</button>
                   <button data-testid={`report-warn-${r.target_user}`} onClick={() => { setModAction({ kind: "warn", user_id: r.target_user, user_name: r.user?.name }); setModReason(r.reasons?.[0] || ""); }} className="btn-pill bg-amber-500 text-white text-xs !py-1.5 !px-3"><AlertTriangle className="w-3.5 h-3.5 mr-1" /> Предупредить</button>
                   <button data-testid={`report-ban-${r.target_user}`} onClick={() => { setModAction({ kind: "ban", user_id: r.target_user, user_name: r.user?.name }); setModDays(7); setModReason(r.reasons?.[0] || ""); }} className="btn-pill bg-orange-500 text-white text-xs !py-1.5 !px-3"><Ban className="w-3.5 h-3.5 mr-1" /> Бан 7 дн.</button>
                   <button data-testid={`report-deactivate-${r.target_user}`} onClick={() => { setModAction({ kind: "deactivate", user_id: r.target_user, user_name: r.user?.name }); setModReason(r.reasons?.[0] || ""); }} className="btn-pill bg-rose-500 text-white text-xs !py-1.5 !px-3"><UserX className="w-3.5 h-3.5 mr-1" /> Навсегда</button>

@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { api } from "@/lib/api";
 import { MobileShell } from "@/components/lovreski/Shell";
+import { MatchCelebration } from "@/components/lovreski/MatchCelebration";
 import { motion, AnimatePresence, useMotionValue, useTransform } from "framer-motion";
 import { Heart, X, Star, MessageCircle, MapPin, ShieldCheck, Crown } from "lucide-react";
 import { toast } from "sonner";
@@ -55,6 +56,7 @@ const SwipeCard = ({ user, onSwipe, top }) => {
 export default function DiscoverPage() {
   const [feed, setFeed] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [matchUser, setMatchUser] = useState(null);
 
   const load = async () => {
     try {
@@ -72,7 +74,7 @@ export default function DiscoverPage() {
     try {
       if (kind === "like") {
         const { data } = await api.post(`/like/${u.user_id}`);
-        if (data.match) toast.success(`✨ Взаимная симпатия с ${u.name}!`);
+        if (data.match) setMatchUser(data.target || u);
       } else {
         await api.post(`/pass/${u.user_id}`);
       }
@@ -113,6 +115,9 @@ export default function DiscoverPage() {
           <Heart className="w-7 h-7 fill-current" />
         </button>
       </div>
+      <AnimatePresence>
+        {matchUser && <MatchCelebration matchUser={matchUser} onClose={() => setMatchUser(null)} />}
+      </AnimatePresence>
     </MobileShell>
   );
 }

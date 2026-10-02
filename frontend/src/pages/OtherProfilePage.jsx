@@ -6,6 +6,8 @@ import {
   Languages, Ruler, ShieldCheck, Crown, Circle, Cigarette, Wine, Baby, Target, Users2,
 } from "lucide-react";
 import { toast } from "sonner";
+import { AnimatePresence } from "framer-motion";
+import { MatchCelebration } from "@/components/lovreski/MatchCelebration";
 import { INTEREST_CATEGORIES, GENDER_OPTIONS } from "@/lib/profileConstants";
 
 const cmToFtIn = (cm) => {
@@ -34,6 +36,7 @@ export default function OtherProfilePage() {
   const nav = useNavigate();
   const [p, setP] = useState(null);
   const [photoIdx, setPhotoIdx] = useState(0);
+  const [matchUser, setMatchUser] = useState(null);
 
   useEffect(() => {
     (async () => {
@@ -45,7 +48,11 @@ export default function OtherProfilePage() {
   if (!p) return <div className="min-h-screen flex items-center justify-center">Загрузка...</div>;
 
   const doLike = async () => {
-    try { const { data } = await api.post(`/like/${id}`); toast.success(data.match ? "Взаимная симпатия!" : "Симпатия отправлена"); }
+    try {
+      const { data } = await api.post(`/like/${id}`);
+      if (data.match) setMatchUser(data.target || p);
+      else toast.success("Симпатия отправлена");
+    }
     catch { toast.error("Ошибка"); }
   };
   const doReport = async () => {
@@ -156,6 +163,9 @@ export default function OtherProfilePage() {
           <button data-testid="pp-msg" onClick={() => nav(`/chats/${id}`)} className="flex-1 btn-pill bg-foreground text-background"><MessageCircle className="w-4 h-4 mr-1" /> Написать</button>
         </div>
       </div>
+      <AnimatePresence>
+        {matchUser && <MatchCelebration matchUser={matchUser} onClose={() => setMatchUser(null)} />}
+      </AnimatePresence>
     </div>
   );
 }

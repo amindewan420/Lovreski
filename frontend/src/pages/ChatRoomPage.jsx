@@ -334,7 +334,7 @@ export default function ChatRoomPage() {
                 <img src={other.photos?.[0]} alt="" className="w-10 h-10 rounded-full object-cover" />
                 {other.online && <span className="absolute bottom-0 right-0 w-2.5 h-2.5 rounded-full bg-emerald-500 border-2 border-white" />}
               </div>
-              <div className="flex-1 min-w-0" onClick={() => nav(`/u/${other.user_id}`)}>
+              <div className="flex-1 min-w-0" onClick={() => nav(`/profile/${other.user_id}`)}>
                 <p className="font-semibold text-slate-900 truncate no-translate">{other.name}, {other.age}</p>
                 <p className="text-[11px] text-emerald-600">
                   {typingPeer ? t("chat.typing") : (other.online ? t("chat.online") : t("chat.recent"))}

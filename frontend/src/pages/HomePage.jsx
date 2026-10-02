@@ -3,6 +3,8 @@ import { useAuth } from "@/context/AuthContext";
 import { api } from "@/lib/api";
 import { MobileShell } from "@/components/lovreski/Shell";
 import { ProfileCard } from "@/components/lovreski/ProfileCard";
+import { MatchCelebration } from "@/components/lovreski/MatchCelebration";
+import { AnimatePresence } from "framer-motion";
 import { Search, Bell, SlidersHorizontal, Download, X } from "lucide-react";
 import { toast } from "sonner";
 import { useNavigate } from "react-router-dom";
@@ -28,6 +30,7 @@ export default function HomePage() {
   const nav = useNavigate();
   const [feed, setFeed] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [matchUser, setMatchUser] = useState(null);
   const [showInstall, setShowInstall] = useState(() => shouldShowInstallBanner());
   const [deferred, setDeferred] = useState(null);
 
@@ -71,7 +74,7 @@ export default function HomePage() {
     try {
       const { data } = await api.post(`/like/${u.user_id}`);
       setFeed((f) => f.filter((x) => x.user_id !== u.user_id));
-      if (data.match) toast.success(`✨ У вас взаимная симпатия с ${u.name}!`);
+      if (data.match) setMatchUser(data.target || u);
       else toast.success(`Симпатия отправлена ${u.name}`);
     } catch { toast.error("Ошибка"); }
   };
@@ -162,6 +165,9 @@ export default function HomePage() {
           </div>
         )}
       </div>
+      <AnimatePresence>
+        {matchUser && <MatchCelebration matchUser={matchUser} onClose={() => setMatchUser(null)} />}
+      </AnimatePresence>
     </MobileShell>
   );
 }
