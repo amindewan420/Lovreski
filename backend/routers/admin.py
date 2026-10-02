@@ -10,6 +10,7 @@ from server import (
     _push_notification, encrypt_str, decrypt_str, mask_phone,
     _get_admin_sbp_phone,
     _compress_image_data_url, gridfs_put, gridfs_url, store_data_url_in_gridfs,
+    sign_file_url,
     AdminPaymentAction, COIN_PACKAGES,
 )
 
@@ -74,15 +75,25 @@ async def admin_storage(_: dict = Depends(require_admin)):
     }
 
 
+def _sign_receipt_urls(rows: list) -> list:
+    """Pre-sign receipt_data_url on a list of admin-facing docs so the admin
+    panel can render them without extra round-trips."""
+    for r in rows:
+        u = r.get("receipt_data_url")
+        if isinstance(u, str) and u.startswith("/api/files/"):
+            r["receipt_data_url"] = sign_file_url(u)
+    return rows
+
+
 @api.get("/admin/support/pending")
 async def admin_pending(_: dict = Depends(require_admin)):
     subs = await db.receipt_submissions.find({"status": "pending"}, {"_id": 0}).sort("created_at", -1).to_list(200)
-    return subs
+    return _sign_receipt_urls(subs)
 
 @api.get("/admin/support/history")
 async def admin_history(_: dict = Depends(require_admin)):
     subs = await db.receipt_submissions.find({"status": {"$ne": "pending"}}, {"_id": 0}).sort("created_at", -1).to_list(200)
-    return subs
+    return _sign_receipt_urls(subs)
 
 @api.post("/admin/support/{submission_id}/approve")
 async def admin_approve_receipt(submission_id: str, body: AdminApproveBody, admin: dict = Depends(require_admin)):
@@ -202,7 +213,7 @@ async def submit_refund(body: RefundBody, request: Request, user: dict = Depends
 async def admin_refunds(status: str = "all", _: dict = Depends(require_admin)):
     q = {} if status == "all" else {"status": status}
     r = await db.refund_requests.find(q, {"_id": 0}).sort("created_at", -1).to_list(200)
-    return r
+    return _sign_receipt_urls(r)
 
 @api.post("/admin/refunds/{refund_id}/decide")
 async def admin_refund_decide(refund_id: str, body: dict, admin: dict = Depends(require_admin)):

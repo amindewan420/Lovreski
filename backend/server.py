@@ -19,6 +19,9 @@ import bcrypt
 import jwt as pyjwt
 import httpx
 import qrcode
+import hmac
+import re
+import hashlib
 from cryptography.fernet import Fernet, InvalidToken
 from pathlib import Path
 from pydantic import BaseModel, Field, EmailStr, ConfigDict
@@ -94,6 +97,34 @@ def make_jwt(user_id: str, is_admin: bool = False) -> str:
 
 def decode_jwt(token: str) -> dict:
     return pyjwt.decode(token, JWT_SECRET, algorithms=[JWT_ALG])
+
+# ── Signed file URLs (short-lived, HMAC-based) ──
+FILE_URL_TTL_SECONDS = int(os.environ.get('FILE_URL_TTL_SECONDS', '600'))
+_FILE_SIGN_SECRET = (os.environ.get('FILE_SIGN_SECRET') or JWT_SECRET).encode()
+_FILE_URL_RE = re.compile(r"/api/files/([0-9a-f]{24})")
+
+def sign_file_url(url: Optional[str], ttl: int = FILE_URL_TTL_SECONDS) -> Optional[str]:
+    """Turn a plain /api/files/<id> URL into a short-lived signed URL.
+    Non-file URLs are returned unchanged."""
+    if not url:
+        return url
+    m = _FILE_URL_RE.search(url)
+    if not m:
+        return url
+    exp = int(datetime.now(timezone.utc).timestamp()) + ttl
+    sig = hmac.new(_FILE_SIGN_SECRET, f"{m.group(1)}.{exp}".encode(), hashlib.sha256).hexdigest()[:32]
+    return f"{url}?exp={exp}&sig={sig}"
+
+def verify_file_sig(file_id: str, exp: Optional[int], sig: Optional[str]) -> bool:
+    if not exp or not sig:
+        return False
+    try:
+        if int(exp) < int(datetime.now(timezone.utc).timestamp()):
+            return False
+    except (TypeError, ValueError):
+        return False
+    good = hmac.new(_FILE_SIGN_SECRET, f"{file_id}.{exp}".encode(), hashlib.sha256).hexdigest()[:32]
+    return hmac.compare_digest(good, sig)
 
 def haversine_km(lat1, lon1, lat2, lon2):
     if None in (lat1, lon1, lat2, lon2):
@@ -535,6 +566,9 @@ def _decorate_msg(m: dict, viewer_id: str, viewer_is_premium: bool) -> dict:
     are hidden unless the viewer has Premium. Free users see the message exists
     but content is masked with an upgrade prompt."""
     m = {k: v for k, v in m.items() if k != '_id'}
+    # Media is served via short-lived signed URLs (files router enforces access).
+    if m.get('media_url'):
+        m['media_url'] = sign_file_url(m['media_url'])
     if m.get('from_user') != viewer_id and not viewer_is_premium:
         # Count position of this message among partner's messages in the chat
         pass  # handled in bulk below for efficiency
@@ -597,6 +631,9 @@ async def _do_send_message(sender: dict, other_id: str, body: MessageBody) -> di
     }
     await db.messages.insert_one(msg)
     msg.pop('_id', None)
+    # Sign media_url copies for transport (DB keeps the plain URL).
+    if msg.get('media_url'):
+        msg['media_url'] = sign_file_url(msg['media_url'])
     # Broadcast to both participants via WS (fire-and-forget)
     try:
         await ws_manager.broadcast_message(msg)
@@ -838,7 +875,6 @@ I18N_BASE_RU = {
     "lang.region.asia": "🌏 Азия", "lang.region.americas": "🌎 Америка",
 }
 
-import hashlib
 I18N_VERSION = hashlib.sha256(_json.dumps(I18N_BASE_RU, sort_keys=True, ensure_ascii=False).encode()).hexdigest()[:12]
 
 

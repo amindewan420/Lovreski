@@ -8,7 +8,7 @@ from server import (
     api, db, logger, now_utc, iso, fcm, ws_manager,
     get_current_user, user_public,
     chat_id, _decorate_msg, _do_send_message, _compress_image_data_url,
-    gridfs_put, gridfs_url, store_data_url_in_gridfs,
+    gridfs_put, gridfs_url, store_data_url_in_gridfs, sign_file_url,
     MessageBody, GIFT_CATALOG, MSG_COST, FREE_MSGS,
 )
 
@@ -83,6 +83,9 @@ async def get_messages(other_id: str, user: dict = Depends(get_current_user), li
                 m['locked'] = False
         else:
             m['locked'] = False
+        # Media is served via short-lived signed URLs (files router enforces access)
+        if m.get('media_url'):
+            m['media_url'] = sign_file_url(m['media_url'])
     return msgs
 
 @api.delete("/messages/{message_id}")
