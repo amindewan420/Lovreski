@@ -6,7 +6,7 @@ import uuid
 from server import (
     api, db, logger, now_utc, iso,
     get_current_user, user_public, calc_age,
-    _compress_image_data_url, gridfs_put, gridfs_url, store_data_url_in_gridfs,
+    _compress_image_data_url, storage_put, store_data_url_in_gridfs,
     _verify_gender_from_photo, _profile_completion,
     ProfileUpdate,
 )
@@ -51,11 +51,10 @@ async def upload_photo(body: PhotoBody, user: dict = Depends(get_current_user)):
     if not verdict.get('ok'):
         raise HTTPException(status_code=422, detail=verdict.get('message') or "Photo rejected")
 
-    # Persist to GridFS instead of base64
+    # Persist to storage (Cloudinary when configured, else GridFS)
     if compressed_bytes:
-        fid = await gridfs_put(compressed_bytes, f"photo_{uuid.uuid4().hex[:12]}.jpg", "image/jpeg",
-                               {"owner_id": user['user_id'], "kind": "profile_photo"})
-        stored_url = gridfs_url(fid)
+        stored_url = await storage_put(compressed_bytes, f"photo_{uuid.uuid4().hex[:12]}.jpg", "image/jpeg",
+                                       {"owner_id": user['user_id'], "kind": "profile_photo"})
     else:
         stored_url = await store_data_url_in_gridfs(compressed_url, user['user_id'], "profile_photo")
     photos.append(stored_url)

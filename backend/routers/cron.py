@@ -49,18 +49,22 @@ async def collect_referenced_file_ids() -> set:
 
 
 async def run_storage_cleanup(retention_days: Optional[int] = None) -> dict:
-    """Delete orphaned GridFS files older than `retention_days` days.
+    """Delete orphaned files older than `retention_days` days from BOTH stores.
 
     Orphan = not referenced by any user photo, message media, receipt, or
     refund attachment. Deleted-message media becomes orphaned because the
-    tombstone flow nulls `media_url`.
+    tombstone flow nulls `media_url`. Cloudinary assets are destroyed via the
+    API (then the cloud_files doc is removed); GridFS files are deleted from
+    fs.files + fs.chunks.
     """
     days = retention_days or DEFAULT_RETENTION_DAYS
     cutoff = now_utc() - timedelta(days=days)
     referenced = await collect_referenced_file_ids()
+    referenced_strs = {str(x) for x in referenced}
 
     deleted_files = 0
     freed_bytes = 0
+    # ── GridFS orphans ──
     async for f in db["fs.files"].find({"uploadDate": {"$lt": cutoff}}, {"_id": 1, "length": 1, "metadata": 1}):
         fid = f["_id"]
         if fid in referenced:
@@ -72,7 +76,21 @@ async def run_storage_cleanup(retention_days: Optional[int] = None) -> dict:
             deleted_files += 1
             freed_bytes += size
         except Exception as e:
-            logger.warning(f"[storage-cleanup] failed deleting {fid}: {e}")
+            logger.warning(f"[storage-cleanup] failed deleting gridfs {fid}: {e}")
+
+    # ── Cloudinary orphans ──
+    import storage as _cloud
+    async for c in db.cloud_files.find({"created_at": {"$lt": iso(cutoff)}}, {"_id": 1, "bytes": 1, "cloudinary_public_id": 1, "resource_type": 1, "access_type": 1}):
+        cid = c["_id"]
+        if cid in referenced_strs:
+            continue
+        ok = await _cloud.destroy(c["cloudinary_public_id"], c["resource_type"], c["access_type"])
+        if ok:
+            await db.cloud_files.delete_one({"_id": cid})
+            deleted_files += 1
+            freed_bytes += int(c.get("bytes") or 0)
+        else:
+            logger.warning(f"[storage-cleanup] cloudinary destroy failed for {cid}, doc kept")
 
     report = {
         "run_id": f"clean_{uuid.uuid4().hex[:12]}",

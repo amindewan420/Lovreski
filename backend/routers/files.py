@@ -1,5 +1,11 @@
 """File endpoints — /files/* with signed-URL access control.
 
+Resolution order for GET /api/files/<id>:
+1. cloud_files (Cloudinary) — access check, then 302-redirect to the Cloudinary
+   delivery URL (public for profile photos, Cloudinary-signed authenticated
+   delivery for private kinds).
+2. GridFS fs.files (legacy / fallback storage) — streamed through the API.
+
 Access model:
 - profile_photo            → public (needed for feed/profile rendering)
 - chat_* / receipts / other → require EITHER a valid short-lived signed URL
@@ -10,7 +16,7 @@ Access model:
 from fastapi import HTTPException, Depends, Header, Cookie
 from fastapi import UploadFile
 from fastapi import File as UploadFileParam
-from fastapi.responses import StreamingResponse
+from fastapi.responses import StreamingResponse, RedirectResponse
 from bson import ObjectId as _ObjectId
 from typing import Optional
 import io
@@ -18,15 +24,16 @@ import uuid
 import base64
 from server import (
     api, db, logger, now_utc, iso,
-    get_current_user, gridfs_bucket, gridfs_put, gridfs_url,
+    get_current_user, gridfs_bucket, storage_put,
     sign_file_url, verify_file_sig,
     _compress_image_data_url,
 )
+import storage as _cloud
 
 PUBLIC_KINDS = {"profile_photo"}
 
 
-async def _load_meta(oid: _ObjectId) -> Optional[dict]:
+async def _load_gridfs_meta(oid: _ObjectId) -> Optional[dict]:
     return await db["fs.files"].find_one({"_id": oid}, {"metadata": 1, "length": 1, "filename": 1})
 
 
@@ -42,6 +49,22 @@ async def _is_chat_participant(user_id: str, file_id: str) -> bool:
     return bool(msg and user_id in (msg.get("participants") or []))
 
 
+async def _check_access(file_id: str, kind: str, owner: Optional[str],
+                        exp: Optional[int], sig: Optional[str],
+                        authorization: Optional[str], session_token: Optional[str]) -> bool:
+    """Shared access gate for both storage backends."""
+    if kind in PUBLIC_KINDS or verify_file_sig(file_id, exp, sig):
+        return True
+    user = await _try_auth(authorization, session_token)
+    if not user:
+        return False
+    if user.get("is_admin") or (owner and owner == user["user_id"]):
+        return True
+    if kind.startswith("chat_") and await _is_chat_participant(user["user_id"], file_id):
+        return True
+    return False
+
+
 @api.get("/files/{file_id}")
 async def get_file(
     file_id: str,
@@ -50,29 +73,32 @@ async def get_file(
     authorization: Optional[str] = Header(None),
     session_token: Optional[str] = Cookie(None),
 ):
-    """Stream a file from GridFS with its stored MIME type.
-    Public kinds (profile photos) are open; everything else needs a valid
-    signed URL or an authorized session (owner / admin / chat participant)."""
+    """Serve a file: Cloudinary-backed docs 302-redirect to the CDN delivery URL;
+    GridFS-backed docs stream through the API. Access rules are identical."""
+    # 1) Cloudinary-backed file?
+    cdoc = await db.cloud_files.find_one({"_id": file_id}, {"cloudinary_public_id": 1, "resource_type": 1, "access_type": 1, "kind": 1, "owner_id": 1, "content_type": 1, "format": 1})
+    if cdoc:
+        if not await _check_access(file_id, cdoc.get("kind") or "other", cdoc.get("owner_id"), exp, sig, authorization, session_token):
+            raise HTTPException(status_code=403, detail="Access denied")
+        url = _cloud.delivery_url(
+            cdoc["cloudinary_public_id"], cdoc["resource_type"], cdoc["access_type"],
+            fmt=cdoc.get("format") or "", content_type=cdoc.get("content_type") or "",
+        )
+        return RedirectResponse(url, status_code=302)
+
+    # 2) GridFS-backed file (legacy / fallback storage)
     try:
         oid = _ObjectId(file_id)
     except Exception:
         raise HTTPException(status_code=400, detail="Bad file id")
-    doc = await _load_meta(oid)
+    doc = await _load_gridfs_meta(oid)
     if not doc:
         raise HTTPException(status_code=404, detail="File not found")
     meta = doc.get("metadata") or {}
     kind = meta.get("kind") or ""
     owner = meta.get("owner_id")
 
-    allowed = kind in PUBLIC_KINDS or verify_file_sig(file_id, exp, sig)
-    if not allowed:
-        user = await _try_auth(authorization, session_token)
-        if user:
-            if user.get("is_admin") or (owner and owner == user["user_id"]):
-                allowed = True
-            elif kind.startswith("chat_") and await _is_chat_participant(user["user_id"], file_id):
-                allowed = True
-    if not allowed:
+    if not await _check_access(file_id, kind, owner, exp, sig, authorization, session_token):
         raise HTTPException(status_code=403, detail="Access denied")
 
     content_type = meta.get("content_type") or "application/octet-stream"
@@ -105,16 +131,23 @@ async def get_signed_file_url(file_id: str, user: dict = Depends(get_current_use
     profile_photo → returns the plain URL (public anyway).
     chat_*        → participants of a message referencing the file, or admin.
     receipts/other → owner or admin only."""
-    try:
-        oid = _ObjectId(file_id)
-    except Exception:
-        raise HTTPException(status_code=400, detail="Bad file id")
-    doc = await _load_meta(oid)
-    if not doc:
-        raise HTTPException(status_code=404, detail="File not found")
-    meta = doc.get("metadata") or {}
-    kind = meta.get("kind") or ""
-    owner = meta.get("owner_id")
+    kind = "other"
+    owner = None
+    cdoc = await db.cloud_files.find_one({"_id": file_id}, {"kind": 1, "owner_id": 1})
+    if cdoc:
+        kind = cdoc.get("kind") or "other"
+        owner = cdoc.get("owner_id")
+    else:
+        try:
+            oid = _ObjectId(file_id)
+        except Exception:
+            raise HTTPException(status_code=400, detail="Bad file id")
+        doc = await _load_gridfs_meta(oid)
+        if not doc:
+            raise HTTPException(status_code=404, detail="File not found")
+        meta = doc.get("metadata") or {}
+        kind = meta.get("kind") or ""
+        owner = meta.get("owner_id")
     plain = f"/api/files/{file_id}"
 
     if kind in PUBLIC_KINDS:
@@ -146,5 +179,6 @@ async def upload_file(file: UploadFile = UploadFileParam(...), user: dict = Depe
         except Exception:
             pass  # store original on failure
     filename = f"{file.filename or 'file'}_{uuid.uuid4().hex[:8]}"
-    file_id = await gridfs_put(raw, filename, content_type, {"owner_id": user['user_id'], "orig_name": file.filename})
-    return {"file_id": file_id, "url": gridfs_url(file_id), "content_type": content_type, "size": len(raw)}
+    url = await storage_put(raw, filename, content_type, {"owner_id": user['user_id'], "orig_name": file.filename})
+    file_id = url.rsplit("/", 1)[-1]
+    return {"file_id": file_id, "url": url, "content_type": content_type, "size": len(raw)}

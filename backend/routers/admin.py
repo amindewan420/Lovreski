@@ -9,10 +9,12 @@ from server import (
     get_current_user, require_admin, user_public,
     _push_notification, encrypt_str, decrypt_str, mask_phone,
     _get_admin_sbp_phone,
-    _compress_image_data_url, gridfs_put, gridfs_url, store_data_url_in_gridfs,
+    _compress_image_data_url, gridfs_put, gridfs_url, store_data_url_in_gridfs, storage_put,
+    gridfs_bucket,
     sign_file_url,
     AdminPaymentAction, COIN_PACKAGES,
 )
+import storage as _cloud
 
 class AdminApproveBody(BaseModel):
     coins: int = Field(gt=0, le=100000)
@@ -67,12 +69,86 @@ async def admin_storage(_: dict = Depends(require_admin)):
         c = by_ct.setdefault(ct_bucket, {"content_type": ct_bucket, "files": 0, "bytes": 0})
         c["files"] += files
         c["bytes"] += size
+    gridfs_files, gridfs_bytes = total_files, total_bytes
+    # Merge Cloudinary-backed files (cloud_files collection)
+    c_rows = await db.cloud_files.aggregate([
+        {"$group": {"_id": "$kind", "files": {"$sum": 1}, "bytes": {"$sum": "$bytes"}}},
+    ]).to_list(200)
+    cloud_files_n, cloud_bytes_n = 0, 0
+    for r in c_rows:
+        kind = r["_id"] or "other"
+        files = r["files"]
+        size = int(r["bytes"] or 0)
+        total_files += files
+        total_bytes += size
+        cloud_files_n += files
+        cloud_bytes_n += size
+        k = by_kind.setdefault(kind, {"kind": kind, "files": 0, "bytes": 0})
+        k["files"] += files
+        k["bytes"] += size
     return {
         "total_files": total_files,
         "total_bytes": total_bytes,
         "by_kind": sorted(by_kind.values(), key=lambda x: x["bytes"], reverse=True),
         "by_content_type": sorted(by_ct.values(), key=lambda x: x["bytes"], reverse=True),
+        "stores": {
+            "gridfs": {"files": gridfs_files, "bytes": gridfs_bytes},
+            "cloudinary": {"files": cloud_files_n, "bytes": cloud_bytes_n, "configured": _cloud.is_configured()},
+        },
     }
+
+
+@api.post("/admin/migrate/cloudinary")
+async def admin_migrate_cloudinary(admin: dict = Depends(require_admin)):
+    """One-time migration of all GridFS files to Cloudinary.
+    Keeps the SAME /api/files/<id> URL working by writing a cloud_files doc
+    keyed by the old GridFS id — no reference rewriting needed. On success the
+    GridFS copy (fs.files + fs.chunks) is removed."""
+    if not _cloud.is_configured():
+        raise HTTPException(status_code=503, detail="Cloudinary not configured — set CLOUDINARY_* env vars first")
+    migrated = failed = skipped = 0
+    cursor = db["fs.files"].find({}, {"metadata": 1, "filename": 1, "length": 1})
+    async for f in cursor:
+        fid = str(f["_id"])
+        if await db.cloud_files.find_one({"_id": fid}):
+            skipped += 1
+            continue
+        meta = f.get("metadata") or {}
+        kind = meta.get("kind") or "other"
+        ct = meta.get("content_type") or "application/octet-stream"
+        try:
+            gout = await gridfs_bucket.open_download_stream(f["_id"])
+            data = await gout.read()
+            try:
+                await gout.close()
+            except Exception:
+                pass
+            up = await _cloud.upload_bytes(data, f.get("filename") or fid, ct, meta.get("owner_id"), kind)
+            await db.cloud_files.insert_one({
+                "_id": fid,
+                "cloudinary_public_id": up["public_id"],
+                "resource_type": up["resource_type"],
+                "access_type": up["type"],
+                "bytes": up["bytes"],
+                "format": up["format"],
+                "content_type": ct,
+                "filename": f.get("filename"),
+                "kind": kind,
+                "owner_id": meta.get("owner_id"),
+                "migrated_from": "gridfs",
+                "created_at": iso(now_utc()),
+            })
+            await db["fs.chunks"].delete_many({"files_id": f["_id"]})
+            await db["fs.files"].delete_one({"_id": f["_id"]})
+            migrated += 1
+        except Exception as e:
+            logger.warning(f"[migrate-cloudinary] {fid} failed: {e}")
+            failed += 1
+    await db.admin_audit.insert_one({
+        "admin_id": admin['user_id'], "action": "cloudinary_migrate",
+        "migrated": migrated, "failed": failed, "skipped": skipped, "at": iso(now_utc()),
+    })
+    return {"ok": True, "migrated": migrated, "failed": failed, "skipped": skipped}
 
 
 def _sign_receipt_urls(rows: list) -> list:
@@ -187,9 +263,8 @@ async def submit_refund(body: RefundBody, request: Request, user: dict = Depends
         try:
             _, compressed_bytes = _compress_image_data_url(receipt, max_dim=1800, quality=85)
             if compressed_bytes:
-                fid = await gridfs_put(compressed_bytes, f"refund_{uuid.uuid4().hex[:10]}.jpg", "image/jpeg",
-                                        {"owner_id": user['user_id'], "kind": "refund_receipt"})
-                receipt_url = gridfs_url(fid)
+                receipt_url = await storage_put(compressed_bytes, f"refund_{uuid.uuid4().hex[:10]}.jpg", "image/jpeg",
+                                                {"owner_id": user['user_id'], "kind": "refund_receipt"})
             else:
                 receipt_url = await store_data_url_in_gridfs(receipt, user['user_id'], "refund_receipt")
         except Exception:

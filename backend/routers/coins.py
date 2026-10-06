@@ -8,7 +8,7 @@ from server import (
     api, db, logger, now_utc, iso, fcm,
     get_current_user,
     _get_admin_sbp_phone, _build_sbp_link, _qr_png_base64, _try_auto_confirm,
-    _compress_image_data_url, gridfs_put, gridfs_url, store_data_url_in_gridfs,
+    _compress_image_data_url, gridfs_put, gridfs_url, store_data_url_in_gridfs, storage_put,
     COIN_PACKAGES, AUTO_CREDIT_ENABLED, MOCK_CONFIRM_DELAY_SECONDS,
     PurchaseBody,
 )
@@ -181,9 +181,8 @@ async def submit_receipt(body: ReceiptBody, user: dict = Depends(get_current_use
         try:
             _, compressed_bytes = _compress_image_data_url(receipt, max_dim=1800, quality=85)
             if compressed_bytes:
-                fid = await gridfs_put(compressed_bytes, f"receipt_{uuid.uuid4().hex[:10]}.jpg", "image/jpeg",
-                                        {"owner_id": user['user_id'], "kind": "support_receipt"})
-                receipt_url = gridfs_url(fid)
+                receipt_url = await storage_put(compressed_bytes, f"receipt_{uuid.uuid4().hex[:10]}.jpg", "image/jpeg",
+                                                {"owner_id": user['user_id'], "kind": "support_receipt"})
             else:
                 receipt_url = await store_data_url_in_gridfs(receipt, user['user_id'], "support_receipt")
         except Exception:

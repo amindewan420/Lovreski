@@ -74,6 +74,7 @@ export default function AdminPage() {
   const [storage, setStorage] = useState(null);
   const [cleanupLog, setCleanupLog] = useState([]);
   const [cleaning, setCleaning] = useState(false);
+  const [migrating, setMigrating] = useState(false);
 
   useEffect(() => {
     if (!user) return;
@@ -121,6 +122,20 @@ export default function AdminPage() {
     } catch (e) {
       toast.error(e.response?.data?.detail || "Ошибка очистки");
     } finally { setCleaning(false); }
+  };
+
+  // ─── One-time GridFS → Cloudinary migration ─────────────────────────
+  const runMigrate = async () => {
+    if (!window.confirm("Перенести ВСЕ файлы из GridFS в Cloudinary? Старые ссылки продолжат работать.")) return;
+    setMigrating(true);
+    try {
+      const { data } = await api.post("/admin/migrate/cloudinary");
+      toast.success(`Миграция завершена: ${data.migrated} перенесено, ${data.skipped} уже были, ошибок: ${data.failed}`);
+      const st = await api.get("/admin/storage");
+      setStorage(st.data);
+    } catch (e) {
+      toast.error(e.response?.data?.detail || "Ошибка миграции");
+    } finally { setMigrating(false); }
   };
 
   // ─── Deduct coins ───────────────────────────────────────────────────
@@ -317,15 +332,42 @@ export default function AdminPage() {
                       return <>Последняя очистка: {dt.toLocaleDateString("ru")} {dt.toLocaleTimeString("ru", { hour: "2-digit", minute: "2-digit" })} · удалено {r.deleted_files} · освобождено {fmtBytes(r.freed_bytes)}</>;
                     })() : "Автоочистка: ежедневно в 03:00 UTC (файлы старше 7 дней)"}
                   </div>
-                  <button
-                    data-testid="btn-storage-cleanup"
-                    onClick={runCleanup}
-                    disabled={cleaning}
-                    className="px-4 py-1.5 rounded-full text-xs font-semibold bg-muted hover:bg-muted/70 text-foreground disabled:opacity-50 flex items-center gap-1.5"
-                  >
-                    <Trash2 className="w-3.5 h-3.5" /> {cleaning ? "Очистка..." : "Очистить сейчас"}
-                  </button>
+                  <div className="flex items-center gap-2">
+                    <button
+                      data-testid="btn-storage-cleanup"
+                      onClick={runCleanup}
+                      disabled={cleaning}
+                      className="px-4 py-1.5 rounded-full text-xs font-semibold bg-muted hover:bg-muted/70 text-foreground disabled:opacity-50 flex items-center gap-1.5"
+                    >
+                      <Trash2 className="w-3.5 h-3.5" /> {cleaning ? "Очистка..." : "Очистить сейчас"}
+                    </button>
+                  </div>
                 </div>
+
+                {/* Storage backends (GridFS / Cloudinary) + migration */}
+                {storage.stores && (
+                  <div className="mt-3 pt-3 border-t border-border/60" data-testid="storage-stores">
+                    <div className="flex flex-wrap items-center justify-between gap-3">
+                      <div className="text-xs text-muted-foreground">
+                        Хранилища: <strong>GridFS</strong> {storage.stores.gridfs.files} файлов · {fmtBytes(storage.stores.gridfs.bytes)}
+                        <span className="mx-1.5">·</span>
+                        <strong>Cloudinary</strong> {storage.stores.cloudinary.configured
+                          ? `${storage.stores.cloudinary.files} файлов · ${fmtBytes(storage.stores.cloudinary.bytes)}`
+                          : <span className="text-amber-600">не настроен</span>}
+                      </div>
+                      {storage.stores.cloudinary.configured && storage.stores.gridfs.files > 0 && (
+                        <button
+                          data-testid="btn-migrate-cloudinary"
+                          disabled={migrating}
+                          onClick={runMigrate}
+                          className="px-4 py-1.5 rounded-full text-xs font-semibold bg-primary/10 text-primary hover:bg-primary/20 disabled:opacity-50"
+                        >
+                          {migrating ? "Миграция..." : "⇪ Перенести всё в Cloudinary"}
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                )}
               </div>
             )}
 

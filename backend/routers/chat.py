@@ -8,7 +8,7 @@ from server import (
     api, db, logger, now_utc, iso, fcm, ws_manager,
     get_current_user, user_public,
     chat_id, _decorate_msg, _do_send_message, _compress_image_data_url,
-    gridfs_put, gridfs_url, store_data_url_in_gridfs, sign_file_url,
+    gridfs_put, gridfs_url, store_data_url_in_gridfs, sign_file_url, storage_put,
     MessageBody, GIFT_CATALOG, MSG_COST, FREE_MSGS,
 )
 
@@ -171,9 +171,8 @@ async def upload_chat_media(body: ChatMediaBody, user: dict = Depends(get_curren
             raise HTTPException(status_code=400, detail="Ожидается изображение")
         _, compressed_bytes = _compress_image_data_url(body.data_url, max_dim=1200, quality=78)
         if compressed_bytes:
-            fid = await gridfs_put(compressed_bytes, f"chat_image_{uuid.uuid4().hex[:10]}.jpg", "image/jpeg",
-                                    {"owner_id": user['user_id'], "kind": "chat_image"})
-            media_url = gridfs_url(fid)
+            media_url = await storage_put(compressed_bytes, f"chat_image_{uuid.uuid4().hex[:10]}.jpg", "image/jpeg",
+                                          {"owner_id": user['user_id'], "kind": "chat_image"})
         else:
             media_url = await store_data_url_in_gridfs(body.data_url, user['user_id'], f"chat_{body.kind}")
     else:
