@@ -4,7 +4,7 @@ Fail-safe design: when S3_* env vars are missing or S3 is unreachable, every
 upload gracefully falls back to GridFS so the app never breaks.
 
 Timeweb S3 config:
-  S3_ENDPOINT=https://s3.timeweb.cloud
+  S3_ENDPOINT=https://s3.twcstorage.ru
   S3_BUCKET=<bucket-id>
   S3_REGION=ru-1
   S3_ACCESS_KEY_ID=<access-key>
