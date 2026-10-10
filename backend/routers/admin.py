@@ -70,19 +70,19 @@ async def admin_storage(_: dict = Depends(require_admin)):
         c["files"] += files
         c["bytes"] += size
     gridfs_files, gridfs_bytes = total_files, total_bytes
-    # Merge Cloudinary-backed files (cloud_files collection)
-    c_rows = await db.cloud_files.aggregate([
+    # Merge S3-backed files (s3_files collection)
+    c_rows = await db.s3_files.aggregate([
         {"$group": {"_id": "$kind", "files": {"$sum": 1}, "bytes": {"$sum": "$bytes"}}},
     ]).to_list(200)
-    cloud_files_n, cloud_bytes_n = 0, 0
+    s3_files_n, s3_bytes_n = 0, 0
     for r in c_rows:
         kind = r["_id"] or "other"
         files = r["files"]
         size = int(r["bytes"] or 0)
         total_files += files
         total_bytes += size
-        cloud_files_n += files
-        cloud_bytes_n += size
+        s3_files_n += files
+        s3_bytes_n += size
         k = by_kind.setdefault(kind, {"kind": kind, "files": 0, "bytes": 0})
         k["files"] += files
         k["bytes"] += size
@@ -93,24 +93,25 @@ async def admin_storage(_: dict = Depends(require_admin)):
         "by_content_type": sorted(by_ct.values(), key=lambda x: x["bytes"], reverse=True),
         "stores": {
             "gridfs": {"files": gridfs_files, "bytes": gridfs_bytes},
-            "cloudinary": {"files": cloud_files_n, "bytes": cloud_bytes_n, "configured": _cloud.is_configured()},
+            "s3": {"files": s3_files_n, "bytes": s3_bytes_n, "configured": _cloud.is_configured(),
+                   "bucket": os.environ.get("S3_BUCKET", "") if _cloud.is_configured() else ""},
         },
     }
 
 
-@api.post("/admin/migrate/cloudinary")
-async def admin_migrate_cloudinary(admin: dict = Depends(require_admin)):
-    """One-time migration of all GridFS files to Cloudinary.
-    Keeps the SAME /api/files/<id> URL working by writing a cloud_files doc
+@api.post("/admin/migrate/s3")
+async def admin_migrate_s3(admin: dict = Depends(require_admin)):
+    """One-time migration of all GridFS files to Timeweb S3.
+    Keeps the SAME /api/files/<id> URL working by writing an s3_files doc
     keyed by the old GridFS id — no reference rewriting needed. On success the
     GridFS copy (fs.files + fs.chunks) is removed."""
     if not _cloud.is_configured():
-        raise HTTPException(status_code=503, detail="Cloudinary not configured — set CLOUDINARY_* env vars first")
+        raise HTTPException(status_code=503, detail="S3 not configured — set S3_* env vars first")
     migrated = failed = skipped = 0
     cursor = db["fs.files"].find({}, {"metadata": 1, "filename": 1, "length": 1})
     async for f in cursor:
         fid = str(f["_id"])
-        if await db.cloud_files.find_one({"_id": fid}):
+        if await db.s3_files.find_one({"_id": fid}):
             skipped += 1
             continue
         meta = f.get("metadata") or {}
@@ -124,13 +125,11 @@ async def admin_migrate_cloudinary(admin: dict = Depends(require_admin)):
             except Exception:
                 pass
             up = await _cloud.upload_bytes(data, f.get("filename") or fid, ct, meta.get("owner_id"), kind)
-            await db.cloud_files.insert_one({
+            await db.s3_files.insert_one({
                 "_id": fid,
-                "cloudinary_public_id": up["public_id"],
-                "resource_type": up["resource_type"],
-                "access_type": up["type"],
+                "s3_key": up["public_id"],
+                "public_url": up["public_url"],
                 "bytes": up["bytes"],
-                "format": up["format"],
                 "content_type": ct,
                 "filename": f.get("filename"),
                 "kind": kind,
@@ -142,10 +141,10 @@ async def admin_migrate_cloudinary(admin: dict = Depends(require_admin)):
             await db["fs.files"].delete_one({"_id": f["_id"]})
             migrated += 1
         except Exception as e:
-            logger.warning(f"[migrate-cloudinary] {fid} failed: {e}")
+            logger.warning(f"[migrate-s3] {fid} failed: {e}")
             failed += 1
     await db.admin_audit.insert_one({
-        "admin_id": admin['user_id'], "action": "cloudinary_migrate",
+        "admin_id": admin['user_id'], "action": "s3_migrate",
         "migrated": migrated, "failed": failed, "skipped": skipped, "at": iso(now_utc()),
     })
     return {"ok": True, "migrated": migrated, "failed": failed, "skipped": skipped}

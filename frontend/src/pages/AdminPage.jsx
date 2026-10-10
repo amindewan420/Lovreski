@@ -124,12 +124,12 @@ export default function AdminPage() {
     } finally { setCleaning(false); }
   };
 
-  // ─── One-time GridFS → Cloudinary migration ─────────────────────────
+  // ─── One-time GridFS → S3 migration ─────────────────────────────────
   const runMigrate = async () => {
-    if (!window.confirm("Перенести ВСЕ файлы из GridFS в Cloudinary? Старые ссылки продолжат работать.")) return;
+    if (!window.confirm("Перенести ВСЕ файлы из GridFS в S3 (Timeweb)? Старые ссылки продолжат работать.")) return;
     setMigrating(true);
     try {
-      const { data } = await api.post("/admin/migrate/cloudinary");
+      const { data } = await api.post("/admin/migrate/s3");
       toast.success(`Миграция завершена: ${data.migrated} перенесено, ${data.skipped} уже были, ошибок: ${data.failed}`);
       const st = await api.get("/admin/storage");
       setStorage(st.data);
@@ -344,25 +344,25 @@ export default function AdminPage() {
                   </div>
                 </div>
 
-                {/* Storage backends (GridFS / Cloudinary) + migration */}
+                {/* Storage backends (GridFS / S3) + migration */}
                 {storage.stores && (
                   <div className="mt-3 pt-3 border-t border-border/60" data-testid="storage-stores">
                     <div className="flex flex-wrap items-center justify-between gap-3">
                       <div className="text-xs text-muted-foreground">
                         Хранилища: <strong>GridFS</strong> {storage.stores.gridfs.files} файлов · {fmtBytes(storage.stores.gridfs.bytes)}
                         <span className="mx-1.5">·</span>
-                        <strong>Cloudinary</strong> {storage.stores.cloudinary.configured
-                          ? `${storage.stores.cloudinary.files} файлов · ${fmtBytes(storage.stores.cloudinary.bytes)}`
+                        <strong>S3 (Timeweb)</strong> {storage.stores.s3?.configured
+                          ? `${storage.stores.s3.files} файлов · ${fmtBytes(storage.stores.s3.bytes)}${storage.stores.s3.bucket ? ` · bucket ${storage.stores.s3.bucket.slice(0,10)}…` : ""}`
                           : <span className="text-amber-600">не настроен</span>}
                       </div>
-                      {storage.stores.cloudinary.configured && storage.stores.gridfs.files > 0 && (
+                      {storage.stores.s3?.configured && storage.stores.gridfs.files > 0 && (
                         <button
-                          data-testid="btn-migrate-cloudinary"
+                          data-testid="btn-migrate-s3"
                           disabled={migrating}
                           onClick={runMigrate}
                           className="px-4 py-1.5 rounded-full text-xs font-semibold bg-primary/10 text-primary hover:bg-primary/20 disabled:opacity-50"
                         >
-                          {migrating ? "Миграция..." : "⇪ Перенести всё в Cloudinary"}
+                          {migrating ? "Миграция..." : "⇪ Перенести всё в S3"}
                         </button>
                       )}
                     </div>

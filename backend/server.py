@@ -450,35 +450,34 @@ def gridfs_url(file_id: str) -> str:
     """Client-facing URL for a stored file."""
     return f"/api/files/{file_id}"
 
-# ── Unified storage: Cloudinary when configured, GridFS fallback ──
+# ── Unified storage: Timeweb S3 when configured, GridFS fallback ──
 import storage as _cloud  # noqa: E402
 
 async def storage_put(content: bytes, filename: str, content_type: str, metadata: Optional[dict] = None) -> str:
     """Store raw bytes in the active storage backend and return the
-    client-facing URL (/api/files/<id>). Cloudinary when configured,
-    otherwise GridFS. On any Cloudinary failure we fall back to GridFS so
+    client-facing URL (/api/files/<id>). Timeweb S3 when configured,
+    otherwise GridFS. On any S3 failure we fall back to GridFS so
     uploads never break."""
     meta = metadata or {}
+    kind = meta.get("kind") or "other"
     if _cloud.is_configured():
         try:
-            up = await _cloud.upload_bytes(content, filename, content_type, meta.get("owner_id"), meta.get("kind") or "other")
-            file_id = uuid.uuid4().hex[:24]  # 24-hex so signed-URL regexes keep working
-            await db.cloud_files.insert_one({
+            up = await _cloud.upload_bytes(content, filename, content_type, meta.get("owner_id"), kind)
+            file_id = uuid.uuid4().hex[:24]  # 24-hex keeps our signed-URL regexes happy
+            await db.s3_files.insert_one({
                 "_id": file_id,
-                "cloudinary_public_id": up["public_id"],
-                "resource_type": up["resource_type"],
-                "access_type": up["type"],
+                "s3_key": up["public_id"],
+                "public_url": up["public_url"],
                 "bytes": up["bytes"],
-                "format": up["format"],
-                "content_type": content_type,
+                "content_type": up["content_type"],
                 "filename": filename,
-                "kind": meta.get("kind") or "other",
+                "kind": kind,
                 "owner_id": meta.get("owner_id"),
                 "created_at": iso(now_utc()),
             })
             return gridfs_url(file_id)
         except Exception as e:
-            logger.warning(f"[storage] Cloudinary upload failed, falling back to GridFS: {e}")
+            logger.warning(f"[storage] S3 upload failed, falling back to GridFS: {e}")
     return gridfs_url(await gridfs_put(content, filename, content_type, metadata))
 
 def _guess_ext(content_type: str) -> str:
@@ -490,7 +489,7 @@ def _guess_ext(content_type: str) -> str:
     }.get(content_type, "")
 
 async def store_data_url_in_gridfs(data_url: str, owner_id: Optional[str], kind: str) -> str:
-    """Decode a data:URL and store it (Cloudinary when configured, else GridFS).
+    """Decode a data:URL and store it (Timeweb S3 when configured, else GridFS).
     Returns the client-facing URL."""
     if not data_url.startswith("data:"):
         raise ValueError("Not a data URL")
@@ -995,8 +994,8 @@ async def on_start():
     await db.i18n_dynamic.create_index([("lang", 1), ("key", 1)], unique=True)
     await db.push_tokens.create_index("token", unique=True)
     await db.push_tokens.create_index([("user_id", 1), ("last_seen", -1)])
-    await db.cloud_files.create_index("kind")
-    await db.cloud_files.create_index("owner_id")
+    await db.s3_files.create_index("kind")
+    await db.s3_files.create_index("owner_id")
     # Initialize Firebase (safe no-op if env vars are missing)
     fcm.init_fcm()
 

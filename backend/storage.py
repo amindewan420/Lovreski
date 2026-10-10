@@ -1,19 +1,18 @@
-"""Cloudinary storage backend for Lovreski.
+"""Timeweb S3 storage backend for Lovreski.
 
-Fail-safe design: when CLOUDINARY_* env vars are missing, everything falls
-back to GridFS (the existing behavior) — the app keeps working unchanged.
+Fail-safe design: when S3_* env vars are missing or S3 is unreachable, every
+upload gracefully falls back to GridFS so the app never breaks.
 
-Layout in Cloudinary:
-  folder:  lovreski/<kind>/           (profile_photo, chat_image, ..., support_receipt)
-  type:    "upload" (public)          → profile_photo
-           "authenticated" (private)  → chat_* media, receipts, everything else
-  resource_type: image | video (audio counts as video in Cloudinary) | raw
+Timeweb S3 config:
+  S3_ENDPOINT=https://s3.timeweb.cloud
+  S3_BUCKET=<bucket-id>
+  S3_REGION=ru-1
+  S3_ACCESS_KEY_ID=<access-key>
+  S3_SECRET_ACCESS_KEY=<secret-key>
+  S3_PUBLIC_BASE_URL=<optional override; auto = <endpoint>/<bucket>>
 
-Delivery:
-  Our /api/files/<id> endpoint keeps enforcing access (owner / admin /
-  chat participant / HMAC-signed URL) and then 302-redirects to the
-  Cloudinary URL — public for profile photos, Cloudinary-signed
-  authenticated delivery URL for private kinds.
+Keys inside the bucket are organized by kind:
+  lovreski/<kind>/<uuid>.<ext>
 """
 from __future__ import annotations
 import asyncio
@@ -29,94 +28,101 @@ PUBLIC_KINDS = {"profile_photo"}
 
 def is_configured() -> bool:
     return bool(
-        os.environ.get("CLOUDINARY_CLOUD_NAME")
-        and os.environ.get("CLOUDINARY_API_KEY")
-        and os.environ.get("CLOUDINARY_API_SECRET")
+        os.environ.get("S3_ENDPOINT")
+        and os.environ.get("S3_BUCKET")
+        and os.environ.get("S3_ACCESS_KEY_ID")
+        and os.environ.get("S3_SECRET_ACCESS_KEY")
     )
+
+
+def _bucket() -> str:
+    return os.environ["S3_BUCKET"]
+
+
+def _endpoint() -> str:
+    ep = os.environ["S3_ENDPOINT"].rstrip("/")
+    if not ep.startswith("http"):
+        ep = "https://" + ep
+    return ep
+
+
+def _public_base() -> str:
+    override = (os.environ.get("S3_PUBLIC_BASE_URL") or "").rstrip("/")
+    if override:
+        return override
+    return f"{_endpoint()}/{_bucket()}"
 
 
 def _client():
-    import cloudinary
-    cloudinary.config(
-        cloud_name=os.environ["CLOUDINARY_CLOUD_NAME"],
-        api_key=os.environ["CLOUDINARY_API_KEY"],
-        api_secret=os.environ["CLOUDINARY_API_SECRET"],
-        secure=True,
+    """Build a boto3 S3 client pointed at Timeweb (or any S3-compatible endpoint)."""
+    import boto3
+    from botocore.config import Config
+    return boto3.client(
+        "s3",
+        endpoint_url=_endpoint(),
+        region_name=os.environ.get("S3_REGION", "ru-1"),
+        aws_access_key_id=os.environ["S3_ACCESS_KEY_ID"],
+        aws_secret_access_key=os.environ["S3_SECRET_ACCESS_KEY"],
+        # Timeweb uses path-style URLs (bucket as a path segment, not vhost)
+        config=Config(signature_version="s3v4", s3={"addressing_style": "path"}),
     )
-    return cloudinary
 
 
-def resource_type_for(content_type: str) -> str:
+def _ext_from_ct(content_type: str) -> str:
     ct = (content_type or "").lower()
-    if ct.startswith("image/"):
-        return "image"
-    if ct.startswith("video/") or ct.startswith("audio/"):
-        return "video"  # Cloudinary stores audio under the 'video' resource type
-    return "raw"
-
-
-def access_type_for(kind: str) -> str:
-    return "upload" if kind in PUBLIC_KINDS else "authenticated"
+    return {
+        "image/jpeg": ".jpg", "image/jpg": ".jpg", "image/png": ".png",
+        "image/webp": ".webp", "image/gif": ".gif",
+        "video/mp4": ".mp4", "video/webm": ".webm", "video/quicktime": ".mov",
+        "audio/webm": ".webm", "audio/mpeg": ".mp3", "audio/wav": ".wav",
+        "audio/ogg": ".ogg", "audio/mp4": ".m4a",
+        "application/pdf": ".pdf",
+    }.get(ct, "")
 
 
 async def upload_bytes(content: bytes, filename: str, content_type: str,
                        owner_id: Optional[str], kind: str) -> dict:
-    """Upload bytes to Cloudinary. Returns a dict with public_id, resource_type,
-    type, bytes, format. Raises on failure — callers fall back to GridFS."""
-    cloudinary = _client()
-    rt = resource_type_for(content_type)
-    at = access_type_for(kind)
-    public_id = f"lovreski/{kind}/{uuid.uuid4().hex[:16]}"
+    """Upload bytes to Timeweb S3. Returns {public_id, public_url, bytes, content_type}.
+    Raises on failure — callers fall back to GridFS."""
+    client = _client()
+    key = f"lovreski/{kind}/{uuid.uuid4().hex}{_ext_from_ct(content_type)}"
 
     def _do_upload():
-        return cloudinary.uploader.upload(
-            content,
-            public_id=public_id,
-            resource_type=rt,
-            type=at,
-            overwrite=False,
+        # Keep put_object minimal — some S3-compatible services (Timeweb) can
+        # produce SignatureDoesNotMatch when ACL / Metadata headers are present.
+        # The bucket is public, so public access is granted by bucket policy.
+        client.put_object(
+            Bucket=_bucket(),
+            Key=key,
+            Body=content,
+            ContentType=content_type or "application/octet-stream",
         )
 
-    res = await asyncio.to_thread(_do_upload)
-    if not res.get("public_id"):
-        raise RuntimeError("Cloudinary upload returned no public_id")
+    await asyncio.to_thread(_do_upload)
     return {
-        "public_id": res["public_id"],
-        "resource_type": rt,
-        "type": at,
-        "bytes": int(res.get("bytes") or len(content)),
-        "format": res.get("format") or "",
+        "public_id": key,
+        "public_url": f"{_public_base()}/{key}",
+        "bytes": len(content),
+        "content_type": content_type or "application/octet-stream",
         "orig_filename": filename,
     }
 
 
-def delivery_url(public_id: str, resource_type: str, access_type: str,
-                 fmt: str = "", content_type: str = "") -> str:
-    """Build the Cloudinary delivery URL.
-    Public kinds → plain secure URL. Authenticated kinds → signed delivery URL
-    (regenerated per request; our /api/files gate decides who gets it)."""
-    cloudinary = _client()
-    kwargs = {"resource_type": resource_type, "type": access_type, "secure": True}
-    if access_type == "authenticated":
-        kwargs["sign_url"] = True
-    if fmt:
-        kwargs["format"] = fmt
-    url, _ = cloudinary.utils.cloudinary_url(public_id, **kwargs)
-    return url
+def delivery_url(public_id: str) -> str:
+    """Build the public URL for an S3-stored object."""
+    return f"{_public_base()}/{public_id}"
 
 
-async def destroy(public_id: str, resource_type: str, access_type: str) -> bool:
-    """Delete an asset from Cloudinary. Returns True on success/ok-not-found."""
+async def destroy(public_id: str) -> bool:
+    """Delete an object from S3. Returns True on success/not-found."""
     try:
-        cloudinary = _client()
+        client = _client()
 
         def _do():
-            return cloudinary.uploader.destroy(
-                public_id, resource_type=resource_type, type=access_type, invalidate=True
-            )
+            client.delete_object(Bucket=_bucket(), Key=public_id)
 
-        res = await asyncio.to_thread(_do)
-        return res.get("result") in ("ok", "not found")
+        await asyncio.to_thread(_do)
+        return True
     except Exception as e:
-        logger.warning(f"[storage] cloudinary destroy failed for {public_id}: {e}")
+        logger.warning(f"[storage] s3 delete failed for {public_id}: {e}")
         return False

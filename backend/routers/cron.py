@@ -53,8 +53,8 @@ async def run_storage_cleanup(retention_days: Optional[int] = None) -> dict:
 
     Orphan = not referenced by any user photo, message media, receipt, or
     refund attachment. Deleted-message media becomes orphaned because the
-    tombstone flow nulls `media_url`. Cloudinary assets are destroyed via the
-    API (then the cloud_files doc is removed); GridFS files are deleted from
+    tombstone flow nulls `media_url`. S3 assets are destroyed via the
+    API (then the s3_files doc is removed); GridFS files are deleted from
     fs.files + fs.chunks.
     """
     days = retention_days or DEFAULT_RETENTION_DAYS
@@ -78,19 +78,19 @@ async def run_storage_cleanup(retention_days: Optional[int] = None) -> dict:
         except Exception as e:
             logger.warning(f"[storage-cleanup] failed deleting gridfs {fid}: {e}")
 
-    # ── Cloudinary orphans ──
+    # ── S3 orphans ──
     import storage as _cloud
-    async for c in db.cloud_files.find({"created_at": {"$lt": iso(cutoff)}}, {"_id": 1, "bytes": 1, "cloudinary_public_id": 1, "resource_type": 1, "access_type": 1}):
+    async for c in db.s3_files.find({"created_at": {"$lt": iso(cutoff)}}, {"_id": 1, "bytes": 1, "s3_key": 1}):
         cid = c["_id"]
         if cid in referenced_strs:
             continue
-        ok = await _cloud.destroy(c["cloudinary_public_id"], c["resource_type"], c["access_type"])
+        ok = await _cloud.destroy(c["s3_key"])
         if ok:
-            await db.cloud_files.delete_one({"_id": cid})
+            await db.s3_files.delete_one({"_id": cid})
             deleted_files += 1
             freed_bytes += int(c.get("bytes") or 0)
         else:
-            logger.warning(f"[storage-cleanup] cloudinary destroy failed for {cid}, doc kept")
+            logger.warning(f"[storage-cleanup] s3 destroy failed for {cid}, doc kept")
 
     report = {
         "run_id": f"clean_{uuid.uuid4().hex[:12]}",

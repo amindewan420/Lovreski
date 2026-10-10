@@ -1,17 +1,21 @@
 """File endpoints — /files/* with signed-URL access control.
 
 Resolution order for GET /api/files/<id>:
-1. cloud_files (Cloudinary) — access check, then 302-redirect to the Cloudinary
-   delivery URL (public for profile photos, Cloudinary-signed authenticated
-   delivery for private kinds).
+1. s3_files (Timeweb S3) — access check, then 302-redirect to the public S3 URL.
 2. GridFS fs.files (legacy / fallback storage) — streamed through the API.
 
-Access model:
-- profile_photo            → public (needed for feed/profile rendering)
+Access model (unchanged):
+- profile_photo            → public
 - chat_* / receipts / other → require EITHER a valid short-lived signed URL
   (?exp&sig, minted by /files/{id}/signed or server-side serialization)
   OR an authenticated session where the caller is the file owner, an admin,
   or (for chat media) a participant of a message referencing the file.
+
+NOTE: Timeweb bucket is PUBLIC. The access gate here protects the stable
+/api/files/<id> URL from being guessed; once a client passes the gate, the
+302 Location header exposes the direct S3 URL (which is itself unguessable —
+UUID-keyed). If stronger privacy is needed, switch to a private bucket and
+mint presigned URLs instead of redirects.
 """
 from fastapi import HTTPException, Depends, Header, Cookie
 from fastapi import UploadFile
@@ -19,7 +23,6 @@ from fastapi import File as UploadFileParam
 from fastapi.responses import StreamingResponse, RedirectResponse
 from bson import ObjectId as _ObjectId
 from typing import Optional
-import io
 import uuid
 import base64
 from server import (
@@ -28,7 +31,6 @@ from server import (
     sign_file_url, verify_file_sig,
     _compress_image_data_url,
 )
-import storage as _cloud
 
 PUBLIC_KINDS = {"profile_photo"}
 
@@ -52,7 +54,6 @@ async def _is_chat_participant(user_id: str, file_id: str) -> bool:
 async def _check_access(file_id: str, kind: str, owner: Optional[str],
                         exp: Optional[int], sig: Optional[str],
                         authorization: Optional[str], session_token: Optional[str]) -> bool:
-    """Shared access gate for both storage backends."""
     if kind in PUBLIC_KINDS or verify_file_sig(file_id, exp, sig):
         return True
     user = await _try_auth(authorization, session_token)
@@ -73,18 +74,14 @@ async def get_file(
     authorization: Optional[str] = Header(None),
     session_token: Optional[str] = Cookie(None),
 ):
-    """Serve a file: Cloudinary-backed docs 302-redirect to the CDN delivery URL;
+    """Serve a file. S3-backed docs 302-redirect to the public Timeweb URL;
     GridFS-backed docs stream through the API. Access rules are identical."""
-    # 1) Cloudinary-backed file?
-    cdoc = await db.cloud_files.find_one({"_id": file_id}, {"cloudinary_public_id": 1, "resource_type": 1, "access_type": 1, "kind": 1, "owner_id": 1, "content_type": 1, "format": 1})
-    if cdoc:
-        if not await _check_access(file_id, cdoc.get("kind") or "other", cdoc.get("owner_id"), exp, sig, authorization, session_token):
+    # 1) S3-backed file?
+    sdoc = await db.s3_files.find_one({"_id": file_id}, {"public_url": 1, "kind": 1, "owner_id": 1})
+    if sdoc:
+        if not await _check_access(file_id, sdoc.get("kind") or "other", sdoc.get("owner_id"), exp, sig, authorization, session_token):
             raise HTTPException(status_code=403, detail="Access denied")
-        url = _cloud.delivery_url(
-            cdoc["cloudinary_public_id"], cdoc["resource_type"], cdoc["access_type"],
-            fmt=cdoc.get("format") or "", content_type=cdoc.get("content_type") or "",
-        )
-        return RedirectResponse(url, status_code=302)
+        return RedirectResponse(sdoc["public_url"], status_code=302)
 
     # 2) GridFS-backed file (legacy / fallback storage)
     try:
@@ -133,10 +130,10 @@ async def get_signed_file_url(file_id: str, user: dict = Depends(get_current_use
     receipts/other → owner or admin only."""
     kind = "other"
     owner = None
-    cdoc = await db.cloud_files.find_one({"_id": file_id}, {"kind": 1, "owner_id": 1})
-    if cdoc:
-        kind = cdoc.get("kind") or "other"
-        owner = cdoc.get("owner_id")
+    sdoc = await db.s3_files.find_one({"_id": file_id}, {"kind": 1, "owner_id": 1})
+    if sdoc:
+        kind = sdoc.get("kind") or "other"
+        owner = sdoc.get("owner_id")
     else:
         try:
             oid = _ObjectId(file_id)
@@ -162,23 +159,21 @@ async def get_signed_file_url(file_id: str, user: dict = Depends(get_current_use
 
 @api.post("/files/upload")
 async def upload_file(file: UploadFile = UploadFileParam(...), user: dict = Depends(get_current_user)):
-    """Generic authenticated file upload. Used by the frontend when uploading
-    via <input type=file>. Images are auto-compressed; other kinds stored
-    as-is. Returns {file_id, url, content_type, size}."""
+    """Generic authenticated file upload — image / video / audio / arbitrary file.
+    Images are auto-compressed. Returns {file_id, url, content_type, size}."""
     content_type = file.content_type or "application/octet-stream"
     raw = await file.read()
-    max_bytes = 4 * 1024 * 1024 if content_type.startswith("image/") else 10 * 1024 * 1024
+    max_bytes = 4 * 1024 * 1024 if content_type.startswith("image/") else 20 * 1024 * 1024
     if len(raw) > max_bytes:
         raise HTTPException(status_code=413, detail=f"File too large (max {max_bytes // (1024 * 1024)} MB)")
     if content_type.startswith("image/"):
-        # Compress to JPEG before storing
         try:
             data_url = "data:" + content_type + ";base64," + base64.b64encode(raw).decode()
             _, raw = _compress_image_data_url(data_url, max_dim=1200, quality=78)
             content_type = "image/jpeg"
         except Exception:
-            pass  # store original on failure
+            pass
     filename = f"{file.filename or 'file'}_{uuid.uuid4().hex[:8]}"
-    url = await storage_put(raw, filename, content_type, {"owner_id": user['user_id'], "orig_name": file.filename})
+    url = await storage_put(raw, filename, content_type, {"owner_id": user['user_id'], "orig_name": file.filename, "kind": "other"})
     file_id = url.rsplit("/", 1)[-1]
     return {"file_id": file_id, "url": url, "content_type": content_type, "size": len(raw)}

@@ -51,7 +51,7 @@ async def upload_photo(body: PhotoBody, user: dict = Depends(get_current_user)):
     if not verdict.get('ok'):
         raise HTTPException(status_code=422, detail=verdict.get('message') or "Photo rejected")
 
-    # Persist to storage (Cloudinary when configured, else GridFS)
+    # Persist to storage (Timeweb S3 when configured, else GridFS)
     if compressed_bytes:
         stored_url = await storage_put(compressed_bytes, f"photo_{uuid.uuid4().hex[:12]}.jpg", "image/jpeg",
                                        {"owner_id": user['user_id'], "kind": "profile_photo"})
