@@ -174,6 +174,5 @@ async def upload_file(file: UploadFile = UploadFileParam(...), user: dict = Depe
         except Exception:
             pass
     filename = f"{file.filename or 'file'}_{uuid.uuid4().hex[:8]}"
-    url = await storage_put(raw, filename, content_type, {"owner_id": user['user_id'], "orig_name": file.filename, "kind": "other"})
-    file_id = url.rsplit("/", 1)[-1]
-    return {"file_id": file_id, "url": url, "content_type": content_type, "size": len(raw)}
+    stored = await storage_put(raw, filename, content_type, {"owner_id": user['user_id'], "orig_name": file.filename, "kind": "other"})
+    return {"file_id": stored["file_id"], "url": stored["url"], "content_type": content_type, "size": len(raw)}

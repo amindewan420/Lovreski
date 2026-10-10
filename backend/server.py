@@ -453,11 +453,12 @@ def gridfs_url(file_id: str) -> str:
 # ── Unified storage: Timeweb S3 when configured, GridFS fallback ──
 import storage as _cloud  # noqa: E402
 
-async def storage_put(content: bytes, filename: str, content_type: str, metadata: Optional[dict] = None) -> str:
-    """Store raw bytes in the active storage backend and return the
-    client-facing URL (/api/files/<id>). Timeweb S3 when configured,
-    otherwise GridFS. On any S3 failure we fall back to GridFS so
-    uploads never break."""
+async def storage_put(content: bytes, filename: str, content_type: str, metadata: Optional[dict] = None) -> dict:
+    """Store raw bytes in the active storage backend.
+    Returns {"url": <client-facing URL>, "file_id": <internal id>}.
+    S3 configured  → url is the direct public Timeweb URL.
+    GridFS fallback → url is /api/files/<id> (streams/redirects through the API).
+    On any S3 failure we fall back to GridFS so uploads never break."""
     meta = metadata or {}
     kind = meta.get("kind") or "other"
     if _cloud.is_configured():
@@ -475,10 +476,11 @@ async def storage_put(content: bytes, filename: str, content_type: str, metadata
                 "owner_id": meta.get("owner_id"),
                 "created_at": iso(now_utc()),
             })
-            return gridfs_url(file_id)
+            return {"url": up["public_url"], "file_id": file_id}
         except Exception as e:
             logger.warning(f"[storage] S3 upload failed, falling back to GridFS: {e}")
-    return gridfs_url(await gridfs_put(content, filename, content_type, metadata))
+    fid = await gridfs_put(content, filename, content_type, metadata)
+    return {"url": gridfs_url(fid), "file_id": fid}
 
 def _guess_ext(content_type: str) -> str:
     return {
@@ -498,7 +500,7 @@ async def store_data_url_in_gridfs(data_url: str, owner_id: Optional[str], kind:
     content_type = header[5:].split(";")[0] or "application/octet-stream"
     raw = base64.b64decode(b64)
     filename = f"{kind}_{uuid.uuid4().hex[:12]}{_guess_ext(content_type)}"
-    return await storage_put(raw, filename, content_type, {"owner_id": owner_id, "kind": kind})
+    return (await storage_put(raw, filename, content_type, {"owner_id": owner_id, "kind": kind}))["url"]
 
 async def _verify_gender_from_photo(image_data_url: str, user_gender: str) -> dict:
     """AI gender check via Emergent LLM vision. Returns {ok, reason}.

@@ -53,8 +53,8 @@ async def upload_photo(body: PhotoBody, user: dict = Depends(get_current_user)):
 
     # Persist to storage (Timeweb S3 when configured, else GridFS)
     if compressed_bytes:
-        stored_url = await storage_put(compressed_bytes, f"photo_{uuid.uuid4().hex[:12]}.jpg", "image/jpeg",
-                                       {"owner_id": user['user_id'], "kind": "profile_photo"})
+        stored_url = (await storage_put(compressed_bytes, f"photo_{uuid.uuid4().hex[:12]}.jpg", "image/jpeg",
+                                        {"owner_id": user['user_id'], "kind": "profile_photo"}))["url"]
     else:
         stored_url = await store_data_url_in_gridfs(compressed_url, user['user_id'], "profile_photo")
     photos.append(stored_url)

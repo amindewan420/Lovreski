@@ -171,8 +171,8 @@ async def upload_chat_media(body: ChatMediaBody, user: dict = Depends(get_curren
             raise HTTPException(status_code=400, detail="Ожидается изображение")
         _, compressed_bytes = _compress_image_data_url(body.data_url, max_dim=1200, quality=78)
         if compressed_bytes:
-            media_url = await storage_put(compressed_bytes, f"chat_image_{uuid.uuid4().hex[:10]}.jpg", "image/jpeg",
-                                          {"owner_id": user['user_id'], "kind": "chat_image"})
+            media_url = (await storage_put(compressed_bytes, f"chat_image_{uuid.uuid4().hex[:10]}.jpg", "image/jpeg",
+                                           {"owner_id": user['user_id'], "kind": "chat_image"}))["url"]
         else:
             media_url = await store_data_url_in_gridfs(body.data_url, user['user_id'], f"chat_{body.kind}")
     else:

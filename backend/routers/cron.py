@@ -17,6 +17,7 @@ from fastapi import Depends, HTTPException, Request
 from server import api, db, logger, now_utc, iso, require_admin
 
 FILE_URL_RE = re.compile(r"/api/files/([0-9a-f]{24})")
+S3_KEY_RE = re.compile(r"(lovreski/[A-Za-z0-9_\-./]+)")
 DEFAULT_RETENTION_DAYS = int(os.environ.get("STORAGE_RETENTION_DAYS", "7"))
 
 
@@ -34,18 +35,36 @@ def _extract_file_ids(urls) -> set:
     return out
 
 
-async def collect_referenced_file_ids() -> set:
-    """Scan every collection that may reference a GridFS file URL."""
+def _extract_s3_keys(urls) -> set:
+    """Pull S3 object keys (lovreski/...) out of direct Timeweb URLs."""
+    out = set()
+    for u in urls:
+        if not isinstance(u, str):
+            continue
+        for m in S3_KEY_RE.findall(u):
+            out.add(m.rstrip("?#"))
+    return out
+
+
+async def collect_referenced_file_ids() -> tuple:
+    """Scan every collection that may reference a stored file.
+    Returns (referenced_object_ids, referenced_s3_keys)."""
     referenced: set = set()
+    s3_keys: set = set()
+
+    def _collect(urls):
+        referenced.update(_extract_file_ids(urls))
+        s3_keys.update(_extract_s3_keys(urls))
+
     async for u in db.users.find({}, {"_id": 0, "photos": 1}):
-        referenced |= _extract_file_ids(u.get("photos") or [])
-    async for m in db.messages.find({"media_url": {"$regex": "^/api/files/"}}, {"_id": 0, "media_url": 1}):
-        referenced |= _extract_file_ids([m.get("media_url")])
-    async for r in db.receipt_submissions.find({"receipt_data_url": {"$regex": "^/api/files/"}}, {"_id": 0, "receipt_data_url": 1}):
-        referenced |= _extract_file_ids([r.get("receipt_data_url")])
-    async for r in db.refund_requests.find({"receipt_data_url": {"$regex": "^/api/files/"}}, {"_id": 0, "receipt_data_url": 1}):
-        referenced |= _extract_file_ids([r.get("receipt_data_url")])
-    return referenced
+        _collect(u.get("photos") or [])
+    async for m in db.messages.find({"media_url": {"$ne": None}}, {"_id": 0, "media_url": 1}):
+        _collect([m.get("media_url")])
+    async for r in db.receipt_submissions.find({"receipt_data_url": {"$ne": None}}, {"_id": 0, "receipt_data_url": 1}):
+        _collect([r.get("receipt_data_url")])
+    async for r in db.refund_requests.find({"receipt_data_url": {"$ne": None}}, {"_id": 0, "receipt_data_url": 1}):
+        _collect([r.get("receipt_data_url")])
+    return referenced, s3_keys
 
 
 async def run_storage_cleanup(retention_days: Optional[int] = None) -> dict:
@@ -59,7 +78,7 @@ async def run_storage_cleanup(retention_days: Optional[int] = None) -> dict:
     """
     days = retention_days or DEFAULT_RETENTION_DAYS
     cutoff = now_utc() - timedelta(days=days)
-    referenced = await collect_referenced_file_ids()
+    referenced, referenced_s3_keys = await collect_referenced_file_ids()
     referenced_strs = {str(x) for x in referenced}
 
     deleted_files = 0
@@ -82,7 +101,8 @@ async def run_storage_cleanup(retention_days: Optional[int] = None) -> dict:
     import storage as _cloud
     async for c in db.s3_files.find({"created_at": {"$lt": iso(cutoff)}}, {"_id": 1, "bytes": 1, "s3_key": 1}):
         cid = c["_id"]
-        if cid in referenced_strs:
+        # Referenced via stable /api/files/<id> URL OR direct S3 URL (by key)
+        if cid in referenced_strs or c.get("s3_key") in referenced_s3_keys:
             continue
         ok = await _cloud.destroy(c["s3_key"])
         if ok:

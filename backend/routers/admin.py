@@ -262,8 +262,8 @@ async def submit_refund(body: RefundBody, request: Request, user: dict = Depends
         try:
             _, compressed_bytes = _compress_image_data_url(receipt, max_dim=1800, quality=85)
             if compressed_bytes:
-                receipt_url = await storage_put(compressed_bytes, f"refund_{uuid.uuid4().hex[:10]}.jpg", "image/jpeg",
-                                                {"owner_id": user['user_id'], "kind": "refund_receipt"})
+                receipt_url = (await storage_put(compressed_bytes, f"refund_{uuid.uuid4().hex[:10]}.jpg", "image/jpeg",
+                                                 {"owner_id": user['user_id'], "kind": "refund_receipt"}))["url"]
             else:
                 receipt_url = await store_data_url_in_gridfs(receipt, user['user_id'], "refund_receipt")
         except Exception:
