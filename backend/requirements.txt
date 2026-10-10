@@ -37,7 +37,6 @@ django-timezone-utils==0.15.0
 dnspython==2.8.0
 ecdsa==0.19.2
 email-validator==2.3.0
-emergentintegrations==0.2.0
 env-tools==2.4.0
 execnet==2.1.2
 executing==2.2.1
