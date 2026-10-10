@@ -139,15 +139,14 @@
     "**/jest-util/picomatch": "2.3.2",
     "**/tinyglobby/picomatch": "4.0.4",
     "http-proxy-middleware": "2.0.12",
-    "resolutions": {
     "ajv": "6.12.6",
     "ajv-keywords": "3.5.2",
     "schema-utils": "3.3.0"
-    },
-    "overrides": {
+  },
+   "overrides": {
     "ajv": "6.12.6",
     "ajv-keywords": "3.5.2",
     "schema-utils": "3.3.0"
-    },
+  },
   "packageManager": "yarn@1.22.22+sha512.a6b2f7906b721bba3d67d4aff083df04dad64c399707841b7acf00f6b133b7ac24255f2652fa22ae3534329dc6180534e98d17432037ff6fd140556e2bb3137e"
 }
