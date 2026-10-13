@@ -1,0 +1,178 @@
+"""File endpoints — /files/* with signed-URL access control.
+
+Resolution order for GET /api/files/<id>:
+1. s3_files (Timeweb S3) — access check, then 302-redirect to the public S3 URL.
+2. GridFS fs.files (legacy / fallback storage) — streamed through the API.
+
+Access model (unchanged):
+- profile_photo            → public
+- chat_* / receipts / other → require EITHER a valid short-lived signed URL
+  (?exp&sig, minted by /files/{id}/signed or server-side serialization)
+  OR an authenticated session where the caller is the file owner, an admin,
+  or (for chat media) a participant of a message referencing the file.
+
+NOTE: Timeweb bucket is PUBLIC. The access gate here protects the stable
+/api/files/<id> URL from being guessed; once a client passes the gate, the
+302 Location header exposes the direct S3 URL (which is itself unguessable —
+UUID-keyed). If stronger privacy is needed, switch to a private bucket and
+mint presigned URLs instead of redirects.
+"""
+from fastapi import HTTPException, Depends, Header, Cookie
+from fastapi import UploadFile
+from fastapi import File as UploadFileParam
+from fastapi.responses import StreamingResponse, RedirectResponse
+from bson import ObjectId as _ObjectId
+from typing import Optional
+import uuid
+import base64
+from server import (
+    api, db, logger, now_utc, iso,
+    get_current_user, gridfs_bucket, storage_put,
+    sign_file_url, verify_file_sig,
+    _compress_image_data_url,
+)
+
+PUBLIC_KINDS = {"profile_photo"}
+
+
+async def _load_gridfs_meta(oid: _ObjectId) -> Optional[dict]:
+    return await db["fs.files"].find_one({"_id": oid}, {"metadata": 1, "length": 1, "filename": 1})
+
+
+async def _try_auth(authorization: Optional[str], session_token: Optional[str]) -> Optional[dict]:
+    try:
+        return await get_current_user(authorization=authorization, session_token=session_token)
+    except Exception:
+        return None
+
+
+async def _is_chat_participant(user_id: str, file_id: str) -> bool:
+    msg = await db.messages.find_one({"media_url": f"/api/files/{file_id}"}, {"_id": 0, "participants": 1})
+    return bool(msg and user_id in (msg.get("participants") or []))
+
+
+async def _check_access(file_id: str, kind: str, owner: Optional[str],
+                        exp: Optional[int], sig: Optional[str],
+                        authorization: Optional[str], session_token: Optional[str]) -> bool:
+    if kind in PUBLIC_KINDS or verify_file_sig(file_id, exp, sig):
+        return True
+    user = await _try_auth(authorization, session_token)
+    if not user:
+        return False
+    if user.get("is_admin") or (owner and owner == user["user_id"]):
+        return True
+    if kind.startswith("chat_") and await _is_chat_participant(user["user_id"], file_id):
+        return True
+    return False
+
+
+@api.get("/files/{file_id}")
+async def get_file(
+    file_id: str,
+    exp: Optional[int] = None,
+    sig: Optional[str] = None,
+    authorization: Optional[str] = Header(None),
+    session_token: Optional[str] = Cookie(None),
+):
+    """Serve a file. S3-backed docs 302-redirect to the public Timeweb URL;
+    GridFS-backed docs stream through the API. Access rules are identical."""
+    # 1) S3-backed file?
+    sdoc = await db.s3_files.find_one({"_id": file_id}, {"public_url": 1, "kind": 1, "owner_id": 1})
+    if sdoc:
+        if not await _check_access(file_id, sdoc.get("kind") or "other", sdoc.get("owner_id"), exp, sig, authorization, session_token):
+            raise HTTPException(status_code=403, detail="Access denied")
+        return RedirectResponse(sdoc["public_url"], status_code=302)
+
+    # 2) GridFS-backed file (legacy / fallback storage)
+    try:
+        oid = _ObjectId(file_id)
+    except Exception:
+        raise HTTPException(status_code=400, detail="Bad file id")
+    doc = await _load_gridfs_meta(oid)
+    if not doc:
+        raise HTTPException(status_code=404, detail="File not found")
+    meta = doc.get("metadata") or {}
+    kind = meta.get("kind") or ""
+    owner = meta.get("owner_id")
+
+    if not await _check_access(file_id, kind, owner, exp, sig, authorization, session_token):
+        raise HTTPException(status_code=403, detail="Access denied")
+
+    content_type = meta.get("content_type") or "application/octet-stream"
+    gout = await gridfs_bucket.open_download_stream(oid)
+
+    async def iter_chunks():
+        try:
+            while True:
+                chunk = await gout.readchunk()
+                if not chunk:
+                    break
+                yield chunk
+        finally:
+            try:
+                await gout.close()
+            except Exception:
+                pass
+
+    cache = "public, max-age=31536000, immutable" if kind in PUBLIC_KINDS else "private, max-age=600"
+    headers = {
+        "Content-Length": str(doc.get("length") or gout.length),
+        "Cache-Control": cache,
+    }
+    return StreamingResponse(iter_chunks(), media_type=content_type, headers=headers)
+
+
+@api.get("/files/{file_id}/signed")
+async def get_signed_file_url(file_id: str, user: dict = Depends(get_current_user)):
+    """Mint a short-lived signed URL for a file.
+    profile_photo → returns the plain URL (public anyway).
+    chat_*        → participants of a message referencing the file, or admin.
+    receipts/other → owner or admin only."""
+    kind = "other"
+    owner = None
+    sdoc = await db.s3_files.find_one({"_id": file_id}, {"kind": 1, "owner_id": 1})
+    if sdoc:
+        kind = sdoc.get("kind") or "other"
+        owner = sdoc.get("owner_id")
+    else:
+        try:
+            oid = _ObjectId(file_id)
+        except Exception:
+            raise HTTPException(status_code=400, detail="Bad file id")
+        doc = await _load_gridfs_meta(oid)
+        if not doc:
+            raise HTTPException(status_code=404, detail="File not found")
+        meta = doc.get("metadata") or {}
+        kind = meta.get("kind") or ""
+        owner = meta.get("owner_id")
+    plain = f"/api/files/{file_id}"
+
+    if kind in PUBLIC_KINDS:
+        return {"url": plain, "public": True}
+    allowed = user.get("is_admin") or (owner and owner == user["user_id"])
+    if not allowed and kind.startswith("chat_"):
+        allowed = await _is_chat_participant(user["user_id"], file_id)
+    if not allowed:
+        raise HTTPException(status_code=403, detail="Access denied")
+    return {"url": sign_file_url(plain)}
+
+
+@api.post("/files/upload")
+async def upload_file(file: UploadFile = UploadFileParam(...), user: dict = Depends(get_current_user)):
+    """Generic authenticated file upload — image / video / audio / arbitrary file.
+    Images are auto-compressed. Returns {file_id, url, content_type, size}."""
+    content_type = file.content_type or "application/octet-stream"
+    raw = await file.read()
+    max_bytes = 4 * 1024 * 1024 if content_type.startswith("image/") else 20 * 1024 * 1024
+    if len(raw) > max_bytes:
+        raise HTTPException(status_code=413, detail=f"File too large (max {max_bytes // (1024 * 1024)} MB)")
+    if content_type.startswith("image/"):
+        try:
+            data_url = "data:" + content_type + ";base64," + base64.b64encode(raw).decode()
+            _, raw = _compress_image_data_url(data_url, max_dim=1200, quality=78)
+            content_type = "image/jpeg"
+        except Exception:
+            pass
+    filename = f"{file.filename or 'file'}_{uuid.uuid4().hex[:8]}"
+    stored = await storage_put(raw, filename, content_type, {"owner_id": user['user_id'], "orig_name": file.filename, "kind": "other"})
+    return {"file_id": stored["file_id"], "url": stored["url"], "content_type": content_type, "size": len(raw)}

@@ -1,0 +1,32 @@
+{
+  "summary": "Iter-34: GridFS→Timeweb S3 migration verification. 8/8 backend tests pass + frontend render verified. DB is clean (0 /api/files refs across users.photos, messages.media_url, receipt_submissions.receipt_data_url, refund_requests.receipt_data_url). All non-external user photos (90+) match https://s3.twcstorage.ru/<bucket>/lovreski/<kind>/<file> and return HTTP 200 image. New uploads via POST /api/profile/photo and POST /api/chat/media produce direct S3 URLs (NOT /api/files/...). sign_file_url correctly leaves non-/api/files URLs untouched (no ?exp/?sig appended). Cron storage cleanup acks 2xx with WEBHOOK_CRON_SECRET, latest cleanup-log run shows s3_files count preserved (no referenced files deleted). Chat UI renders image message directly from s3.twcstorage.ru URL. Admin /api/admin/storage shows stores.s3.configured=true, 80 files / 29MB. /api/health=200. Bug report verified RESOLVED.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_s3_migration_iter34.py",
+    "/app/test_reports/pytest/pytest_iter34.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "storage.py: _public_base() correctly prefers S3_PUBLIC_BASE_URL; keys follow lovreski/<kind>/<uuid>.<ext>. Good.",
+    "server.py:storage_put returns direct public_url when S3 configured (line 479); DB stores direct URL. Correct.",
+    "routers/cron.py:collect_referenced_file_ids returns (object_ids, s3_keys) and S3 orphan loop skips docs whose s3_key is referenced via direct S3 URL (line 105). Correct cleanup safety.",
+    "sign_file_url (server.py:106) uses regex /api/files/<24hex>; direct S3 URLs don't match → returned unchanged. Chat message fetch confirms direct S3 URL is NOT mangled.",
+    "scripts/rewrite_s3_urls.py is idempotent (regex-anchored match on /api/files/<hex24>) and normalizes public_url host to S3_PUBLIC_BASE_URL. Safe to re-run.",
+    "Minor: routers/files.py get_file still exists for residual /api/files/<id> refs — kept as redirect-only safety net. OK as graceful fallback; could be removed once confident 0 refs for a quarter."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_s3_migration_iter34.py (new)"
+  ],
+  "success_rate": {"backend": "100% (8/8, 1 skipped: no standard feed endpoint)", "frontend": "100% (chat image renders from direct S3; no /api/files refs in profile/home DOM)"},
+  "test_credentials": "admin@lovreski.ru / LovreskiAdmin2026!, s3_test_nb@lovreski.ru / password123, testuser1@lovreski.ru / password123, chat_imgfrom_c3f724@lovreski.ru / password123",
+  "seed_data_creation": "None (used pre-seeded test users and existing chat message with image).",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Direct S3 URL pattern: ^https://s3\\.twcstorage\\.ru/600faa0a-6355-47f3-8485-fb1ee59ea330/lovreski/<kind>/<file>$. S3_PUBLIC_BASE_URL overrides _public_base in storage.py. Cron uses Bearer WEBHOOK_CRON_SECRET from /app/backend/.env. /api/admin/storage breakdown is nested under stores.s3 (not top-level s3). Chat message other_id key is item.user.user_id (not chat_id) for GET /api/chats/{other_id}/messages. Profile photo endpoint takes {data_url: ...} not {photo: ...}.",
+  "rca of the issue": "Original bug: profile photos stored as /api/files/<gridfs_id> after GridFS→S3 migration, requiring extra API hop. Root cause: storage_put returned /api/files/<id> for S3 uploads too, and existing DB rows kept legacy GridFS URLs. Mitigation (verified applied): (1) storage_put now returns direct public S3 URL for S3 backend; (2) rewrite_s3_urls.py maps s3_files._id→public_url and rewrites users.photos/messages.media_url/receipt_submissions.receipt_data_url/refund_requests.receipt_data_url; (3) cron orphan purge recognises direct S3 URLs via lovreski/ key regex and skips those docs. All verified end-to-end."
+}

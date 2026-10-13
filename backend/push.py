@@ -221,7 +221,7 @@ async def notify_match(db, user_id: str, other_name: str, other_id: str) -> None
         db, user_id,
         title="💘 Взаимная симпатия!",
         body=f"Вы понравились {other_name}. Начните общение!",
-        url=f"/u/{other_id}",
+        url=f"/profile/{other_id}",
         kind="match",
         tag=f"match-{other_id}",
         extra_data={"other_id": other_id},

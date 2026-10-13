@@ -3,8 +3,39 @@ import { api } from "@/lib/api";
 import { useAuth } from "@/context/AuthContext";
 import { useNavigate } from "react-router-dom";
 import { LineChart, Line, BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid } from "recharts";
-import { Shield, Users, Crown, Clock, TrendingUp, Check, X, Flag, LogOut, Search as SearchIcon, MinusCircle, AlertTriangle, Ban, UserX, FileText, Trash2, Plus, Pencil } from "lucide-react";
+import { Shield, Users, Crown, Clock, TrendingUp, Check, X, Flag, LogOut, Search as SearchIcon, MinusCircle, AlertTriangle, Ban, UserX, FileText, Trash2, Plus, Pencil, Database } from "lucide-react";
 import { toast } from "sonner";
+
+// Format bytes for human readability
+const fmtBytes = (b) => {
+  if (!b && b !== 0) return "—";
+  if (b < 1024) return `${b} Б`;
+  if (b < 1024 * 1024) return `${(b / 1024).toFixed(1)} КБ`;
+  if (b < 1024 * 1024 * 1024) return `${(b / 1024 / 1024).toFixed(2)} МБ`;
+  return `${(b / 1024 / 1024 / 1024).toFixed(2)} ГБ`;
+};
+
+const KIND_LABELS = {
+  profile_photo: "Фото профиля",
+  chat_image: "Чат — фото",
+  chat_voice: "Чат — голосовые",
+  chat_video: "Чат — видео",
+  chat_file: "Чат — файлы",
+  support_receipt: "Чеки оплаты",
+  refund_receipt: "Чеки возврата",
+  other: "Прочее",
+};
+
+const KIND_COLORS = {
+  profile_photo: "bg-rose-500",
+  chat_image: "bg-sky-500",
+  chat_voice: "bg-emerald-500",
+  chat_video: "bg-purple-500",
+  chat_file: "bg-slate-500",
+  support_receipt: "bg-amber-500",
+  refund_receipt: "bg-orange-500",
+  other: "bg-slate-400",
+};
 
 export default function AdminPage() {
   const { user, logout } = useAuth();
@@ -39,6 +70,11 @@ export default function AdminPage() {
   // NEW: legal docs
   const [legal, setLegal] = useState([]);
   const [legalEdit, setLegalEdit] = useState(null); // {slug,title,body,isNew}
+  // NEW: GridFS storage widget
+  const [storage, setStorage] = useState(null);
+  const [cleanupLog, setCleanupLog] = useState([]);
+  const [cleaning, setCleaning] = useState(false);
+  const [migrating, setMigrating] = useState(false);
 
   useEffect(() => {
     if (!user) return;
@@ -68,7 +104,38 @@ export default function AdminPage() {
       setPendingCount(cnt.data?.count || 0);
       // Legal docs — best-effort, don't fail whole load if endpoint absent
       try { const l = await api.get("/admin/legal"); setLegal(l.data || []); } catch { /* noop */ }
+      // Storage usage — best-effort
+      try { const st = await api.get("/admin/storage"); setStorage(st.data || null); } catch { /* noop */ }
+      try { const cl = await api.get("/admin/storage/cleanup-log"); setCleanupLog(cl.data || []); } catch { /* noop */ }
     } catch (e) { toast.error("Требуются права администратора"); nav("/home"); }
+  };
+
+  // ─── Storage cleanup (manual trigger) ───────────────────────────────
+  const runCleanup = async () => {
+    if (!window.confirm("Удалить осиротевшие файлы старше 7 дней?")) return;
+    setCleaning(true);
+    try {
+      const { data } = await api.post("/admin/storage/cleanup");
+      toast.success(`Очистка завершена: удалено ${data.deleted_files} файлов, освобождено ${fmtBytes(data.freed_bytes)}`);
+      const [st, cl] = await Promise.all([api.get("/admin/storage"), api.get("/admin/storage/cleanup-log")]);
+      setStorage(st.data); setCleanupLog(cl.data || []);
+    } catch (e) {
+      toast.error(e.response?.data?.detail || "Ошибка очистки");
+    } finally { setCleaning(false); }
+  };
+
+  // ─── One-time GridFS → S3 migration ─────────────────────────────────
+  const runMigrate = async () => {
+    if (!window.confirm("Перенести ВСЕ файлы из GridFS в S3 (Timeweb)? Старые ссылки продолжат работать.")) return;
+    setMigrating(true);
+    try {
+      const { data } = await api.post("/admin/migrate/s3");
+      toast.success(`Миграция завершена: ${data.migrated} перенесено, ${data.skipped} уже были, ошибок: ${data.failed}`);
+      const st = await api.get("/admin/storage");
+      setStorage(st.data);
+    } catch (e) {
+      toast.error(e.response?.data?.detail || "Ошибка миграции");
+    } finally { setMigrating(false); }
   };
 
   // ─── Deduct coins ───────────────────────────────────────────────────
@@ -214,6 +281,96 @@ export default function AdminPage() {
               <Stat title="Одобрено в этом месяце" value={stats.approved_month} icon={Check} />
             </div>
 
+            {/* GridFS Storage widget */}
+            {storage && (
+              <div className="bg-card border border-border rounded-2xl p-5 mb-6" data-testid="admin-storage-widget">
+                <div className="flex flex-wrap items-center justify-between mb-3">
+                  <h3 className="font-display font-bold text-lg flex items-center gap-2">
+                    <Database className="w-5 h-5" /> Хранилище (GridFS)
+                  </h3>
+                  <span className="text-sm text-muted-foreground" data-testid="admin-storage-total">
+                    Всего: <strong>{fmtBytes(storage.total_bytes)}</strong> · {storage.total_files} файлов
+                  </span>
+                </div>
+                {/* Stacked bar */}
+                <div className="flex h-3 w-full rounded-full overflow-hidden mb-4" aria-hidden="true">
+                  {storage.by_kind.map((k) => (
+                    <div
+                      key={k.kind}
+                      title={`${KIND_LABELS[k.kind] || k.kind} — ${fmtBytes(k.bytes)}`}
+                      style={{ width: storage.total_bytes ? `${(k.bytes / storage.total_bytes) * 100}%` : 0 }}
+                      className={`${KIND_COLORS[k.kind] || KIND_COLORS.other} transition-all`}
+                    />
+                  ))}
+                </div>
+                {/* Per-kind table */}
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-2 text-sm">
+                  {storage.by_kind.map((k) => (
+                    <div key={k.kind} data-testid={`storage-row-${k.kind}`} className="flex items-center justify-between py-1 border-b border-border/50">
+                      <span className="flex items-center gap-2 text-muted-foreground">
+                        <span className={`w-2 h-2 rounded-full ${KIND_COLORS[k.kind] || KIND_COLORS.other}`} />
+                        {KIND_LABELS[k.kind] || k.kind}
+                      </span>
+                      <span className="text-foreground">
+                        <span className="text-muted-foreground">{k.files}</span>
+                        <span className="mx-1.5 text-muted-foreground">·</span>
+                        <span className="font-medium">{fmtBytes(k.bytes)}</span>
+                      </span>
+                    </div>
+                  ))}
+                </div>
+                {storage.by_kind.length === 0 && (
+                  <p className="text-sm text-muted-foreground text-center py-4">Файлов пока нет.</p>
+                )}
+
+                {/* Cleanup controls + last run */}
+                <div className="mt-4 pt-3 border-t border-border/60 flex flex-wrap items-center justify-between gap-3">
+                  <div className="text-xs text-muted-foreground" data-testid="storage-last-run">
+                    {cleanupLog.length > 0 ? (() => {
+                      const r = cleanupLog[0];
+                      const dt = new Date(r.started_at);
+                      return <>Последняя очистка: {dt.toLocaleDateString("ru")} {dt.toLocaleTimeString("ru", { hour: "2-digit", minute: "2-digit" })} · удалено {r.deleted_files} · освобождено {fmtBytes(r.freed_bytes)}</>;
+                    })() : "Автоочистка: ежедневно в 03:00 UTC (файлы старше 7 дней)"}
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <button
+                      data-testid="btn-storage-cleanup"
+                      onClick={runCleanup}
+                      disabled={cleaning}
+                      className="px-4 py-1.5 rounded-full text-xs font-semibold bg-muted hover:bg-muted/70 text-foreground disabled:opacity-50 flex items-center gap-1.5"
+                    >
+                      <Trash2 className="w-3.5 h-3.5" /> {cleaning ? "Очистка..." : "Очистить сейчас"}
+                    </button>
+                  </div>
+                </div>
+
+                {/* Storage backends (GridFS / S3) + migration */}
+                {storage.stores && (
+                  <div className="mt-3 pt-3 border-t border-border/60" data-testid="storage-stores">
+                    <div className="flex flex-wrap items-center justify-between gap-3">
+                      <div className="text-xs text-muted-foreground">
+                        Хранилища: <strong>GridFS</strong> {storage.stores.gridfs.files} файлов · {fmtBytes(storage.stores.gridfs.bytes)}
+                        <span className="mx-1.5">·</span>
+                        <strong>S3 (Timeweb)</strong> {storage.stores.s3?.configured
+                          ? `${storage.stores.s3.files} файлов · ${fmtBytes(storage.stores.s3.bytes)}${storage.stores.s3.bucket ? ` · bucket ${storage.stores.s3.bucket.slice(0,10)}…` : ""}`
+                          : <span className="text-amber-600">не настроен</span>}
+                      </div>
+                      {storage.stores.s3?.configured && storage.stores.gridfs.files > 0 && (
+                        <button
+                          data-testid="btn-migrate-s3"
+                          disabled={migrating}
+                          onClick={runMigrate}
+                          className="px-4 py-1.5 rounded-full text-xs font-semibold bg-primary/10 text-primary hover:bg-primary/20 disabled:opacity-50"
+                        >
+                          {migrating ? "Миграция..." : "⇪ Перенести всё в S3"}
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+
             <div className="bg-card border border-border rounded-2xl p-5">
               <div className="flex flex-wrap gap-3 items-center justify-between mb-4">
                 <h3 className="font-display font-bold text-lg">Аналитика</h3>
@@ -323,7 +480,7 @@ export default function AdminPage() {
                   </div>
                 </div>
                 <div className="mt-3 flex flex-wrap gap-2">
-                  <button data-testid={`report-view-${r.target_user}`} onClick={() => nav(`/u/${r.target_user}`)} className="btn-pill bg-muted text-xs !py-1.5 !px-3">👁 Профиль</button>
+                  <button data-testid={`report-view-${r.target_user}`} onClick={() => nav(`/profile/${r.target_user}`)} className="btn-pill bg-muted text-xs !py-1.5 !px-3">👁 Профиль</button>
                   <button data-testid={`report-warn-${r.target_user}`} onClick={() => { setModAction({ kind: "warn", user_id: r.target_user, user_name: r.user?.name }); setModReason(r.reasons?.[0] || ""); }} className="btn-pill bg-amber-500 text-white text-xs !py-1.5 !px-3"><AlertTriangle className="w-3.5 h-3.5 mr-1" /> Предупредить</button>
                   <button data-testid={`report-ban-${r.target_user}`} onClick={() => { setModAction({ kind: "ban", user_id: r.target_user, user_name: r.user?.name }); setModDays(7); setModReason(r.reasons?.[0] || ""); }} className="btn-pill bg-orange-500 text-white text-xs !py-1.5 !px-3"><Ban className="w-3.5 h-3.5 mr-1" /> Бан 7 дн.</button>
                   <button data-testid={`report-deactivate-${r.target_user}`} onClick={() => { setModAction({ kind: "deactivate", user_id: r.target_user, user_name: r.user?.name }); setModReason(r.reasons?.[0] || ""); }} className="btn-pill bg-rose-500 text-white text-xs !py-1.5 !px-3"><UserX className="w-3.5 h-3.5 mr-1" /> Навсегда</button>

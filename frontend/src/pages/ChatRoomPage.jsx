@@ -27,6 +27,51 @@ function dateLabel(iso, t) {
 }
 const readFileAsDataUrl = (file) => new Promise((res, rej) => { const fr = new FileReader(); fr.onload = () => res(fr.result); fr.onerror = rej; fr.readAsDataURL(file); });
 
+// ─── Signed media URL with silent re-minting ──────────────────────────────
+// Signed URLs expire after 10 min. This hook proactively re-mints every 8 min
+// and also retries once when the media element errors (403 → expired sig).
+const FILE_ID_RE = /\/api\/files\/([0-9a-f]{24})/;
+const useSignedMediaUrl = (url) => {
+  const [src, setSrc] = useState(url);
+  const idRef = useRef(null);
+  useEffect(() => { idRef.current = url?.match(FILE_ID_RE)?.[1] || null; setSrc(url); }, [url]);
+  const remint = async () => {
+    const fid = idRef.current;
+    if (!fid) return;
+    try {
+      const { data } = await api.get(`/files/${fid}/signed`);
+      if (data?.url) setSrc(data.url);
+    } catch { /* noop — keep current src */ }
+  };
+  useEffect(() => {
+    if (!idRef.current) return;
+    const t = setInterval(remint, 8 * 60 * 1000);
+    return () => clearInterval(t);
+    // eslint-disable-next-line
+  }, [url]);
+  return [src, remint];
+};
+
+const MediaBubble = ({ m }) => {
+  const [src, onErr] = useSignedMediaUrl(m.media_url);
+  if (m.kind === "image") {
+    return <img src={src} onError={onErr} alt="" className="rounded-lg max-h-64 object-cover" data-testid={`media-img-${m.message_id}`} />;
+  }
+  if (m.kind === "voice") {
+    return <audio controls src={src} onError={onErr} className="max-w-[220px]" data-testid={`media-audio-${m.message_id}`} />;
+  }
+  if (m.kind === "video") {
+    return <video controls src={src} onError={onErr} className="rounded-lg max-h-64" data-testid={`media-video-${m.message_id}`} />;
+  }
+  // file download link — kept fresh by the proactive interval
+  return (
+    <a href={src} download={m.file_name || "file"} className="flex items-center gap-2 text-sm" data-testid={`media-file-${m.message_id}`}>
+      <FileIcon className="w-5 h-5" />
+      <span className="underline truncate max-w-[180px] no-translate">{m.file_name || "file"}</span>
+    </a>
+  );
+};
+
 // ─── Main ──────────────────────────────────────────────────────────────────
 export default function ChatRoomPage() {
   const { id } = useParams();
@@ -334,7 +379,7 @@ export default function ChatRoomPage() {
                 <img src={other.photos?.[0]} alt="" className="w-10 h-10 rounded-full object-cover" />
                 {other.online && <span className="absolute bottom-0 right-0 w-2.5 h-2.5 rounded-full bg-emerald-500 border-2 border-white" />}
               </div>
-              <div className="flex-1 min-w-0" onClick={() => nav(`/u/${other.user_id}`)}>
+              <div className="flex-1 min-w-0" onClick={() => nav(`/profile/${other.user_id}`)}>
                 <p className="font-semibold text-slate-900 truncate no-translate">{other.name}, {other.age}</p>
                 <p className="text-[11px] text-emerald-600">
                   {typingPeer ? t("chat.typing") : (other.online ? t("chat.online") : t("chat.recent"))}
@@ -456,17 +501,8 @@ export default function ChatRoomPage() {
                           <div className="text-5xl">{m.text}</div>
                           <div className="text-[10px] mt-1 text-slate-500">{t("chat.preview_gift")}</div>
                         </div>
-                      ) : m.kind === "image" && m.media_url ? (
-                        <img src={m.media_url} alt="" className="rounded-lg max-h-64 object-cover" />
-                      ) : m.kind === "voice" && m.media_url ? (
-                        <audio controls src={m.media_url} className="max-w-[220px]" />
-                      ) : m.kind === "video" && m.media_url ? (
-                        <video controls src={m.media_url} className="rounded-lg max-h-64" />
-                      ) : m.kind === "file" && m.media_url ? (
-                        <a href={m.media_url} download={m.file_name || "file"} className="flex items-center gap-2 text-sm">
-                          <FileIcon className="w-5 h-5" />
-                          <span className="underline truncate max-w-[180px] no-translate">{m.file_name || "file"}</span>
-                        </a>
+                      ) : ["image", "voice", "video", "file"].includes(m.kind) && m.media_url ? (
+                        <MediaBubble m={m} />
                       ) : (
                         <p className="whitespace-pre-wrap break-words text-[15px] leading-snug no-translate">{m.text}</p>
                       )}
