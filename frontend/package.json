@@ -141,7 +141,7 @@
     "**/readdirp/picomatch": "2.3.2",
     "**/jest-util/picomatch": "2.3.2",
     "**/tinyglobby/picomatch": "4.0.4",
-    "http-proxy-middleware": "2.0.12",
+    "http-proxy-middleware": "2.0.10",
     "ajv": "6.12.6",
     "ajv-keywords": "3.5.2"
   },
