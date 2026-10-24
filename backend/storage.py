@@ -64,7 +64,13 @@ def _client():
         aws_access_key_id=os.environ["S3_ACCESS_KEY_ID"],
         aws_secret_access_key=os.environ["S3_SECRET_ACCESS_KEY"],
         # Timeweb uses path-style URLs (bucket as a path segment, not vhost)
-        config=Config(signature_version="s3v4", s3={"addressing_style": "path"}),
+        config=Config(
+            signature_version="s3v4", s3={"addressing_style": "path"},
+            # Avoid aws-chunked uploads: Timeweb stores "Content-Encoding: aws-chunked",
+            # which breaks inline viewing (PDF) in browsers.
+            request_checksum_calculation="when_required",
+            response_checksum_validation="when_required",
+        ),
     )
 
 
@@ -96,6 +102,7 @@ async def upload_bytes(content: bytes, filename: str, content_type: str,
             Key=key,
             Body=content,
             ContentType=content_type or "application/octet-stream",
+            ContentDisposition="inline",
         )
 
     await asyncio.to_thread(_do_upload)
@@ -126,3 +133,22 @@ async def destroy(public_id: str) -> bool:
     except Exception as e:
         logger.warning(f"[storage] s3 delete failed for {public_id}: {e}")
         return False
+
+
+def key_from_public_url(url: str) -> Optional[str]:
+    """Return the S3 key if `url` points at our public bucket, else None."""
+    base = _public_base().rstrip("/") + "/"
+    if is_configured() and isinstance(url, str) and url.startswith(base):
+        key = url[len(base):].split("?", 1)[0]
+        return key if key and ".." not in key else None
+    return None
+
+
+async def get_object(key: str) -> dict:
+    """Fetch an object → {body: bytes, content_type, length}. Raises on missing."""
+    client = _client()
+    def _do():
+        r = client.get_object(Bucket=_bucket(), Key=key)
+        return {"body": r["Body"].read(), "content_type": r.get("ContentType") or "application/octet-stream",
+                "length": r.get("ContentLength")}
+    return await asyncio.to_thread(_do)

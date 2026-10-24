@@ -4,6 +4,7 @@ import { useNavigate, useSearchParams } from "react-router-dom";
 import { AdminNav } from "@/components/admin/AdminNav";
 import { useAdminBadges } from "@/hooks/useAdminBadges";
 import { DirectPushSheet } from "@/components/admin/AdminPushExtras";
+import { ReceiptViewer, ReceiptThumb } from "@/components/admin/ReceiptViewer";
 import { LineChart, Line, BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid } from "recharts";
 import { Send, Shield, Users, Crown, Clock, TrendingUp, Check, X, Flag, LogOut, Search as SearchIcon, MinusCircle, AlertTriangle, Ban, UserX, FileText, Trash2, Plus, Pencil, Database } from "lucide-react";
 import { toast } from "sonner";
@@ -580,13 +581,7 @@ export default function AdminPage() {
             {pendingSubs.map((s) => (
               <div key={s.submission_id} data-testid={`pending-${s.submission_id}`} className="p-4 rounded-2xl bg-card border border-border">
                 <div className="flex gap-4">
-                  <button onClick={() => setViewImg(s.receipt_data_url)} className="w-24 h-24 rounded-xl overflow-hidden bg-muted flex-shrink-0">
-                    {(s.receipt_data_url?.startsWith("data:image/") || /\.(jpe?g|png|webp|gif)(\?|$)/i.test(s.receipt_data_url || "")) ? (
-                      <img src={s.receipt_data_url} alt="receipt" className="w-full h-full object-cover" data-testid={`receipt-img-${s.submission_id}`} />
-                    ) : (
-                      <div className="w-full h-full flex items-center justify-center text-xs text-muted-foreground">PDF</div>
-                    )}
-                  </button>
+                  <ReceiptThumb src={s.receipt_data_url} onOpen={() => setViewImg(s.receipt_data_url)} testid={`receipt-thumb-${s.submission_id}`} />
                   <div className="flex-1 min-w-0">
                     <p className="font-bold">{s.user_name} <span className="text-xs text-muted-foreground">({s.user_email})</span></p>
                     <p className="text-[11px] text-muted-foreground">ID: {s.user_id}</p>
@@ -607,8 +602,10 @@ export default function AdminPage() {
                 <div className="mt-2 space-y-2">
                   {supportHistory.map((s) => (
                     <div key={s.submission_id} className="p-3 rounded-xl bg-muted/40 border border-border text-xs">
-                      <div className="flex justify-between">
-                        <span><b>{s.user_name}</b> · {new Date(s.created_at).toLocaleDateString("ru")}</span>
+                      <div className="flex justify-between gap-2">
+                        <span><b>{s.user_name}</b> · {new Date(s.created_at).toLocaleDateString("ru")}
+                          {s.receipt_data_url && <button data-testid={`history-receipt-${s.submission_id}`} onClick={() => setViewImg(s.receipt_data_url)} className="ml-2 text-primary font-semibold underline">чек</button>}
+                        </span>
                         <span className={s.status === "verified" ? "text-emerald-500" : "text-rose-500"}>
                           {s.status === "verified" ? `✓ ${s.coins_added} 🪙` : `✗ ${s.reject_reason}`}
                         </span>
@@ -741,12 +738,7 @@ export default function AdminPage() {
       )}
 
       {/* Fullscreen receipt viewer */}
-      {viewImg && (
-        <div className="fixed inset-0 z-[90] bg-black/95 flex items-center justify-center p-4" onClick={() => setViewImg(null)}>
-          <img src={viewImg} alt="receipt" className="max-w-full max-h-full object-contain" />
-          <button className="absolute top-4 right-4 w-10 h-10 rounded-full bg-white/20 text-white flex items-center justify-center">✕</button>
-        </div>
-      )}
+      <ReceiptViewer src={viewImg} onClose={() => setViewImg(null)} />
 
       {/* Deduct-coins modal */}
       {deductTarget && (
@@ -863,9 +855,7 @@ function RefundsTab() {
         <div key={r.refund_id} data-testid={`refund-${r.refund_id}`} className="p-4 rounded-2xl bg-card border border-border">
           <div className="flex gap-4">
             {r.receipt_data_url && (
-              <button onClick={() => setViewImg(r.receipt_data_url)} className="w-24 h-24 rounded-xl overflow-hidden bg-muted flex-shrink-0">
-                <img src={r.receipt_data_url} alt="" className="w-full h-full object-cover" />
-              </button>
+              <ReceiptThumb src={r.receipt_data_url} onOpen={() => setViewImg(r.receipt_data_url)} testid={`refund-thumb-${r.refund_id}`} />
             )}
             <div className="flex-1 min-w-0">
               <p className="font-bold">{r.full_name}</p>
@@ -883,11 +873,7 @@ function RefundsTab() {
           )}
         </div>
       ))}
-      {viewImg && (
-        <div className="fixed inset-0 z-[90] bg-black/95 flex items-center justify-center p-4" onClick={() => setViewImg(null)}>
-          <img src={viewImg} alt="" className="max-w-full max-h-full object-contain" />
-        </div>
-      )}
+      <ReceiptViewer src={viewImg} onClose={() => setViewImg(null)} />
     </div>
   );
 }

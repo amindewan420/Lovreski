@@ -547,6 +547,26 @@ def _guess_ext(content_type: str) -> str:
         "application/pdf": ".pdf",
     }.get(content_type, "")
 
+RECEIPT_MIMES = {"image/jpeg", "image/jpg", "image/png", "image/webp", "application/pdf"}
+RECEIPT_MAX_BYTES = 10 * 1024 * 1024
+
+def validate_receipt_data_url(data_url: str) -> None:
+    """Receipts: JPG/PNG/WEBP/PDF only, ≤10 MB, content must match the declared type."""
+    if not isinstance(data_url, str) or not data_url.startswith("data:") or "," not in data_url:
+        raise HTTPException(status_code=400, detail="Неверный формат файла")
+    header, b64 = data_url.split(",", 1)
+    mime = header[5:].split(";")[0].lower()
+    if mime not in RECEIPT_MIMES:
+        raise HTTPException(status_code=400, detail="Поддерживаются только JPG, PNG или PDF")
+    if len(b64) * 3 // 4 > RECEIPT_MAX_BYTES:
+        raise HTTPException(status_code=413, detail="Файл больше 10 МБ")
+    try:
+        head = base64.b64decode(b64[:64] + "=" * (-len(b64[:64]) % 4))
+    except Exception:
+        raise HTTPException(status_code=400, detail="Файл повреждён")
+    if mime == "application/pdf" and not head.startswith(b"%PDF"):
+        raise HTTPException(status_code=400, detail="Файл не является корректным PDF")
+
 async def store_data_url_in_gridfs(data_url: str, owner_id: Optional[str], kind: str) -> str:
     """Decode a data:URL and store it (Timeweb S3 when configured, else GridFS).
     Returns the client-facing URL."""

@@ -53,6 +53,7 @@
     "react-dom": "19.0.0",
     "react-hook-form": "7.56.2",
     "react-leaflet": "5.0.0",
+    "react-pdf": "10.1.0",
     "react-resizable-panels": "3.0.1",
     "react-router-dom": "7.15.0",
     "react-scripts": "5.0.1",

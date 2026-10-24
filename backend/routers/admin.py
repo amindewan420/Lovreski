@@ -1,5 +1,5 @@
 """Admin dashboard, payments, user management, settings routes."""
-from fastapi import HTTPException, Depends, Request
+from fastapi import HTTPException, Depends, Request, Response
 from pydantic import BaseModel, Field, EmailStr
 from typing import Optional
 from datetime import datetime, timedelta, timezone
@@ -11,7 +11,7 @@ from server import (
     _get_admin_sbp_phone,
     _compress_image_data_url, gridfs_put, gridfs_url, store_data_url_in_gridfs, storage_put,
     gridfs_bucket,
-    sign_file_url,
+    sign_file_url, validate_receipt_data_url,
     AdminPaymentAction, COIN_PACKAGES,
 )
 import storage as _cloud
@@ -178,6 +178,25 @@ def _sign_receipt_urls(rows: list) -> list:
     return rows
 
 
+@api.get("/admin/receipt-file")
+async def admin_receipt_file(src: str, download: int = 0, _: dict = Depends(require_admin)):
+    """Same-origin proxy for receipt files in S3 (PDF viewer needs same-origin bytes)."""
+    key = _cloud.key_from_public_url(src)
+    if not key or "/support_receipt/" not in f"/{key}" and "/refund_receipt/" not in f"/{key}":
+        raise HTTPException(status_code=400, detail="Unsupported receipt URL")
+    try:
+        obj = await _cloud.get_object(key)
+    except Exception as e:
+        code = getattr(e, "response", {}).get("Error", {}).get("Code", "")
+        if code in ("NoSuchKey", "404", "NotFound"):
+            raise HTTPException(status_code=404, detail="File not found")
+        logger.warning(f"[receipt-file] fetch failed for {key}: {e}")
+        raise HTTPException(status_code=502, detail="Unable to load receipt")
+    name = key.rsplit("/", 1)[-1]
+    disp = "attachment" if download else "inline"
+    return Response(content=obj["body"], media_type=obj["content_type"],
+                    headers={"Content-Disposition": f'{disp}; filename="receipt_{name}"', "Cache-Control": "private, max-age=300"})
+
 @api.get("/admin/support/pending")
 async def admin_pending(_: dict = Depends(require_admin)):
     subs = await db.receipt_submissions.find({"status": "pending"}, {"_id": 0}).sort("created_at", -1).to_list(200)
@@ -268,8 +287,7 @@ class RefundBody(BaseModel):
 
 @api.post("/support/refund")
 async def submit_refund(body: RefundBody, request: Request, user: dict = Depends(get_current_user)):
-    if not body.receipt_data_url.startswith("data:"):
-        raise HTTPException(status_code=400, detail="Invalid receipt format")
+    validate_receipt_data_url(body.receipt_data_url)
     # Rate limit 3 refund requests per user per day
     since = now_utc() - timedelta(days=1)
     recent = await db.refund_requests.count_documents({"user_id": user['user_id'], "created_at": {"$gte": iso(since)}})

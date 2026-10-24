@@ -9,6 +9,7 @@ import { useI18n, getLangMeta } from "@/lib/i18n";
 import LanguageSheet from "@/components/lovreski/LanguageSheet";
 import { Slider } from "@/components/ui/slider";
 import { usePushNotifications } from "@/hooks/usePushNotifications";
+import { RECEIPT_ACCEPT, receiptFileError, readReceipt } from "@/lib/receiptFile";
 import { FILTER_SIG_KEY } from "@/lib/filterSync";
 
 const LEGAL = {
@@ -265,8 +266,10 @@ function RefundForm() {
   const ref = useRef(null);
   const pick = (file) => {
     if (!file) return;
+    const err = receiptFileError(file);
+    if (err) { toast.error(err); return; }
     setFileName(file.name);
-    const r = new FileReader(); r.onload = () => setReceipt(r.result); r.readAsDataURL(file);
+    readReceipt(file).then(setReceipt).catch(() => toast.error("Не удалось прочитать файл"));
   };
   const valid = f.full_name.trim() && f.email.trim() && f.reason.trim() && receipt;
   const submit = async () => {
@@ -294,7 +297,7 @@ function RefundForm() {
       <label className="text-xs font-semibold">Email Address *</label>
       <input data-testid="refund-email" type="email" placeholder="Enter your email address" value={f.email} onChange={(e) => setF({...f, email: e.target.value})} className="w-full px-3 py-2 rounded-xl bg-muted outline-none" />
       <label className="text-xs font-semibold">Payment Receipt *</label>
-      <input ref={ref} type="file" accept="image/*" className="hidden" onChange={(e) => pick(e.target.files?.[0])} data-testid="refund-file-input" />
+      <input ref={ref} type="file" accept={RECEIPT_ACCEPT} className="hidden" onChange={(e) => { pick(e.target.files?.[0]); e.target.value = ""; }} data-testid="refund-file-input" />
       <button data-testid="refund-upload-btn" onClick={() => ref.current?.click()} className={`w-full p-3 rounded-xl border-2 border-dashed ${receipt ? "border-emerald-500 bg-emerald-500/5" : "border-border"}`}>📎 Upload Receipt {fileName && `· ${fileName}`}</button>
       <label className="text-xs font-semibold">Reason for Refund *</label>
       <textarea data-testid="refund-reason" rows={4} maxLength={1000} placeholder="Please explain why you are requesting a refund..." value={f.reason} onChange={(e) => setF({...f, reason: e.target.value})} className="w-full px-3 py-2 rounded-xl bg-muted outline-none" />

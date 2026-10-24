@@ -7,6 +7,7 @@ import {
   Check, Clock, HeartHandshake, Building2,
 } from "lucide-react";
 import { toast } from "sonner";
+import { RECEIPT_ACCEPT, receiptFileError, readReceipt } from "@/lib/receiptFile";
 import { useNavigate } from "react-router-dom";
 import { motion, AnimatePresence } from "framer-motion";
 
@@ -55,12 +56,10 @@ export default function PremiumPage() {
 
   const onPickFile = (file) => {
     if (!file) return;
-    const ok = ["image/jpeg", "image/jpg", "image/png", "application/pdf"].includes(file.type);
-    if (!ok) return toast.error("Только JPG, PNG или PDF");
+    const err = receiptFileError(file);
+    if (err) return toast.error(err);
     setReceiptFile(file);
-    const reader = new FileReader();
-    reader.onload = () => setReceiptDataUrl(reader.result);
-    reader.readAsDataURL(file);
+    readReceipt(file).then(setReceiptDataUrl).catch(() => toast.error("Не удалось прочитать файл"));
   };
 
   const submitReceipt = async () => {
@@ -237,7 +236,7 @@ export default function PremiumPage() {
                 ref={fileRef}
                 data-testid="receipt-file-input"
                 type="file"
-                accept="image/jpeg,image/jpg,image/png,application/pdf"
+                accept={RECEIPT_ACCEPT}
                 className="hidden"
                 onChange={(e) => onPickFile(e.target.files?.[0])}
               />

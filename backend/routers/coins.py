@@ -6,7 +6,7 @@ from datetime import timedelta
 import io, uuid, base64, os
 from server import (
     api, db, logger, now_utc, iso, fcm,
-    get_current_user,
+    get_current_user, validate_receipt_data_url,
     _get_admin_sbp_phone, _build_sbp_link, _qr_png_base64, _try_auto_confirm,
     _compress_image_data_url, gridfs_put, gridfs_url, store_data_url_in_gridfs, storage_put,
     COIN_PACKAGES, AUTO_CREDIT_ENABLED, MOCK_CONFIRM_DELAY_SECONDS,
@@ -168,8 +168,7 @@ class ReceiptBody(BaseModel):
 async def submit_receipt(body: ReceiptBody, user: dict = Depends(get_current_user)):
     """User uploads a payment receipt image/PDF for admin verification.
     Coins are NOT credited here — only after admin approval."""
-    if not body.receipt_data_url.startswith("data:"):
-        raise HTTPException(status_code=400, detail="Invalid receipt format")
+    validate_receipt_data_url(body.receipt_data_url)
     # Rate-limit 5 receipts per hour
     since = now_utc() - timedelta(hours=1)
     recent = await db.receipt_submissions.count_documents({"user_id": user['user_id'], "created_at": {"$gte": iso(since)}})
