@@ -49,6 +49,7 @@ export default function ChatsListPage() {
               last.kind === "voice" ? t("chat.preview_voice") :
               last.kind === "video" ? t("chat.preview_video") :
               last.kind === "file"  ? t("chat.preview_file") :
+              last.kind === "location" ? "📍 " + t("chat.location") :
               last.text || "...";
             return (
               <button

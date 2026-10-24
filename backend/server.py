@@ -217,11 +217,15 @@ class ProfileUpdate(BaseModel):
     distance_km: Optional[int] = Field(default=None, ge=0, le=2000)
     auto_translate: Optional[bool] = None
     language_pref: Optional[str] = Field(default=None, max_length=10)
+    notif_push: Optional[dict[str, bool]] = None
 
 class MessageBody(BaseModel):
     text: Optional[str] = None
-    kind: Literal['text', 'emoji', 'image', 'file', 'gift', 'voice', 'video'] = 'text'
+    kind: Literal['text', 'emoji', 'image', 'file', 'gift', 'voice', 'video', 'location'] = 'text'
     media_url: Optional[str] = None
+    lat: Optional[float] = Field(default=None, ge=-90, le=90)
+    lng: Optional[float] = Field(default=None, ge=-180, le=180)
+    place: Optional[str] = Field(default=None, max_length=200)
     file_name: Optional[str] = None
     gift_key: Optional[str] = None
     reply_to: Optional[str] = None
@@ -264,7 +268,8 @@ COIN_PACKAGES = [
 # messages TOTAL per chat (any kind). Beyond that the input is hard-blocked
 # unless the user has coins (or Premium for text/emoji). Note: 'gift' kind
 # does NOT use MSG_COST — its cost is looked up per-key in GIFT_COST_BY_KEY.
-MSG_COST = {"text": 1, "emoji": 2, "image": 5, "file": 5, "voice": 5, "video": 10}
+MSG_COST = {"text": 1, "emoji": 2, "image": 5, "file": 5, "voice": 5, "video": 10, "location": 1}
+LOCATION_TTL_HOURS = 24
 FREE_MSGS = 2
 
 # Gift catalog — illustrations use free Unicode emoji rendered inside a colored
@@ -603,6 +608,22 @@ async def _base_candidates(user: dict, pool_limit: int = 500, exclude: tuple = (
 def chat_id(a: str, b: str) -> str:
     return "chat_" + "_".join(sorted([a, b]))
 
+def expire_location(m: dict) -> dict:
+    """Strip coordinates from location messages once they expire (24h)."""
+    if m.get('kind') != 'location' or not m.get('location'):
+        return m
+    exp = m.get('location_expires_at')
+    try:
+        exp_dt = datetime.fromisoformat(str(exp).replace("Z", "+00:00"))
+        if exp_dt.tzinfo is None:
+            exp_dt = exp_dt.replace(tzinfo=timezone.utc)
+    except Exception:
+        exp_dt = None
+    if exp_dt is None or now_utc() >= exp_dt:
+        m['location'] = None
+        m['location_expired'] = True
+    return m
+
 def _decorate_msg(m: dict, viewer_id: str, viewer_is_premium: bool) -> dict:
     """Apply locked flag: incoming messages from partner beyond the 2 free window
     are hidden unless the viewer has Premium. Free users see the message exists
@@ -629,6 +650,8 @@ async def _do_send_message(sender: dict, other_id: str, body: MessageBody) -> di
         cost = GIFT_COST_BY_KEY[body.gift_key]
     else:
         cost = MSG_COST[body.kind]
+    if body.kind == 'location' and (body.lat is None or body.lng is None):
+        raise HTTPException(status_code=400, detail="Location requires lat/lng")
     cid = chat_id(sender['user_id'], other_id)
     sent_count = await db.messages.count_documents({"chat_id": cid, "from_user": sender['user_id']})
     is_admin_sender = sender.get('is_admin', False)
@@ -667,6 +690,8 @@ async def _do_send_message(sender: dict, other_id: str, body: MessageBody) -> di
         "file_name": body.file_name,
         "gift_key": body.gift_key,
         "reply_to": body.reply_to,
+        **({"location": {"lat": body.lat, "lng": body.lng, "place": body.place or ""},
+            "location_expires_at": iso(now_utc() + timedelta(hours=LOCATION_TTL_HOURS))} if body.kind == 'location' else {}),
         "read": False,
         "cost_paid": cost_paid,
         "created_at": iso(now_utc()),
@@ -691,6 +716,7 @@ async def _do_send_message(sender: dict, other_id: str, body: MessageBody) -> di
             "voice": "🎤 Голосовое сообщение",
             "file": f"📎 {body.file_name or 'Файл'}",
             "gift": "🎁 Подарок",
+            "location": "📍 Местоположение",
         }
         preview = preview_map.get(body.kind, body.text or "Новое сообщение")
         await fcm.notify_chat_message(
@@ -893,6 +919,19 @@ I18N_BASE_RU = {
     "settings.notif.messages": "Сообщения", "settings.notif.likes": "Лайки",
     "settings.notif.matches": "Матчи", "settings.notif.visits": "Посещения",
     "settings.notif.who_liked": "Кто лайкнул",
+    "settings.notif.announcements": "Новости от Lovreski",
+    "push.prompt_title": "Включить уведомления?",
+    "push.prompt_body": "Узнавайте о новых лайках, матчах и сообщениях сразу.",
+    "push.enable": "Включить", "push.later": "Позже", "push.open": "Открыть",
+    "push.denied": "Уведомления запрещены в настройках браузера",
+    "chat.location": "Локация", "chat.location_title": "Отправить место встречи",
+    "chat.location_hint": "Перетащите метку или нажмите на карту, чтобы выбрать место.",
+    "chat.location_safety": "Ради вашей безопасности всегда встречайтесь в людных общественных местах и сообщите друзьям, куда идёте.",
+    "chat.location_send": "Отправить локацию", "chat.location_mine": "Моё местоположение",
+    "chat.location_expires": "Метка исчезнет через 24 часа",
+    "chat.location_expired": "Срок действия метки истёк",
+    "chat.location_open": "Открыть в картах",
+    "chat.location_place_ph": "Название места (необязательно), напр. «Кафе на Тверской»",
     "settings.section.push": "Push-уведомления",
     "settings.push_enable": "Включить push-уведомления",
     "settings.push_disable": "Отключить push-уведомления",
@@ -1008,8 +1047,9 @@ async def on_start():
     await db.push_tokens.create_index([("user_id", 1), ("last_seen", -1)])
     await db.s3_files.create_index("kind")
     await db.s3_files.create_index("owner_id")
-    # Initialize Firebase (safe no-op if env vars are missing)
-    fcm.init_fcm()
+    await db.profile_visits.create_index([("viewer", 1), ("target", 1)], unique=True)
+    # Initialize Firebase from Admin-Panel config (no-op if not configured)
+    await fcm.get_app(db)
 
 @app.on_event("shutdown")
 async def on_stop():

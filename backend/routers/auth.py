@@ -41,7 +41,7 @@ async def register(body: RegisterBody):
         "created_at": iso(now_utc()),
         "last_active": iso(now_utc()),
         "popularity": "medium",
-        "notif_push": {"messages": True, "likes": True, "matches": True, "visits": False, "who_liked": False},
+        "notif_push": {"messages": True, "likes": True, "matches": True, "visits": True, "announcements": True},
         "notif_email": {"messages": False, "likes": False, "matches": True},
     }
     await db.users.insert_one(doc)
@@ -172,7 +172,7 @@ async def exchange_session(body: SessionExchange, response: Response):
             "distance_mode": "unlimited", "auto_translate": False,
             "created_at": iso(now_utc()), "last_active": iso(now_utc()),
             "popularity": "medium",
-            "notif_push": {"messages": True, "likes": True, "matches": True, "visits": False, "who_liked": False},
+            "notif_push": {"messages": True, "likes": True, "matches": True, "visits": True, "announcements": True},
             "notif_email": {"messages": False, "likes": False, "matches": True},
         }
         await db.users.insert_one(user)

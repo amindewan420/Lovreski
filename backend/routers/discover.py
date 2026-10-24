@@ -139,6 +139,11 @@ async def like_user(target_id: str, user: dict = Depends(get_current_user)):
             await fcm.notify_match(db, user['user_id'], target.get("name") or "Someone", target_id)
         except Exception as e:
             logger.warning(f"[push] match notify failed: {e}")
+    else:
+        try:
+            await fcm.notify_like(db, target_id, user.get("name") or "Кто-то", user['user_id'])
+        except Exception as e:
+            logger.warning(f"[push] like notify failed: {e}")
     return {"ok": True, "match": is_match, "target": user_public(target, viewer=user)}
 
 @api.delete("/like/{target_id}")

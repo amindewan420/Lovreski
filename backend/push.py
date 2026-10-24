@@ -1,22 +1,10 @@
-"""Firebase Cloud Messaging (Web Push) integration for Lovreski.
+"""Firebase Cloud Messaging (Web Push) for Lovreski.
 
-Design goals:
-- Fail-safe: if Firebase is not configured (env vars missing), all functions
-  no-op gracefully so the rest of the app keeps working. This lets us ship
-  the scaffold before the user pastes their Firebase credentials.
-- Presence-aware: only send FCM when the recipient's WebSocket has been idle
-  > PRESENCE_TTL. Foreground users already get real-time WS updates.
-- Multi-device: each user can register multiple browser tokens; stale ones
-  are pruned when FCM reports UnregisteredError.
-
-Env vars (in /app/backend/.env):
-  FIREBASE_PROJECT_ID              - your Firebase project id (also enables FCM)
-  FIREBASE_SERVICE_ACCOUNT_JSON    - the ENTIRE service-account JSON (inline)
-                                     OR
-  GOOGLE_APPLICATION_CREDENTIALS   - absolute path to the service-account file
+Configuration is stored in MongoDB (`settings` collection, key="firebase") and
+managed from the Admin Panel — no .env variables required. The service-account
+JSON is encrypted at rest. All functions no-op gracefully when not configured.
 """
 from __future__ import annotations
-import os
 import json
 import logging
 from datetime import datetime, timezone, timedelta
@@ -24,10 +12,12 @@ from typing import Optional
 
 logger = logging.getLogger("lovreski.push")
 
-# Presence: skip FCM if the user has an active WS or pinged within this window.
 PRESENCE_TTL = timedelta(seconds=60)
+APP_NAME = "lovreski-fcm"
+WEB_FIELDS = ("project_id", "api_key", "app_id", "sender_id", "auth_domain", "vapid_key")
 
-_fcm_ready = False
+_app = None
+_app_sig: Optional[str] = None
 
 
 def _iso(dt: datetime) -> str:
@@ -38,55 +28,98 @@ def _now() -> datetime:
     return datetime.now(timezone.utc)
 
 
-def is_configured() -> bool:
-    """Return True if Firebase credentials are present in the environment."""
-    if not os.environ.get("FIREBASE_PROJECT_ID"):
-        return False
-    return bool(
-        os.environ.get("FIREBASE_SERVICE_ACCOUNT_JSON")
-        or os.environ.get("GOOGLE_APPLICATION_CREDENTIALS")
-    )
+# ─── Config storage ─────────────────────────────────────────────────────────
+async def get_config(db) -> dict:
+    return await db.settings.find_one({"key": "firebase"}, {"_id": 0}) or {}
 
 
-def init_fcm() -> bool:
-    """Initialize firebase-admin once. Safe to call multiple times."""
-    global _fcm_ready
-    if _fcm_ready:
-        return True
-    if not is_configured():
-        logger.info("[push] Firebase not configured — FCM disabled (in-app notifications still work)")
-        return False
+async def save_config(db, fields: dict, service_account: Optional[dict] = None) -> dict:
+    from server import encrypt_str
+    upd = {k: (fields.get(k) or "").strip() for k in WEB_FIELDS if k in fields and fields.get(k) is not None}
+    if service_account is not None:
+        upd["service_account_enc"] = encrypt_str(json.dumps(service_account))
+        upd["client_email"] = service_account.get("client_email", "")
+        upd["sa_project_id"] = service_account.get("project_id", "")
+        if not upd.get("project_id") and not (await get_config(db)).get("project_id"):
+            upd["project_id"] = service_account.get("project_id", "")
+    upd.update({"key": "firebase", "updated_at": _iso(_now())})
+    await db.settings.update_one({"key": "firebase"}, {"$set": upd}, upsert=True)
+    return await get_config(db)
+
+
+async def clear_service_account(db) -> None:
+    await db.settings.update_one({"key": "firebase"}, {"$unset": {"service_account_enc": "", "client_email": "", "sa_project_id": ""}})
+
+
+def public_web_config(cfg: dict) -> dict:
+    """Web-SDK config (all public by design) — only exposed when complete."""
+    ok = all(cfg.get(k) for k in ("project_id", "api_key", "app_id", "sender_id", "vapid_key"))
+    if not ok or not cfg.get("service_account_enc"):
+        return {"configured": False}
+    return {
+        "configured": True,
+        "apiKey": cfg["api_key"],
+        "authDomain": cfg.get("auth_domain") or f"{cfg['project_id']}.firebaseapp.com",
+        "projectId": cfg["project_id"],
+        "messagingSenderId": cfg["sender_id"],
+        "appId": cfg["app_id"],
+        "vapidKey": cfg["vapid_key"],
+    }
+
+
+async def is_configured(db) -> bool:
+    return bool((await get_config(db)).get("service_account_enc"))
+
+
+async def get_app(db):
+    """Initialize (or re-initialize on config change) a named firebase_admin app."""
+    global _app, _app_sig
+    cfg = await get_config(db)
+    enc = cfg.get("service_account_enc")
+    if not enc:
+        return None
+    if _app is not None and _app_sig == enc:
+        return _app
     try:
         import firebase_admin
         from firebase_admin import credentials
-        if firebase_admin._apps:
-            _fcm_ready = True
-            return True
-        inline_json = os.environ.get("FIREBASE_SERVICE_ACCOUNT_JSON")
-        if inline_json:
-            svc = json.loads(inline_json)
-            firebase_admin.initialize_app(credentials.Certificate(svc))
-        else:
-            # GOOGLE_APPLICATION_CREDENTIALS path — firebase_admin picks it up automatically.
-            firebase_admin.initialize_app()
-        _fcm_ready = True
-        logger.info("[push] Firebase Admin initialized (project=%s)", os.environ.get("FIREBASE_PROJECT_ID"))
-        return True
+        from server import decrypt_str
+        if _app is not None:
+            try:
+                firebase_admin.delete_app(_app)
+            except Exception:
+                pass
+        svc = json.loads(decrypt_str(enc))
+        _app = firebase_admin.initialize_app(credentials.Certificate(svc), name=APP_NAME)
+        _app_sig = enc
+        logger.info("[push] Firebase Admin initialized (project=%s)", svc.get("project_id"))
+        return _app
     except Exception as e:
+        _app, _app_sig = None, None
         logger.warning("[push] Firebase init failed: %s", e)
-        return False
+        return None
 
 
-# ─── Presence check (called before every FCM send) ─────────────────────────
+def validate_service_account(svc: dict) -> Optional[str]:
+    if not isinstance(svc, dict) or svc.get("type") != "service_account":
+        return "Файл не является service account JSON (type != service_account)"
+    for k in ("project_id", "private_key", "client_email"):
+        if not svc.get(k):
+            return f"В файле отсутствует поле {k}"
+    try:
+        from firebase_admin import credentials
+        credentials.Certificate(svc)
+    except Exception as e:
+        return f"Некорректный ключ: {e}"
+    return None
+
+
+# ─── Presence & preferences ─────────────────────────────────────────────────
 async def should_push(db, user_id: str, ws_manager=None) -> bool:
-    """Return True when the user is not actively connected AND has been idle
-    more than PRESENCE_TTL. `ws_manager` is the in-process WSManager singleton."""
     if ws_manager is not None and ws_manager.is_online(user_id):
         return False
     u = await db.users.find_one({"user_id": user_id}, {"_id": 0, "last_active": 1, "is_online": 1})
-    if not u:
-        return False
-    if u.get("is_online"):
+    if not u or u.get("is_online"):
         return False
     la = u.get("last_active")
     if not la:
@@ -100,18 +133,22 @@ async def should_push(db, user_id: str, ws_manager=None) -> bool:
         return True
 
 
+PREF_DEFAULTS = {"messages": True, "likes": True, "matches": True, "visits": True, "announcements": True}
+
+
+async def pref_enabled(db, user_id: str, pref: str) -> bool:
+    u = await db.users.find_one({"user_id": user_id}, {"_id": 0, "notif_push": 1}) or {}
+    prefs = u.get("notif_push") or {}
+    return bool(prefs.get(pref, PREF_DEFAULTS.get(pref, True)))
+
+
 # ─── Token storage ──────────────────────────────────────────────────────────
 async def save_token(db, user_id: str, token: str, platform: str = "web", user_agent: str = "") -> None:
     await db.push_tokens.update_one(
         {"token": token},
         {
-            "$set": {
-                "user_id": user_id,
-                "token": token,
-                "platform": platform,
-                "user_agent": user_agent[:200],
-                "last_seen": _iso(_now()),
-            },
+            "$set": {"user_id": user_id, "token": token, "platform": platform,
+                     "user_agent": user_agent[:200], "last_seen": _iso(_now())},
             "$setOnInsert": {"created_at": _iso(_now())},
         },
         upsert=True,
@@ -128,118 +165,107 @@ async def _get_tokens(db, user_id: str) -> list[str]:
 
 
 # ─── Core send ──────────────────────────────────────────────────────────────
-async def send_to_user(
-    db,
-    user_id: str,
-    *,
-    title: str,
-    body: str,
-    url: str = "/",
-    kind: str = "info",
-    tag: Optional[str] = None,
-    extra_data: Optional[dict] = None,
-) -> dict:
-    """Send a Web Push to all of a user's registered tokens.
-    Returns {sent, removed_stale, reason}.  Never raises."""
-    if not init_fcm():
+async def send_to_user(db, user_id: str, *, title: str, body: str, url: str = "/",
+                       kind: str = "info", tag: Optional[str] = None,
+                       extra_data: Optional[dict] = None, pref: Optional[str] = None) -> dict:
+    """Send a Web Push to all of a user's tokens. Never raises."""
+    if pref and not await pref_enabled(db, user_id, pref):
+        return {"sent": 0, "reason": "pref-disabled"}
+    app = await get_app(db)
+    if app is None:
         return {"sent": 0, "reason": "not-configured"}
     tokens = await _get_tokens(db, user_id)
     if not tokens:
         return {"sent": 0, "reason": "no-tokens"}
-    try:
-        from firebase_admin import messaging
-    except Exception as e:
-        logger.warning("[push] messaging import failed: %s", e)
-        return {"sent": 0, "reason": "sdk-error"}
-    sent = 0
-    stale: list[str] = []
-    data_payload = {
-        "type": kind,
-        "title": title[:200],
-        "body": body[:200],
-        "url": url,
-    }
-    if extra_data:
-        # FCM data payload values MUST be strings.
-        for k, v in extra_data.items():
-            data_payload[str(k)] = str(v)
+    from firebase_admin import messaging
+    data_payload = {"type": kind, "title": title[:200], "body": body[:200], "url": url, "tag": tag or kind}
+    for k, v in (extra_data or {}).items():
+        data_payload[str(k)] = str(v)
+    sent, stale, last_err = 0, [], None
     for tk in tokens:
         try:
-            msg = messaging.Message(
-                token=tk,
-                notification=messaging.Notification(title=title[:200], body=body[:400]),
-                data=data_payload,
-                webpush=messaging.WebpushConfig(
-                    fcm_options=messaging.WebpushFCMOptions(link=url),
-                    notification=messaging.WebpushNotification(
-                        title=title[:200], body=body[:400], tag=tag or kind, icon="/logo192.png"
-                    ),
-                ),
-            )
-            messaging.send(msg)
+            # Data-only message: the service worker renders it and handles click-to-navigate.
+            messaging.send(messaging.Message(
+                token=tk, data=data_payload,
+                webpush=messaging.WebpushConfig(headers={"Urgency": "high"}),
+            ), app=app)
             sent += 1
         except Exception as e:
-            # UnregisteredError / invalid tokens → prune
             err_name = type(e).__name__
-            if "Unregistered" in err_name or "InvalidArgumentError" in err_name or "invalid" in str(e).lower():
+            last_err = f"{err_name}: {e}"
+            if "Unregistered" in err_name or "SenderIdMismatch" in err_name or "not a valid FCM registration token" in str(e):
                 stale.append(tk)
             else:
                 logger.warning("[push] send error for token %s...: %s", tk[:16], e)
     if stale:
         await db.push_tokens.delete_many({"user_id": user_id, "token": {"$in": stale}})
-    return {"sent": sent, "removed_stale": len(stale)}
+    out = {"sent": sent, "removed_stale": len(stale)}
+    if not sent and last_err:
+        out["error"] = last_err[:300]
+    return out
 
 
 async def broadcast_to_admins(db, *, title: str, body: str, url: str = "/admin", kind: str = "admin") -> dict:
     admins = await db.users.find({"is_admin": True}, {"_id": 0, "user_id": 1}).to_list(50)
-    total_sent = 0
+    total = 0
     for a in admins:
-        r = await send_to_user(db, a["user_id"], title=title, body=body, url=url, kind=kind)
-        total_sent += r.get("sent", 0)
-    return {"sent": total_sent, "admins": len(admins)}
+        total += (await send_to_user(db, a["user_id"], title=title, body=body, url=url, kind=kind)).get("sent", 0)
+    return {"sent": total, "admins": len(admins)}
 
 
-# ─── High-level event helpers (used by the app code) ────────────────────────
+async def broadcast_announcement(db, *, title: str, body: str, url: str = "/home") -> dict:
+    ids = await db.push_tokens.distinct("user_id")
+    sent = users = 0
+    for uid in ids:
+        r = await send_to_user(db, uid, title=title, body=body, url=url, kind="announcement", pref="announcements")
+        if r.get("sent"):
+            users += 1
+            sent += r["sent"]
+    return {"sent": sent, "users": users}
+
+
+# ─── High-level event helpers ───────────────────────────────────────────────
 async def notify_chat_message(db, ws_manager, recipient_id: str, sender_name: str,
                               preview: str, other_id: str) -> None:
-    """Recipient gets a push only if not actively connected."""
     if not await should_push(db, recipient_id, ws_manager):
         return
     await send_to_user(
-        db, recipient_id,
-        title=f"💬 {sender_name}",
-        body=preview or "Новое сообщение",
-        url=f"/chats/{other_id}",
-        kind="chat",
-        tag=f"chat-{other_id}",
-        extra_data={"other_id": other_id, "sender_name": sender_name},
+        db, recipient_id, title=f"💬 {sender_name}", body=preview or "Новое сообщение",
+        url=f"/chats/{other_id}", kind="chat", tag=f"chat-{other_id}",
+        extra_data={"other_id": other_id}, pref="messages",
+    )
+
+
+async def notify_like(db, user_id: str, liker_name: str, liker_id: str) -> None:
+    await send_to_user(
+        db, user_id, title="❤️ Новый лайк", body=f"{liker_name} лайкнул(а) вашу анкету",
+        url="/likes", kind="like", tag=f"like-{liker_id}", pref="likes",
     )
 
 
 async def notify_match(db, user_id: str, other_name: str, other_id: str) -> None:
     await send_to_user(
-        db, user_id,
-        title="💘 Взаимная симпатия!",
-        body=f"Вы понравились {other_name}. Начните общение!",
-        url=f"/profile/{other_id}",
-        kind="match",
-        tag=f"match-{other_id}",
-        extra_data={"other_id": other_id},
+        db, user_id, title="💘 Взаимная симпатия!", body=f"Вы понравились {other_name}. Начните общение!",
+        url=f"/chats/{other_id}", kind="match", tag=f"match-{other_id}",
+        extra_data={"other_id": other_id}, pref="matches",
+    )
+
+
+async def notify_visit(db, user_id: str, visitor_name: str, visitor_id: str) -> None:
+    await send_to_user(
+        db, user_id, title="👀 Новый гость", body=f"{visitor_name} посетил(а) ваш профиль",
+        url=f"/profile/{visitor_id}", kind="visit", tag=f"visit-{visitor_id}", pref="visits",
     )
 
 
 async def notify_payment(db, user_id: str, message: str, success: bool = True) -> None:
     await send_to_user(
-        db, user_id,
-        title="✅ Платёж" if success else "❌ Платёж",
-        body=message,
-        url="/premium",
-        kind="payment_success" if success else "payment_failed",
+        db, user_id, title="✅ Платёж" if success else "❌ Платёж", body=message,
+        url="/premium", kind="payment_success" if success else "payment_failed",
     )
 
 
 async def notify_admin_new_submission(db, kind: str, from_user_name: str) -> None:
-    """Alert admins about new admin-actionable events (payments, reports)."""
     labels = {
         "receipt": ("💰 Новый платёж на проверку", "/admin"),
         "report": ("⚠️ Новая жалоба на пользователя", "/admin"),

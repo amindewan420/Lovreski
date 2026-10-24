@@ -25,4 +25,7 @@ async def report_user(body: ReportBody, user: dict = Depends(get_current_user)):
 @api.post("/block/{target_id}")
 async def block(target_id: str, user: dict = Depends(get_current_user)):
     await db.users.update_one({"user_id": user['user_id']}, {"$addToSet": {"blocked": target_id}})
+    # Chat ended → expire any shared location pins immediately
+    cid = "chat_" + "_".join(sorted([user['user_id'], target_id]))
+    await db.messages.update_many({"chat_id": cid, "kind": "location"}, {"$set": {"location_expires_at": iso(now_utc())}})
     return {"ok": True}

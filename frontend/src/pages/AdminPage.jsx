@@ -5,6 +5,7 @@ import { useNavigate } from "react-router-dom";
 import { LineChart, Line, BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid } from "recharts";
 import { Shield, Users, Crown, Clock, TrendingUp, Check, X, Flag, LogOut, Search as SearchIcon, MinusCircle, AlertTriangle, Ban, UserX, FileText, Trash2, Plus, Pencil, Database } from "lucide-react";
 import { toast } from "sonner";
+import { PushConfigTab } from "@/components/admin/PushConfigTab";
 
 // Format bytes for human readability
 const fmtBytes = (b) => {
@@ -258,8 +259,8 @@ export default function AdminPage() {
       </header>
 
       <div className="max-w-6xl mx-auto p-6">
-        <div className="flex gap-2 mb-6 bg-muted p-1 rounded-full w-fit">
-          {[{k:"dashboard",l:"Дашборд"},{k:"support",l:"Verification",badge:pendingCount},{k:"payments",l:"Платежи"},{k:"refunds",l:"Refund Requests"},{k:"reports",l:"Жалобы"},{k:"users",l:"Пользователи"},{k:"legal",l:"Правовые"},{k:"settings",l:"Настройки"}].map(t => (
+        <div className="flex gap-2 mb-6 bg-muted p-1 rounded-full w-fit max-w-full overflow-x-auto whitespace-nowrap">
+          {[{k:"dashboard",l:"Дашборд"},{k:"support",l:"Verification",badge:pendingCount},{k:"payments",l:"Платежи"},{k:"refunds",l:"Refund Requests"},{k:"reports",l:"Жалобы"},{k:"users",l:"Пользователи"},{k:"legal",l:"Правовые"},{k:"push",l:"Push"},{k:"settings",l:"Настройки"}].map(t => (
             <button key={t.k} data-testid={`admin-tab-${t.k}`} onClick={() => setTab(t.k)} className={`relative px-5 py-2 rounded-full font-semibold text-sm ${tab === t.k ? "bg-card shadow" : "text-muted-foreground"}`}>
               {t.l}
               {t.badge > 0 && (
@@ -582,6 +583,7 @@ export default function AdminPage() {
         )}
 
         {tab === "refunds" && <RefundsTab />}
+        {tab === "push" && <PushConfigTab />}
 
         {tab === "settings" && (
           <div className="max-w-lg space-y-6">

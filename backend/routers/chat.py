@@ -7,7 +7,7 @@ import io, base64, uuid
 from server import (
     api, db, logger, now_utc, iso, fcm, ws_manager,
     get_current_user, user_public,
-    chat_id, _decorate_msg, _do_send_message, _compress_image_data_url,
+    chat_id, _decorate_msg, expire_location, _do_send_message, _compress_image_data_url,
     gridfs_put, gridfs_url, store_data_url_in_gridfs, sign_file_url, storage_put,
     MessageBody, GIFT_CATALOG, MSG_COST, FREE_MSGS,
 )
@@ -65,12 +65,14 @@ async def get_messages(other_id: str, user: dict = Depends(get_current_user), li
     partner_seen = 0
     for m in msgs:
         m.pop('_id', None)
+        expire_location(m)
         # Normalize deleted-for-everyone messages so the client can render a placeholder
         if m.get('deleted'):
             m['text'] = ''
             m['media_url'] = None
             m['file_name'] = None
             m['gift_key'] = None
+            m['location'] = None
             m['locked'] = False
             continue
         if m.get('from_user') != uid:
@@ -79,6 +81,7 @@ async def get_messages(other_id: str, user: dict = Depends(get_current_user), li
                 m['locked'] = True
                 m['text'] = ''
                 m['media_url'] = None
+                m['location'] = None
             else:
                 m['locked'] = False
         else:

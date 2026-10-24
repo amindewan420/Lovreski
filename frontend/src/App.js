@@ -16,6 +16,7 @@ import OtherProfilePage from "@/pages/OtherProfilePage";
 import PremiumPage from "@/pages/PremiumPage";
 import PurchaseHistoryPage from "@/pages/PurchaseHistoryPage";
 import AdminNotifier from "@/components/lovreski/AdminNotifier";
+import PushManager from "@/components/lovreski/PushManager";
 import SettingsPage from "@/pages/SettingsPage";
 import AdminPage from "@/pages/AdminPage";
 
@@ -66,6 +67,7 @@ function App() {
           <BrowserRouter>
             <AppRouter />
             <AdminNotifier />
+            <PushManager />
             <Toaster position="top-center" richColors />
           </BrowserRouter>
         </I18nProvider>

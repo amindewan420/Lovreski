@@ -156,9 +156,9 @@ export default function SettingsPage() {
         </Section>
 
         <Section title={t("settings.section.notifications")} icon={Bell}>
-          {["messages","likes","matches","visits","who_liked"].map((k) => (
+          {["messages","likes","matches","visits","announcements"].map((k) => (
             <Row key={k} label={t(`settings.notif.${k}`)}>
-              <input type="checkbox" checked={form.notif_push?.[k] || false} onChange={(e) => { const np = { ...(form.notif_push||{}), [k]: e.target.checked }; setForm({ ...form, notif_push: np }); save({ notif_push: np }); }} className="accent-primary" />
+              <input type="checkbox" data-testid={`notif-toggle-${k}`} checked={form.notif_push?.[k] ?? true} onChange={(e) => { const np = { ...(form.notif_push||{}), [k]: e.target.checked }; setForm({ ...form, notif_push: np }); save({ notif_push: np }); }} className="accent-primary" />
             </Row>
           ))}
         </Section>

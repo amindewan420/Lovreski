@@ -3,8 +3,9 @@ from fastapi import HTTPException, Depends
 from typing import List
 from pydantic import BaseModel
 import uuid
+from datetime import datetime, timedelta
 from server import (
-    api, db, logger, now_utc, iso,
+    api, db, logger, now_utc, iso, fcm,
     get_current_user, user_public, calc_age,
     _compress_image_data_url, storage_put, store_data_url_in_gridfs,
     _verify_gender_from_photo, _profile_completion,
@@ -141,5 +142,27 @@ async def get_profile(user_id: str, user: dict = Depends(get_current_user)):
     target = await db.users.find_one({"user_id": user_id}, {"_id": 0, "password_hash": 0})
     if not target:
         raise HTTPException(status_code=404, detail="Profile not found")
+    if user_id != user['user_id']:
+        await _record_visit(user, user_id)
     return user_public(target, viewer=user)
+
+
+VISIT_NOTIFY_COOLDOWN = timedelta(hours=6)
+
+async def _record_visit(viewer: dict, target_id: str) -> None:
+    """Upsert visit; push the target at most once per viewer per cooldown window."""
+    now = now_utc()
+    prev = await db.profile_visits.find_one_and_update(
+        {"viewer": viewer['user_id'], "target": target_id},
+        {"$set": {"last_visit": iso(now)}, "$inc": {"count": 1}},
+        upsert=True,
+    )
+    last_notified = (prev or {}).get("notified_at")
+    if last_notified and (now - datetime.fromisoformat(last_notified.replace("Z", "+00:00"))) < VISIT_NOTIFY_COOLDOWN:
+        return
+    await db.profile_visits.update_one({"viewer": viewer['user_id'], "target": target_id}, {"$set": {"notified_at": iso(now)}})
+    try:
+        await fcm.notify_visit(db, target_id, viewer.get("name") or "Кто-то", viewer['user_id'])
+    except Exception as e:
+        logger.warning(f"[push] visit notify failed: {e}")
 

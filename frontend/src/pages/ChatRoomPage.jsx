@@ -7,6 +7,7 @@ import { useI18n, getLangMeta } from "@/lib/i18n";
 import EmojiPanel from "@/components/lovreski/EmojiPanel";
 import GiftPanel from "@/components/lovreski/GiftPanel";
 import LanguageSheet from "@/components/lovreski/LanguageSheet";
+import { LocationPicker, LocationBubble } from "@/components/lovreski/LocationShare";
 import {
   ArrowLeft, Send, Plus, Image as ImageIcon, File as FileIcon, Video, Mic, Square,
   Smile, Gift, Globe, Reply, X, Check, CheckCheck, Lock, ShoppingBag, Trash2, MapPin, ChevronDown,
@@ -92,6 +93,7 @@ export default function ChatRoomPage() {
 
   // Sheets / modals
   const [showTray, setShowTray] = useState(false);
+  const [showLocation, setShowLocation] = useState(false);
   const [showEmoji, setShowEmoji] = useState(false);
   const [showGifts, setShowGifts] = useState(false);
   const [showLang, setShowLang] = useState(false);
@@ -323,24 +325,11 @@ export default function ChatRoomPage() {
     setShowScrollDown(distanceFromBottom > 120);
   };
 
-  // ─── Location share (browser Geolocation → OpenStreetMap link) ───────
-  const shareLocation = () => {
-    setShowTray(false);
-    if (!navigator.geolocation) return toast.error("Геолокация недоступна");
-    toast.loading("Определяем местоположение...", { id: "geo" });
-    navigator.geolocation.getCurrentPosition(
-      (pos) => {
-        toast.dismiss("geo");
-        const { latitude, longitude } = pos.coords;
-        const url = `https://www.openstreetmap.org/?mlat=${latitude}&mlon=${longitude}#map=17/${latitude}/${longitude}`;
-        send({ kind: "text", text: `📍 ${url}` });
-      },
-      (err) => {
-        toast.dismiss("geo");
-        toast.error(err.code === 1 ? "Доступ к геолокации запрещён" : "Не удалось определить местоположение");
-      },
-      { enableHighAccuracy: true, timeout: 10000 }
-    );
+  // ─── Location share (map pin picker) ─────────────────────────────────
+  const shareLocation = () => { setShowTray(false); setShowLocation(true); };
+  const sendLocation = async ({ lat, lng, place }) => {
+    setShowLocation(false);
+    await send({ kind: "location", lat, lng, place, text: place ? `📍 ${place}` : "" });
   };
 
   // ─── Input auto-grow + typing broadcast ──────────────────────────────
@@ -501,6 +490,8 @@ export default function ChatRoomPage() {
                           <div className="text-5xl">{m.text}</div>
                           <div className="text-[10px] mt-1 text-slate-500">{t("chat.preview_gift")}</div>
                         </div>
+                      ) : m.kind === "location" && !locked ? (
+                        <LocationBubble m={m} />
                       ) : ["image", "voice", "video", "file"].includes(m.kind) && m.media_url ? (
                         <MediaBubble m={m} />
                       ) : (
@@ -541,6 +532,7 @@ export default function ChatRoomPage() {
             voice: "🎤 " + t("chat.recording"),
             file: "📎 " + (reply.file_name || t("chat.gift_file")),
             gift: "🎁 " + t("chat.preview_gift"),
+            location: "📍 " + t("chat.location"),
             emoji: reply.text,
           }[reply.kind] || reply.kind;
           return (
@@ -667,6 +659,7 @@ export default function ChatRoomPage() {
         {/* Bottom sheets */}
         <EmojiPanel open={showEmoji} onClose={() => setShowEmoji(false)} onPick={(e) => { setShowEmoji(false); sendEmoji(e); }} />
         <GiftPanel open={showGifts} onClose={() => setShowGifts(false)} onSend={sendGift} coins={status.coins} />
+        <LocationPicker open={showLocation} onClose={() => setShowLocation(false)} onSend={sendLocation} fallback={{ lat: user?.lat, lng: user?.lng }} />
         <LanguageSheet open={showLang} onClose={() => setShowLang(false)} onSelect={async (l) => { const r = await setLang(l.code); setShowLang(false); if (r?.actualLang !== l.code) toast.error("Перевод недоступен, оставили русский"); else toast.success(`${l.flag} ${l.name}`); }} />
 
         {/* Block popup */}

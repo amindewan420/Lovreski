@@ -1,40 +1,46 @@
-// Firebase Web SDK client — initialized only when env vars are present.
-// This lets us ship the FCM feature dark until the user pastes credentials.
-import { initializeApp, getApps } from "firebase/app";
+// Firebase Web SDK client — config is fetched at runtime from the backend
+// (configured by the admin in the Admin Panel), not from build-time env vars.
+import { initializeApp, getApps, deleteApp } from "firebase/app";
 import { getMessaging, isSupported } from "firebase/messaging";
+import { api } from "@/lib/api";
 
-const firebaseConfig = {
-  apiKey: process.env.REACT_APP_FIREBASE_API_KEY,
-  authDomain: process.env.REACT_APP_FIREBASE_AUTH_DOMAIN,
-  projectId: process.env.REACT_APP_FIREBASE_PROJECT_ID,
-  storageBucket: process.env.REACT_APP_FIREBASE_STORAGE_BUCKET,
-  messagingSenderId: process.env.REACT_APP_FIREBASE_MESSAGING_SENDER_ID,
-  appId: process.env.REACT_APP_FIREBASE_APP_ID,
-};
-
-export const FCM_CONFIGURED = Boolean(
-  firebaseConfig.apiKey && firebaseConfig.projectId && firebaseConfig.appId &&
-  process.env.REACT_APP_FIREBASE_VAPID_KEY
-);
-
-export const VAPID_KEY = process.env.REACT_APP_FIREBASE_VAPID_KEY || "";
-
+let _cfgPromise = null;
 let _app = null;
-export function getFirebaseApp() {
-  if (!FCM_CONFIGURED) return null;
-  if (_app) return _app;
-  _app = getApps().length ? getApps()[0] : initializeApp(firebaseConfig);
+let _appKey = null;
+
+export function loadPushConfig(force = false) {
+  if (!_cfgPromise || force) {
+    _cfgPromise = api.get("/push/config").then((r) => r.data).catch(() => ({ configured: false }));
+  }
+  return _cfgPromise;
+}
+
+export function toFirebaseOptions(cfg) {
+  return {
+    apiKey: cfg.apiKey, authDomain: cfg.authDomain, projectId: cfg.projectId,
+    messagingSenderId: cfg.messagingSenderId, appId: cfg.appId,
+  };
+}
+
+async function getFirebaseApp() {
+  const cfg = await loadPushConfig();
+  if (!cfg?.configured) return null;
+  const key = JSON.stringify(toFirebaseOptions(cfg));
+  if (_app && _appKey === key) return _app;
+  if (_app) { try { await deleteApp(_app); } catch { /* noop */ } }
+  const existing = getApps()[0];
+  if (existing) { try { await deleteApp(existing); } catch { /* noop */ } }
+  _app = initializeApp(toFirebaseOptions(cfg));
+  _appKey = key;
   return _app;
 }
 
 export async function getBrowserMessaging() {
-  const app = getFirebaseApp();
-  if (!app) return null;
   try {
     if (!(await isSupported())) return null;
-    return getMessaging(app);
+    const app = await getFirebaseApp();
+    return app ? getMessaging(app) : null;
   } catch (e) {
-    // Safari on iOS < 16.4 / private mode / etc.
     console.warn("[fcm] getMessaging unsupported:", e);
     return null;
   }
