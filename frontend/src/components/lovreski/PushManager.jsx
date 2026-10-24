@@ -38,6 +38,7 @@ export default function PushManager() {
         const m = await getBrowserMessaging();
         if (m && !cancelled) {
           unsub = onMessage(m, (p) => {
+            if (window.location.pathname.startsWith("/admin")) return; // admin hook shows its own toast
             const d = p.data || {};
             const url = d.url || "/";
             toast(d.title || p.notification?.title || "Lovreski", {
@@ -66,7 +67,7 @@ export default function PushManager() {
   };
   const later = () => { setShowPrompt(false); localStorage.setItem(PROMPT_KEY, "1"); };
 
-  if (!showPrompt || loc.pathname.startsWith("/chats/") || loc.pathname === "/") return null;
+  if (!showPrompt || loc.pathname.startsWith("/chats/") || loc.pathname.startsWith("/admin") || loc.pathname === "/") return null;
   return (
     <div data-testid="push-prompt" className="fixed left-3 right-3 bottom-24 z-[60] sm:left-auto sm:right-6 sm:w-96 rounded-2xl bg-card border border-border shadow-2xl p-4 flex gap-3 animate-in slide-in-from-bottom-4">
       <div className="w-10 h-10 shrink-0 rounded-full bg-primary/15 text-primary flex items-center justify-center"><BellRing className="w-5 h-5" /></div>

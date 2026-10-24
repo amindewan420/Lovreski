@@ -1,10 +1,12 @@
 // Push notifications hook — FCM Web Push subscribe/unsubscribe + silent token sync.
 import { useCallback, useEffect, useState } from "react";
 import { api } from "@/lib/api";
+import { adminApi } from "@/lib/adminApi";
 import { loadPushConfig, toFirebaseOptions, getBrowserMessaging } from "@/lib/firebase";
 import { getToken, deleteToken } from "firebase/messaging";
 
 const TOKEN_KEY = "lovreski_fcm_token";
+export const ADMIN_TOKEN_KEY = "lovreski_admin_fcm_token";
 const b64 = (obj) => btoa(String.fromCharCode(...new TextEncoder().encode(JSON.stringify(obj))));
 
 export const pushSupported = () =>
@@ -17,7 +19,11 @@ export const isIOSNonStandalone = () => {
 };
 
 // Registers the SW and fetches/saves the FCM token. Requires permission === "granted".
-export async function registerAndSyncToken() {
+// admin=true registers this device for Admin-Panel alerts (uses the admin JWT).
+export async function registerAndSyncToken({ admin = false } = {}) {
+  const client = admin ? adminApi : api;
+  const base = admin ? "/admin/push/token" : "/push/token";
+  const key = admin ? ADMIN_TOKEN_KEY : TOKEN_KEY;
   const cfg = await loadPushConfig();
   if (!cfg?.configured) throw new Error("Firebase ещё не настроен");
   const swUrl = `/firebase-messaging-sw.js?firebaseConfig=${b64(toFirebaseOptions(cfg))}`;
@@ -27,10 +33,10 @@ export async function registerAndSyncToken() {
   if (!messaging) throw new Error("FCM не поддерживается");
   const token = await getToken(messaging, { vapidKey: cfg.vapidKey, serviceWorkerRegistration: reg });
   if (!token) throw new Error("FCM не вернул токен");
-  const prev = localStorage.getItem(TOKEN_KEY);
-  await api.post("/push/token", { token, platform: "web" });
-  if (prev && prev !== token) { try { await api.delete("/push/token", { data: { token: prev } }); } catch { /* noop */ } }
-  localStorage.setItem(TOKEN_KEY, token);
+  const prev = localStorage.getItem(key);
+  await client.post(base, { token, platform: "web" });
+  if (prev && prev !== token) { try { await client.delete(base, { data: { token: prev } }); } catch { /* noop */ } }
+  localStorage.setItem(key, token);
   return token;
 }
 

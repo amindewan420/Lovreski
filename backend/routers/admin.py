@@ -33,6 +33,24 @@ async def admin_pending_count(_: dict = Depends(require_admin)):
     return {"count": await db.receipt_submissions.count_documents({"status": "pending"})}
 
 
+@api.get("/admin/refund-requests/unread-count")
+async def admin_refunds_unread(_: dict = Depends(require_admin)):
+    return {"count": await db.refund_requests.count_documents({"is_read": False})}
+
+@api.post("/admin/refund-requests/mark-read")
+async def admin_refunds_mark_read(_: dict = Depends(require_admin)):
+    r = await db.refund_requests.update_many({"is_read": False}, {"$set": {"is_read": True, "read_at": iso(now_utc())}})
+    return {"ok": True, "marked": r.modified_count}
+
+@api.get("/admin/complaints/unread-count")
+async def admin_complaints_unread(_: dict = Depends(require_admin)):
+    return {"count": await db.reports.count_documents({"is_read": False})}
+
+@api.post("/admin/complaints/mark-read")
+async def admin_complaints_mark_read(_: dict = Depends(require_admin)):
+    r = await db.reports.update_many({"is_read": False}, {"$set": {"is_read": True, "read_at": iso(now_utc())}})
+    return {"ok": True, "marked": r.modified_count}
+
 @api.get("/admin/storage")
 async def admin_storage(_: dict = Depends(require_admin)):
     """GridFS usage aggregated by `metadata.kind` (profile_photo | chat_image |
@@ -199,7 +217,7 @@ async def admin_approve_receipt(submission_id: str, body: AdminApproveBody, admi
         "target_user": res['user_id'], "submission_id": submission_id,
         "coins": body.coins, "reason": body.reason, "at": iso(now_utc()),
     })
-    await _push_notification(res['user_id'], f"🎉 Payment verified! {body.coins} coins added. Your Premium is now ACTIVE! 👑", "success")
+    await _push_notification(res['user_id'], f"🎉 Платёж подтверждён! Начислено {body.coins} монет. Premium активен 👑", "success")
     return {"ok": True, "coins_added": body.coins}
 
 @api.post("/admin/support/{submission_id}/reject")
@@ -221,7 +239,7 @@ async def admin_reject_receipt(submission_id: str, body: AdminRejectBody, admin:
         "target_user": res['user_id'], "submission_id": submission_id,
         "reason": body.reason, "at": iso(now_utc()),
     })
-    await _push_notification(res['user_id'], f"❌ Receipt rejected. Reason: {body.reason}. Please contact support.", "error")
+    await _push_notification(res['user_id'], f"❌ Чек отклонён. Причина: {body.reason}. Свяжитесь с поддержкой.", "error")
     return {"ok": True}
 
 @api.post("/admin/users/add-coins")
@@ -279,8 +297,13 @@ async def submit_refund(body: RefundBody, request: Request, user: dict = Depends
         "receipt_data_url": receipt_url,
         "reason": body.reason,
         "status": "pending",
+        "is_read": False,
         "created_at": iso(now_utc()),
     })
+    try:
+        await fcm.notify_admin_new_submission(db, "refund", body.full_name or user.get("name") or "user")
+    except Exception as e:
+        logger.warning(f"[push] admin refund notify failed: {e}")
     return {"refund_id": rid, "status": "pending"}
 
 @api.get("/admin/refunds")
@@ -303,7 +326,7 @@ async def admin_refund_decide(refund_id: str, body: dict, admin: dict = Depends(
     if not res:
         raise HTTPException(status_code=404, detail="Refund not found or already processed")
     await _push_notification(res['user_id'],
-        f"{'✅' if action == 'approve' else '❌'} Refund {action}d." + (f" Note: {reason}" if reason else ""),
+        ("✅ Возврат одобрен." if action == "approve" else "❌ В возврате отказано.") + (f" Комментарий: {reason}" if reason else ""),
         "success" if action == "approve" else "error")
     return {"ok": True}
 

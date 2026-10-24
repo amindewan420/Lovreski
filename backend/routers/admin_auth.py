@@ -5,7 +5,7 @@ import uuid
 from fastapi import HTTPException, Depends, Request
 from pydantic import BaseModel, Field
 from server import (
-    api, db, logger, now_utc, iso,
+    api, db, logger, now_utc, iso, fcm,
     ADMIN_EMAIL, ADMIN_PASSWORD, make_admin_jwt, verify_admin,
     client_ip, lockout_remaining, register_failed_login, clear_failed_logins,
 )
@@ -33,6 +33,9 @@ async def admin_login(body: AdminLoginBody, request: Request):
     if not (email_ok and pass_ok):
         await register_failed_login(ip_key, MAX_FAILS_PER_IP)
         await register_failed_login(global_key, MAX_FAILS_GLOBAL)
+        if await lockout_remaining(ip_key) or await lockout_remaining(global_key):
+            asyncio.create_task(fcm.notify_admin_security(db, "🚨 Вход в админ-панель заблокирован",
+                                                          f"Слишком много неверных попыток · IP {ip}"))
         logger.warning(f"[admin-auth] failed admin login from {ip}")
         await asyncio.sleep(FAIL_DELAY_SECONDS)
         raise HTTPException(status_code=401, detail="Invalid email or password")
@@ -44,6 +47,8 @@ async def admin_login(body: AdminLoginBody, request: Request):
         "user_agent": request.headers.get("user-agent", "")[:200], "created_at": iso(now_utc()),
     })
     logger.info(f"[admin-auth] admin login from {ip}")
+    ua = request.headers.get("user-agent", "")[:60]
+    asyncio.create_task(fcm.notify_admin_security(db, "🔐 Вход в админ-панель", f"IP {ip} · {ua}"))
     return {"success": True, "token": make_admin_jwt(jti)}
 
 

@@ -13,6 +13,7 @@ from typing import Optional
 logger = logging.getLogger("lovreski.push")
 
 PRESENCE_TTL = timedelta(seconds=60)
+ADMIN_UID = "__admin_panel__"  # push_tokens owner for Admin-Panel devices
 APP_NAME = "lovreski-fcm"
 WEB_FIELDS = ("project_id", "api_key", "app_id", "sender_id", "auth_domain", "vapid_key")
 
@@ -207,16 +208,13 @@ async def send_to_user(db, user_id: str, *, title: str, body: str, url: str = "/
     return out
 
 
-async def broadcast_to_admins(db, *, title: str, body: str, url: str = "/admin", kind: str = "admin") -> dict:
-    admins = await db.users.find({"is_admin": True}, {"_id": 0, "user_id": 1}).to_list(50)
-    total = 0
-    for a in admins:
-        total += (await send_to_user(db, a["user_id"], title=title, body=body, url=url, kind=kind)).get("sent", 0)
-    return {"sent": total, "admins": len(admins)}
+async def broadcast_to_admins(db, *, title: str, body: str, url: str = "/admin/dashboard", kind: str = "admin") -> dict:
+    """Push to every device registered from the Admin Panel."""
+    return await send_to_user(db, ADMIN_UID, title=title, body=body, url=url, kind=kind, tag=f"admin-{kind}")
 
 
 async def broadcast_announcement(db, *, title: str, body: str, url: str = "/home") -> dict:
-    ids = await db.push_tokens.distinct("user_id")
+    ids = [i for i in await db.push_tokens.distinct("user_id") if i != ADMIN_UID]
     sent = users = 0
     for uid in ids:
         r = await send_to_user(db, uid, title=title, body=body, url=url, kind="announcement", pref="announcements")
@@ -269,9 +267,14 @@ async def notify_payment(db, user_id: str, message: str, success: bool = True) -
 
 async def notify_admin_new_submission(db, kind: str, from_user_name: str) -> None:
     labels = {
-        "receipt": ("💰 Новый платёж на проверку", "/admin"),
-        "report": ("⚠️ Новая жалоба на пользователя", "/admin"),
-        "refund": ("💸 Новый запрос на возврат", "/admin"),
+        "receipt": "💰 Новый платёж на проверку",
+        "report": "⚠️ Новая жалоба на пользователя",
+        "refund": "💸 Новый запрос на возврат",
     }
-    title, url = labels.get(kind, ("🔔 Новое событие", "/admin"))
-    await broadcast_to_admins(db, title=title, body=f"От: {from_user_name}", url=url, kind="admin")
+    tab = {"receipt": "support", "report": "reports", "refund": "refunds"}.get(kind, "dashboard")
+    await broadcast_to_admins(db, title=labels.get(kind, "🔔 Новое событие"), body=f"От: {from_user_name}",
+                              url=f"/admin/dashboard?tab={tab}", kind=kind)
+
+
+async def notify_admin_security(db, title: str, body: str) -> None:
+    await broadcast_to_admins(db, title=title, body=body, url="/admin/dashboard", kind="security")

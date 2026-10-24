@@ -41,6 +41,11 @@ export async function verifyAdminToken() {
 }
 
 export async function adminLogout() {
+  const deviceToken = localStorage.getItem("lovreski_admin_fcm_token");
+  if (deviceToken) {
+    try { await adminApi.delete("/admin/push/token", { data: { token: deviceToken } }); } catch { /* noop */ }
+    localStorage.removeItem("lovreski_admin_fcm_token");
+  }
   try { await adminApi.post("/admin/logout"); } catch { /* token cleared regardless */ }
   setAdminToken(null);
 }

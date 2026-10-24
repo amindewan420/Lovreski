@@ -83,8 +83,9 @@ def _admin_view(cfg: dict) -> dict:
 async def admin_push_config(admin: dict = Depends(require_admin)):
     cfg = await fcm.get_config(db)
     out = _admin_view(cfg)
-    out["devices"] = await db.push_tokens.count_documents({})
-    out["subscribed_users"] = len(await db.push_tokens.distinct("user_id"))
+    out["devices"] = await db.push_tokens.count_documents({"user_id": {"$ne": fcm.ADMIN_UID}})
+    out["subscribed_users"] = len([i for i in await db.push_tokens.distinct("user_id") if i != fcm.ADMIN_UID])
+    out["admin_devices"] = await db.push_tokens.count_documents({"user_id": fcm.ADMIN_UID})
     return out
 
 
@@ -112,6 +113,59 @@ async def admin_push_sa_delete(admin: dict = Depends(require_admin)):
     return _admin_view(await fcm.get_config(db))
 
 
+# ─── Admin-Panel devices (admin alerts) ────────────────────────────────────
+@api.post("/admin/push/token")
+async def admin_push_save_token(body: PushTokenBody, request: Request, admin: dict = Depends(require_admin)):
+    await fcm.save_token(db, fcm.ADMIN_UID, body.token, "admin-web", request.headers.get("user-agent", ""))
+    return {"ok": True, "devices": await db.push_tokens.count_documents({"user_id": fcm.ADMIN_UID})}
+
+
+@api.delete("/admin/push/token")
+async def admin_push_delete_token(body: PushTokenBody, admin: dict = Depends(require_admin)):
+    await fcm.remove_token(db, fcm.ADMIN_UID, body.token)
+    return {"ok": True}
+
+
+@api.post("/admin/push/test-self")
+async def admin_push_test_self(admin: dict = Depends(require_admin)):
+    return await fcm.broadcast_to_admins(db, title="🧪 Тест админ-уведомлений",
+                                         body="Уведомления о чеках, возвратах, жалобах и входах работают.", kind="test")
+
+
+async def _log_push(kind: str, title: str, body: str, target: str, **extra) -> str:
+    pid = f"pl_{uuid.uuid4().hex[:12]}"
+    await db.push_log.insert_one({"id": pid, "kind": kind, "title": title, "body": body, "target": target,
+                                  "status": "sending", "sent": 0, "created_at": iso(now_utc()), **extra})
+    return pid
+
+
+@api.get("/admin/push/history")
+async def admin_push_history(limit: int = 50, admin: dict = Depends(require_admin)):
+    return await db.push_log.find({}, {"_id": 0}).sort("created_at", -1).to_list(min(max(limit, 1), 200))
+
+
+class DirectPushBody(BaseModel):
+    title: str = Field(min_length=1, max_length=100)
+    body: str = Field(min_length=1, max_length=300)
+
+
+@api.post("/admin/push/user/{user_id}")
+async def admin_push_user(user_id: str, body: DirectPushBody, admin: dict = Depends(require_admin)):
+    target = await db.users.find_one({"user_id": user_id}, {"_id": 0, "name": 1, "email": 1})
+    if not target:
+        raise HTTPException(status_code=404, detail="Пользователь не найден")
+    await db.notifications.insert_one({
+        "id": f"n_{uuid.uuid4().hex[:12]}", "user_id": user_id, "message": f"✉️ {body.title}: {body.body}",
+        "kind": "admin_message", "read": False, "created_at": iso(now_utc()),
+    })
+    r = await fcm.send_to_user(db, user_id, title=f"✉️ {body.title}", body=body.body, url="/home", kind="admin_message")
+    status = "sent" if r.get("sent") else (r.get("reason") or "failed")
+    pid = await _log_push("direct", body.title, body.body, target.get("name") or target.get("email") or user_id,
+                          target_user_id=user_id)
+    await db.push_log.update_one({"id": pid}, {"$set": {"status": status, "sent": r.get("sent", 0)}})
+    return {"ok": True, "in_app": True, "push": r}
+
+
 class AnnouncementBody(BaseModel):
     title: str = Field(min_length=1, max_length=100)
     body: str = Field(min_length=1, max_length=300)
@@ -129,13 +183,16 @@ async def admin_push_announce(body: AnnouncementBody, admin: dict = Depends(requ
             "message": f"📣 {body.title}: {body.body}", "kind": "announcement",
             "read": False, "created_at": now,
         } for u in users])
-    devices = await db.push_tokens.count_documents({})
+    devices = await db.push_tokens.count_documents({"user_id": {"$ne": fcm.ADMIN_UID}})
+    pid = await _log_push("announcement", body.title, body.body, "Все пользователи", in_app=len(users), devices=devices)
 
     async def _run():
         try:
             r = await fcm.broadcast_announcement(db, title=f"📣 {body.title}", body=body.body, url=url)
+            await db.push_log.update_one({"id": pid}, {"$set": {"status": "sent", "sent": r.get("sent", 0), "users": r.get("users", 0)}})
             logger.info(f"[push] announcement by {admin['user_id']}: {r}")
         except Exception as e:
+            await db.push_log.update_one({"id": pid}, {"$set": {"status": "failed"}})
             logger.warning(f"[push] announcement failed: {e}")
     asyncio.create_task(_run())
     return {"ok": True, "in_app": len(users), "queued_devices": devices}

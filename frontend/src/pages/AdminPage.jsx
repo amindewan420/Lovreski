@@ -1,8 +1,11 @@
 import { useEffect, useState } from "react";
 import { adminApi as api, adminLogout } from "@/lib/adminApi";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useSearchParams } from "react-router-dom";
+import { AdminNav } from "@/components/admin/AdminNav";
+import { useAdminBadges } from "@/hooks/useAdminBadges";
+import { DirectPushSheet } from "@/components/admin/AdminPushExtras";
 import { LineChart, Line, BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid } from "recharts";
-import { Shield, Users, Crown, Clock, TrendingUp, Check, X, Flag, LogOut, Search as SearchIcon, MinusCircle, AlertTriangle, Ban, UserX, FileText, Trash2, Plus, Pencil, Database } from "lucide-react";
+import { Send, Shield, Users, Crown, Clock, TrendingUp, Check, X, Flag, LogOut, Search as SearchIcon, MinusCircle, AlertTriangle, Ban, UserX, FileText, Trash2, Plus, Pencil, Database } from "lucide-react";
 import { toast } from "sonner";
 import { PushConfigTab } from "@/components/admin/PushConfigTab";
 
@@ -39,7 +42,11 @@ const KIND_COLORS = {
 
 export default function AdminPage() {
   const nav = useNavigate();
-  const [tab, setTab] = useState("dashboard");
+  const [params, setParams] = useSearchParams();
+  const tab = params.get("tab") || "dashboard";
+  const setTab = (k) => { setParams({ tab: k }, { replace: true }); window.scrollTo({ top: 0 }); };
+  const [refundsKey, setRefundsKey] = useState(0);
+  const [pushTarget, setPushTarget] = useState(null);
   const [stats, setStats] = useState(null);
   const [payments, setPayments] = useState([]);
   const [reports, setReports] = useState([]);
@@ -51,7 +58,6 @@ export default function AdminPage() {
   const [sbpRevealed, setSbpRevealed] = useState(null);
   const [pendingSubs, setPendingSubs] = useState([]);
   const [supportHistory, setSupportHistory] = useState([]);
-  const [pendingCount, setPendingCount] = useState(0);
   const [modal, setModal] = useState(null); // {kind:'approve'|'reject', submission}
   const [coinAmt, setCoinAmt] = useState("");
   const [modalReason, setModalReason] = useState("");
@@ -82,9 +88,11 @@ export default function AdminPage() {
     return () => clearInterval(t);
   }, []);
 
+  const badges = useAdminBadges(tab, { onNew: (k) => { if (k === "refunds") setRefundsKey((n) => n + 1); else load(); } });
+
   const load = async () => {
     try {
-      const [s, p, r, u, cfg, pend, hist, cnt] = await Promise.all([
+      const [s, p, r, u, cfg, pend, hist] = await Promise.all([
         api.get("/admin/stats"),
         api.get("/admin/payments"),
         api.get("/admin/reports"),
@@ -92,13 +100,11 @@ export default function AdminPage() {
         api.get("/admin/settings"),
         api.get("/admin/support/pending"),
         api.get("/admin/support/history"),
-        api.get("/admin/support/pending-count"),
       ]);
       setStats(s.data); setPayments(p.data); setReports(r.data); setUsers(u.data);
       setSbpMasked(cfg.data?.sbp_phone_masked || "");
       setSbpPhoneInput(""); setSbpRevealed(null);
       setPendingSubs(pend.data); setSupportHistory(hist.data);
-      setPendingCount(cnt.data?.count || 0);
       // Legal docs — best-effort, don't fail whole load if endpoint absent
       try { const l = await api.get("/admin/legal"); setLegal(l.data || []); } catch { /* noop */ }
       // Storage usage — best-effort
@@ -245,27 +251,16 @@ export default function AdminPage() {
 
   return (
     <div className="min-h-screen bg-background">
-      <header className="border-b border-border bg-card/50 backdrop-blur px-6 py-4 flex items-center gap-3">
+      <header className="sticky top-0 z-[60] border-b border-border bg-card/80 backdrop-blur px-4 sm:px-6 py-3 sm:py-4 flex items-center gap-3">
         <Shield className="w-6 h-6 text-primary" />
-        <h1 className="font-display font-black text-2xl">Lovreski Admin</h1>
+        <h1 className="font-display font-black text-xl sm:text-2xl">Lovreski Admin</h1>
         <div className="ml-auto flex gap-2">
           <button data-testid="admin-logout-btn" onClick={async () => { await adminLogout(); nav("/admin/login", { replace: true }); }} className="text-sm px-4 py-1.5 rounded-full bg-rose-500 text-white font-semibold hover:bg-rose-600 transition-colors"><LogOut className="w-4 h-4 inline mr-1" /> Выйти</button>
         </div>
       </header>
 
-      <div className="max-w-6xl mx-auto p-6">
-        <div className="flex gap-2 mb-6 bg-muted p-1 rounded-full w-fit max-w-full overflow-x-auto whitespace-nowrap">
-          {[{k:"dashboard",l:"Дашборд"},{k:"support",l:"Verification",badge:pendingCount},{k:"payments",l:"Платежи"},{k:"refunds",l:"Refund Requests"},{k:"reports",l:"Жалобы"},{k:"users",l:"Пользователи"},{k:"legal",l:"Правовые"},{k:"push",l:"Push"},{k:"settings",l:"Настройки"}].map(t => (
-            <button key={t.k} data-testid={`admin-tab-${t.k}`} onClick={() => setTab(t.k)} className={`relative px-5 py-2 rounded-full font-semibold text-sm ${tab === t.k ? "bg-card shadow" : "text-muted-foreground"}`}>
-              {t.l}
-              {t.badge > 0 && (
-                <span data-testid="pending-badge" className="absolute -top-1 -right-1 min-w-[18px] h-[18px] px-1 rounded-full bg-rose-500 text-white text-[10px] font-bold flex items-center justify-center">
-                  {t.badge}
-                </span>
-              )}
-            </button>
-          ))}
-        </div>
+      <div className="max-w-6xl mx-auto p-4 sm:p-6 pb-28 md:pb-6">
+        <AdminNav tab={tab} setTab={setTab} badges={badges} />
 
         {tab === "dashboard" && stats && (
           <div>
@@ -416,13 +411,44 @@ export default function AdminPage() {
                   </button>
                 ))}
               </div>
-              <div className="flex items-center gap-2 bg-muted rounded-full px-3 py-1.5 flex-1 max-w-xs">
+              <div className="flex items-center gap-2 bg-muted rounded-full px-3 py-1.5 flex-1 min-w-[180px] md:max-w-xs">
                 <SearchIcon className="w-4 h-4 text-muted-foreground" />
                 <input data-testid="pay-search" value={payQ} onChange={(e) => setPayQ(e.target.value)} placeholder="Имя или email…"
                   className="flex-1 bg-transparent outline-none text-sm" />
               </div>
             </div>
-            <div className="bg-card border border-border rounded-2xl overflow-hidden">
+            <div className="md:hidden space-y-2" data-testid="payments-mobile-list">
+              {payments
+                .filter((t) => payStatus === "all" || t.status === payStatus)
+                .filter((t) => { const q = payQ.trim().toLowerCase(); return !q || (t.user_name || "").toLowerCase().includes(q) || (t.user_email || "").toLowerCase().includes(q); })
+                .map((t) => (
+                  <div key={t.tx_id} data-testid={`payment-card-${t.tx_id}`} className="p-3 rounded-2xl bg-card border border-border">
+                    <div className="flex items-center gap-3">
+                      {t.user_photo ? <img src={t.user_photo} alt="" className="w-10 h-10 rounded-full object-cover" /> : <div className="w-10 h-10 rounded-full bg-muted" />}
+                      <div className="flex-1 min-w-0">
+                        <p className="font-semibold text-sm truncate">{t.user_name}</p>
+                        <p className="text-[11px] text-muted-foreground truncate">{t.user_email}</p>
+                      </div>
+                      <div className="text-right">
+                        <p className="font-bold text-sm">{t.amount_rub} ₽</p>
+                        <p className="text-[11px] text-muted-foreground">{t.coins} 💰</p>
+                      </div>
+                    </div>
+                    <div className="mt-2 flex items-center justify-between gap-2">
+                      <span className="text-[11px] text-muted-foreground">{new Date(t.created_at).toLocaleDateString("ru")}</span>
+                      <span className={`text-[11px] px-2 py-0.5 rounded-full ${t.status === "approved" ? "bg-emerald-500/15 text-emerald-500" : t.status === "rejected" ? "bg-rose-500/15 text-rose-500" : "bg-amber-500/15 text-amber-500"}`}>{t.status}</span>
+                      {t.status === "pending" && (
+                        <div className="flex gap-2 ml-auto">
+                          <button data-testid={`m-approve-${t.tx_id}`} onClick={() => act(t.tx_id, "approve")} className="p-2 rounded-full bg-emerald-500 text-white"><Check className="w-4 h-4" /></button>
+                          <button data-testid={`m-reject-${t.tx_id}`} onClick={() => act(t.tx_id, "reject")} className="p-2 rounded-full bg-rose-500 text-white"><X className="w-4 h-4" /></button>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                ))}
+              {payments.length === 0 && <p className="text-center text-muted-foreground py-8">Нет платежей</p>}
+            </div>
+            <div className="hidden md:block bg-card border border-border rounded-2xl overflow-hidden">
               <table className="w-full text-sm">
                 <thead className="bg-muted text-left">
                   <tr><th className="p-3">Пользователь</th><th className="p-3">Пакет</th><th className="p-3">Сумма</th><th className="p-3">Дата</th><th className="p-3">Статус</th><th className="p-3">Действие</th></tr>
@@ -498,6 +524,7 @@ export default function AdminPage() {
                   <button data-testid={`deduct-${u.user_id}`} onClick={() => { setDeductTarget(u); setDeductAmt(""); setDeductReason(""); }} className="text-[10px] px-2 py-1 rounded-full bg-amber-500/15 text-amber-500 font-semibold"><MinusCircle className="w-3 h-3 inline mr-0.5" /> Списать</button>
                   <button onClick={() => { setModAction({ kind: "ban", user_id: u.user_id, user_name: u.name }); setModDays(7); setModReason(""); }} className="text-[10px] px-2 py-1 rounded-full bg-orange-500/15 text-orange-500 font-semibold">Бан</button>
                   <button onClick={() => { setModAction({ kind: "deactivate", user_id: u.user_id, user_name: u.name }); setModReason(""); }} className="text-[10px] px-2 py-1 rounded-full bg-rose-500/15 text-rose-500 font-semibold">Удалить</button>
+                  <button data-testid={`push-user-${u.user_id}`} onClick={() => setPushTarget(u)} className="text-[10px] px-2 py-1 rounded-full bg-primary/15 text-primary font-semibold"><Send className="w-3 h-3 inline mr-0.5" /> Push</button>
                 </div>
               </div>
             ))}
@@ -577,8 +604,9 @@ export default function AdminPage() {
           </div>
         )}
 
-        {tab === "refunds" && <RefundsTab />}
+        {tab === "refunds" && <RefundsTab key={refundsKey} />}
         {tab === "push" && <PushConfigTab />}
+        <DirectPushSheet target={pushTarget} onClose={() => setPushTarget(null)} />
 
         {tab === "settings" && (
           <div className="max-w-lg space-y-6">
@@ -788,12 +816,12 @@ export default function AdminPage() {
 }
 
 const Stat = ({ title, value, icon: Icon, accent }) => (
-  <div className={`p-5 rounded-2xl border border-border ${accent ? "bg-gradient-to-br from-primary to-primary/70 text-primary-foreground" : "bg-card"}`}>
+  <div className={`p-4 sm:p-5 rounded-2xl border border-border ${accent ? "bg-gradient-to-br from-primary to-primary/70 text-primary-foreground" : "bg-card"}`}>
     <div className="flex items-center justify-between">
-      <p className={`text-xs uppercase tracking-widest ${accent ? "opacity-80" : "text-muted-foreground"}`}>{title}</p>
+      <p className={`text-[10px] sm:text-xs uppercase tracking-wider sm:tracking-widest ${accent ? "opacity-80" : "text-muted-foreground"}`}>{title}</p>
       <Icon className="w-5 h-5 opacity-70" />
     </div>
-    <p className="font-display font-black text-2xl mt-2">{value}</p>
+    <p className="font-display font-black text-xl sm:text-2xl mt-2 break-words">{value}</p>
   </div>
 );
 

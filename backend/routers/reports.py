@@ -14,6 +14,7 @@ async def report_user(body: ReportBody, user: dict = Depends(get_current_user)):
         "target_user": body.target_user_id,
         "reason": body.reason,
         "status": "open",
+        "is_read": False,
         "created_at": iso(now_utc()),
     })
     try:

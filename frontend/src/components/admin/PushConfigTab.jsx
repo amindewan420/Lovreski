@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { adminApi as api } from "@/lib/adminApi";
 import { toast } from "sonner";
+import { AdminDeviceCard, PushHistoryCard } from "@/components/admin/AdminPushExtras";
 import { BellRing, Upload, CheckCircle2, AlertCircle, Trash2, Send, KeyRound } from "lucide-react";
 
 const FIELDS = [
@@ -94,7 +95,7 @@ const WebConfigCard = ({ cfg, onSaved }) => {
   );
 };
 
-const AnnounceCard = ({ ready }) => {
+const AnnounceCard = ({ ready, onSent }) => {
   const [title, setTitle] = useState("");
   const [body, setBody] = useState("");
   const [busy, setBusy] = useState(false);
@@ -105,7 +106,8 @@ const AnnounceCard = ({ ready }) => {
     try {
       const { data } = await api.post("/admin/push/announce", { title, body, url: "/home" });
       toast.success(`Отправлено: в приложении ${data.in_app}, push в очереди для ${data.queued_devices} устройств`);
-      setTitle(""); setBody("");
+      setTimeout(() => onSent?.(), 2500);
+      setTitle(""); setBody(""); onSent?.();
     } catch (err) { toast.error(errMsg(err)); } finally { setBusy(false); }
   };
   return (
@@ -121,23 +123,28 @@ const AnnounceCard = ({ ready }) => {
 
 export const PushConfigTab = () => {
   const [cfg, setCfg] = useState(null);
+  const [histKey, setHistKey] = useState(0);
   const load = () => api.get("/admin/push/config").then((r) => setCfg(r.data)).catch(() => toast.error("Не удалось загрузить настройки"));
   useEffect(() => { load(); }, []);
   if (!cfg) return <p className="text-muted-foreground text-sm">Загрузка...</p>;
   const onSaved = (data) => setCfg((c) => ({ ...c, ...data }));
   return (
     <div data-testid="admin-push-tab" className="grid lg:grid-cols-2 gap-6 items-start">
-      <div className="lg:col-span-2 p-5 rounded-2xl bg-card border border-border flex flex-wrap items-center gap-3">
+      <div className="lg:col-span-2 p-4 sm:p-5 rounded-2xl bg-card border border-border flex flex-wrap items-center gap-3">
         <BellRing className="w-5 h-5 text-primary" />
         <h3 className="font-display font-bold mr-auto">Push-уведомления (Firebase Cloud Messaging)</h3>
         <StatusPill ok={cfg.ready} testid="push-status-pill">{cfg.ready ? "Активны" : "Не настроены"}</StatusPill>
         <span data-testid="push-devices" className="text-xs text-muted-foreground">{cfg.subscribed_users ?? 0} польз. · {cfg.devices ?? 0} устройств</span>
       </div>
       <div className="space-y-6">
-        <ServiceAccountCard cfg={cfg} onSaved={onSaved} />
-        <AnnounceCard ready={cfg.ready} />
+        <AdminDeviceCard ready={cfg.ready} devices={cfg.admin_devices} onChange={load} />
+        <AnnounceCard ready={cfg.ready} onSent={() => setHistKey((k) => k + 1)} />
+        <PushHistoryCard refreshKey={histKey} />
       </div>
-      <WebConfigCard cfg={cfg} onSaved={onSaved} />
+      <div className="space-y-6">
+        <ServiceAccountCard cfg={cfg} onSaved={onSaved} />
+        <WebConfigCard cfg={cfg} onSaved={onSaved} />
+      </div>
     </div>
   );
 };

@@ -874,10 +874,10 @@ async def _push_notification(user_id: str, message: str, kind: str = "info"):
     })
     # Also fire a browser Web Push (no-op if Firebase not configured / user offline / no token)
     try:
-        url_map = {"success": "/premium", "warning": "/settings", "error": "/premium"}
+        url_map = {"success": "/premium", "warning": "/settings", "error": "/premium", "admin_message": "/home"}
         await fcm.send_to_user(
             db, user_id,
-            title="Lovreski",
+            title={"success": "✅ Lovreski", "error": "❌ Lovreski", "warning": "⚠️ Lovreski"}.get(kind, "Lovreski"),
             body=message,
             url=url_map.get(kind, "/"),
             kind=kind,
