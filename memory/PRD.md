@@ -146,3 +146,10 @@ Currently on Emergent (React + FastAPI + MongoDB). For amvera.cloud deployment, 
 - `POST /api/translate/batch` (chat), `/api/translate` now uses the same engine. `GET /api/legal?lang=` and `/api/legal/{slug}?lang=` return translated titles/body (Markdown split by paragraphs) + originals; admin save pre-translates into all users' languages; startup prewarm.
 - Frontend `useChatTranslation`: whole thread translated in one pass (chunked, applied together), live WS messages auto-translate, pending bubbles pulse + "Переводим…" pill, per-bubble "Показать оригинал" toggle, reply quotes + location place translated. Legal pages show translated doc with original toggle. i18n loader guarded against stale responses.
 - Tested: iteration_44 (backend 11/11, frontend 100%).
+
+## 2026-06 — Iteration 45: Chat media viewer & downloads
+- `GET /api/chat/media-file/{message_id}` (participants only) streams S3/legacy attachments same-origin (inline / ?download=1).
+- `ChatMediaViewer.jsx`: full-screen viewer — images with pinch/double-tap/zoom buttons (react-zoom-pan-pinch), PDFs rendered in-app (shared `PdfPages.jsx`), loading %, error state with retry, Download.
+- Save: phones → Web Share sheet with the image file ("Save Image"/"Save to Photos"); otherwise browser download (toasts "сохранено в галерею"/"в «Загрузки»"). Native MediaStore/Photos APIs not available on web.
+- File bubbles: PDF badge opens viewer; download icon on every file. Leaflet map isolated so it doesn't overlay viewers.
+- Tested: iteration_45 (backend 9/9, frontend 100%).

@@ -84,6 +84,7 @@ export const ChatMediaViewer = ({ m, onClose }) => {
   const { t } = useI18n();
   const [st, setSt] = useState({ loading: true, progress: 0, blob: null, url: "", error: false });
   const [saving, setSaving] = useState(false);
+  const [attempt, setAttempt] = useState(0);
 
   useEffect(() => {
     if (!m) return;
@@ -95,7 +96,7 @@ export const ChatMediaViewer = ({ m, onClose }) => {
     const onKey = (e) => e.key === "Escape" && onClose();
     window.addEventListener("keydown", onKey);
     return () => { alive = false; window.removeEventListener("keydown", onKey); if (objUrl) URL.revokeObjectURL(objUrl); };
-  }, [m, onClose]);
+  }, [m, onClose, attempt]);
 
   if (!m) return null;
   const pdf = isPdfMsg(m) || st.blob?.type === "application/pdf";
@@ -126,7 +127,7 @@ export const ChatMediaViewer = ({ m, onClose }) => {
           <div data-testid="media-viewer-error" className="flex flex-col items-center gap-3 text-white text-center px-6">
             <AlertTriangle className="w-10 h-10 text-amber-400" />
             <p className="font-semibold">{t("media.load_failed")}</p>
-            <button onClick={() => downloadChatMedia(m, t)} className="px-4 py-2 rounded-full bg-white/15 text-sm">{t("media.try_download")}</button>
+            <button data-testid="media-viewer-retry" onClick={() => downloadChatMedia(m, t)} className="px-4 py-2 rounded-full bg-white/15 text-sm">{t("media.try_download")}</button>
           </div>
         ) : pdf ? (
           <PdfPages blob={st.blob} onError={() => setSt((s) => ({ ...s, error: true }))} />

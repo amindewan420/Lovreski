@@ -104,7 +104,7 @@ export const LocationBubble = ({ m, place }) => {
   const pos = [loc.lat, loc.lng];
   return (
     <div className="w-56" data-testid={`location-bubble-${m.message_id}`}>
-      <a href={mapsUrl(loc.lat, loc.lng)} target="_blank" rel="noreferrer" className="block h-32 rounded-lg overflow-hidden relative">
+      <a href={mapsUrl(loc.lat, loc.lng)} target="_blank" rel="noreferrer" className="block h-32 rounded-lg overflow-hidden relative isolate">
         <MapContainer center={pos} zoom={15} className="h-full w-full pointer-events-none" zoomControl={false} dragging={false}
           scrollWheelZoom={false} doubleClickZoom={false} touchZoom={false} keyboard={false} attributionControl={false}>
           <TileLayer url={TILE} />

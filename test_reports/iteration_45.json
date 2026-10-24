@@ -1,0 +1,39 @@
+{
+  "summary": "Tested chat media viewing and downloading end to end. Backend: 9/9 pytest pass for GET /api/chat/media-file/{id}. Inline vs attachment, the UTF-8 filename*, content-type and %PDF bytes are correct. It returns 404 for non-participants, unknown ids, text messages and messages deleted for everyone, and 401 without auth. Frontend on desktop 1920 and mobile 390: the image viewer opens (loading state, then img), zoom in/out changes the transform (scale 1 -> 1.65 -> 1), Escape and the close button both close it. Desktop download fires a download event with toast 'Изображение сохранено в «Загрузки»'. Mobile with no navigator.share falls back to a download. Mobile with a mocked share sends a File (image/jpeg) and shows the toast 'Изображение сохранено в галерею'. The PDF bubble shows a PDF badge and opens an in-app pdf.js canvas, with no new tab. Viewer download and the side download icon both save ticket.pdf with toast 'PDF сохранён в «Загрузки»'. With a simulated 500, the viewer shows media-viewer-error and the retry/direct download shows 'Не удалось скачать, попробуйте ещё раз'. Regressions: the admin ReceiptViewer renders a PDF canvas through the shared PdfPages (checked by routing ticket.pdf bytes, because the admin DB has no real PDF receipts). Chat text sending works. The translation suite from iteration 44 passes 11/11. Found and fixed one overlay bug (Leaflet map from a location bubble painted above the viewer).",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {"endpoint": "GET /api/chat/media-file/{id}", "issue": "Messages hidden with scope='me' (hidden_for) can still be fetched by the user who hid them. Low risk because that user is a participant."}
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [
+      {"component": "LocationShare bubble vs ChatMediaViewer", "issue": "FIXED by testing agent. The Leaflet map panes (z-index 400/600) in the location bubble painted on top of the full-screen media viewer (z-100), because the .leaflet-container had no stacking context of its own. Fix: added 'isolate' to the map <a> wrapper in LocationShare.jsx. Checked on desktop: the map no longer shows over the viewer.", "selector": "[data-testid^=location-bubble-] a", "priority": "HIGH"}
+    ],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "Media viewer error state", "issues": ["The error-state button 'Попробовать скачать' starts a download instead of reloading the file into the viewer. A 'Повторить' (re-fetch) button would match the 'retry' requirement better."]}
+    ]
+  },
+  "test_report_links": ["/app/backend/tests/test_chat_media_file_iter45.py", "/app/test_reports/pytest/pytest_iter45.xml"],
+  "action_items": [
+    "Optional: add a real re-fetch retry to the ChatMediaViewer error state, in addition to the download fallback",
+    "Optional: also deny media-file for messages in the requester's hidden_for list",
+    "Note: 2 seeded admin receipts (sub_18dde4246b48, sub_5961c6eda58b) are 14-byte 'qa-placeholder' files labeled .png. They correctly show the error state; this is test seed data, not a bug"
+  ],
+  "critical_code_review_comments": [
+    "Leaflet maps embedded inside lists need 'isolation: isolate' (or z-0) so their internal z-indexes don't leak over fixed overlays. Consider portaling full-screen viewers to document.body with a higher z-index as well",
+    "Content-Disposition only sends filename*; adding an ASCII filename= fallback would help older clients",
+    "The progress % only appears when the backend sends Content-Length (S3 objects do)"
+  ],
+  "updated_files": [
+    "/app/frontend/src/components/lovreski/LocationShare.jsx (added 'isolate' class)",
+    "/app/frontend/src/components/lovreski/ChatMediaViewer.jsx (added data-testid='media-viewer-retry')",
+    "/app/backend/tests/test_chat_media_file_iter45.py"
+  ],
+  "success_rate": {"backend": "100%", "frontend": "100% (after overlay fix)"},
+  "seed_data_creation": "match_a sent 2 small pink 64x48 PNG image messages to match_b (one later deleted for everyone) and the text 'TEST iter45 hello'. Admin add-coins may have credited match_a with 200 coins if the balance was under 50.",
+  "retest_needed": false,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "Run the pytest with REACT_APP_BACKEND_URL exported. The PDF message is msg_7c6cdc9ca60c (ticket.pdf). Delete a message for both sides with DELETE /api/messages/{id}?scope=everyone (the default scope is 'me'). The admin DB has no real PDF receipts; to test the admin PdfPages, route /api/admin/receipt-file** to PDF bytes in Playwright."
+}
