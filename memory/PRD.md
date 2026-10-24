@@ -153,3 +153,9 @@ Currently on Emergent (React + FastAPI + MongoDB). For amvera.cloud deployment, 
 - Save: phones → Web Share sheet with the image file ("Save Image"/"Save to Photos"); otherwise browser download (toasts "сохранено в галерею"/"в «Загрузки»"). Native MediaStore/Photos APIs not available on web.
 - File bubbles: PDF badge opens viewer; download icon on every file. Leaflet map isolated so it doesn't overlay viewers.
 - Tested: iteration_45 (backend 9/9, frontend 100%).
+
+## 2026-06 — Iteration 46: Delete for me (both users), bulk delete, copy
+- Backend: `_delete_error`/`_apply_delete` helpers; any participant can delete any message for themselves (`hidden_for`); `POST /api/messages/delete-bulk {message_ids, scope}` all-or-nothing (everyone = own & ≤1h); chat list keeps chats whose messages are all hidden, preview = latest visible.
+- Frontend `MessageActions.jsx`: long-press/right-click sheet [Copy (text only)] [Reply] [Select] + Delete for me / for everyone; selection mode (checkmarks, "Выбрано: N", Cancel, trash) → confirm dialog with Delete for me / for everyone (when all own & fresh); toasts "Сообщения удалены", "Сообщение скопировано" (clipboard API + execCommand fallback). Ghost-tap guard (sheet ignores taps 400ms, touchend preventDefault after long-press).
+- Tested: iteration_46 (backend 13/13, frontend 95% → ghost-click + animation fixed afterwards, self-verified).
+- Also: media viewer error state now has real "Повторить" retry; media proxy respects hidden_for.

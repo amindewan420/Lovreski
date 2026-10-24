@@ -443,7 +443,7 @@ export default function ChatRoomPage() {
                 style={{ transform: dx ? `translateX(${dx}px)` : undefined }}
                 onTouchStart={onMsgTouchStart(m)}
                 onTouchMove={onMsgTouchMove(m)}
-                onTouchEnd={(e) => { cancelLongPress(); onMsgTouchEnd(m)(e); }}
+                onTouchEnd={(e) => { cancelLongPress(); if (longPressFired.current && e.cancelable) e.preventDefault(); onMsgTouchEnd(m)(e); }}
                 onTouchCancel={(e) => { cancelLongPress(); onMsgTouchEnd(m)(e); }}
                 onMouseDown={() => { longPressFired.current = false; startLongPress(m); }}
                 onMouseUp={cancelLongPress}

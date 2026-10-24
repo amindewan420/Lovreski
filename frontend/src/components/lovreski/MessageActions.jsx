@@ -1,3 +1,4 @@
+import { useEffect, useState } from "react";
 import { Copy, Reply, Trash2, CheckSquare, X } from "lucide-react";
 import { toast } from "sonner";
 
@@ -25,15 +26,20 @@ export const canDeleteForEveryone = (m, uid) => {
   return (Date.now() - new Date(m.created_at).getTime()) / 1000 <= 3600;
 };
 
-const Sheet = ({ testid, onClose, children }) => (
-  <div className="fixed inset-0 z-[80] flex items-end sm:items-center sm:justify-center px-4" data-testid={testid}>
-    <div className="absolute inset-0 bg-black/60" onClick={onClose} />
-    <div className="relative bg-white rounded-t-3xl sm:rounded-3xl w-full sm:max-w-xs p-5 pb-[max(1.25rem,env(safe-area-inset-bottom))]" style={{ animation: "chatSheetIn 220ms cubic-bezier(0.2,0.9,0.3,1)" }}>
-      <div className="mx-auto w-10 h-1 rounded-full bg-slate-200 mb-3 sm:hidden" />
-      {children}
+// Ignores taps for the first 400ms so the finger-lift after a long-press can't hit a button.
+const Sheet = ({ testid, onClose, children }) => {
+  const [armed, setArmed] = useState(false);
+  useEffect(() => { const t = setTimeout(() => setArmed(true), 400); return () => clearTimeout(t); }, []);
+  return (
+    <div className={`fixed inset-0 z-[80] flex items-end sm:items-center sm:justify-center px-4 ${armed ? "" : "pointer-events-none"}`} data-testid={testid}>
+      <div className="absolute inset-0 bg-black/60" onClick={onClose} />
+      <div className="relative bg-white rounded-t-3xl sm:rounded-3xl w-full sm:max-w-xs p-5 pb-[max(1.25rem,env(safe-area-inset-bottom))]" style={{ animation: "msgSheetIn 220ms cubic-bezier(0.2,0.9,0.3,1)" }}>
+        <div className="mx-auto w-10 h-1 rounded-full bg-slate-200 mb-3 sm:hidden" />
+        {children}
+      </div>
     </div>
-  </div>
-);
+  );
+};
 
 const Row = ({ testid, onClick, icon: Icon, children, danger }) => (
   <button data-testid={testid} onClick={onClick}

@@ -1,0 +1,31 @@
+{
+  "summary": "Iter46: Chat message delete-for-me (sent+received), bulk delete, selection mode and Copy. Backend 13/13 pytest pass (12 + all-hidden chat test). Frontend desktop (1920x1080, right-click) and mobile (390x844, JS-dispatched TouchEvents) flows all pass: action sheet items correct for received/own/image/pdf/location/tombstone, copy to clipboard with emoji/link/numbers + toast (EN 'Message copied'), selection mode toggling incl. image tap (no viewer), cancel, bulk delete-for-me persists after reload and remains visible for match_b, bulk delete-for-everyone only for own fresh selection -> tombstones for both users, RU strings ('Выбрано: 2', 'Удалить выбранные сообщения (2)?', 'Сообщения удалены'). Regressions OK: swipe-to-reply, image tap opens media-viewer, toggle-orig. Found 1 medium UX bug (ghost click after long-press can hit sheet buttons) and 1 minor animation glitch.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [
+      {"component": "ChatRoomPage long-press -> MessageActionSheet", "issue": "Ghost click after long-press release: with real CDP touch emulation (has_touch context), after the 550ms timer opens the sheet, lifting the finger dispatches compat mousedown/mouseup/click at the release point, which now lands on the sheet. Reproduced: a received message near the bottom of the screen was long-pressed and the ghost click landed on delete-me-btn -> message (msg_89e7dbe5f11e 'M_B1 mobile') was silently deleted for match_a. If it lands on the backdrop the sheet closes immediately. Event log: touchstart:msg-text, touchend:msg-text, mousedown:action-sheet, mouseup:action-sheet, click:action-sheet.", "selector": "[data-testid=action-sheet] / [data-testid=delete-me-btn]", "priority": "MEDIUM"},
+      {"component": "MessageActions Sheet animation", "issue": "Sheet uses style animation 'chatSheetIn' whose keyframes are translate(-50%,100%) -> translate(-50%,0) (made for left:50% sheets). The new Sheet is flex-centered, so during the 220ms animation it is shifted left by half its width and then snaps to centre (seen in mobile screenshot of bulk-delete-dialog mid-animation).", "selector": "[data-testid=action-sheet], [data-testid=bulk-delete-dialog]", "priority": "LOW"}
+    ],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": ["/app/backend/tests/test_delete_bulk_iter46.py", "/app/backend/tests/test_delete_bulk_iter46_allhidden.py", "/app/test_reports/pytest/pytest_iter46.xml"],
+  "action_items": [
+    "Prevent the post-long-press ghost click: in the row's onTouchEnd call e.preventDefault() when longPressFired.current is true (touchend is non-passive in React, this suppresses compat mouse events + click), and/or ignore clicks inside the Sheet for ~350ms after it opens.",
+    "Add a dedicated keyframe for the new Sheet (e.g. from translateY(100%) to translateY(0)) instead of reusing chatSheetIn with translate(-50%, ...).",
+    "copyText: if navigator.clipboard.writeText rejects (permission denied / unfocused doc / some WebViews), fall back to the execCommand textarea path before showing 'Не удалось скопировать' (currently fallback only used when the API is missing)."
+  ],
+  "critical_code_review_comments": [
+    "Backend delete/bulk logic is correct: all-or-nothing validation before any write, 404 on unknown id, 403 non-participant, Pydantic min/max length 1..200 and Literal scope -> 422.",
+    "list_chats placeholder logic works (chat stays listed with empty preview when all hidden; preview falls back to latest non-hidden), but it still scans only the latest 1000 messages across all chats (pre-existing) — a chat whose visible messages are older than that window loses its correct preview.",
+    "Single-message delete toast reuses plural 'Сообщения удалены' — acceptable per spec ('Message(s) deleted') but a singular string would read better.",
+    "ChatRoomPage.jsx is 743 lines (>700) — consider extracting selection/delete/long-press logic into a hook."
+  ],
+  "updated_files": ["/app/backend/tests/test_delete_bulk_iter46.py", "/app/backend/tests/test_delete_bulk_iter46_allhidden.py"],
+  "success_rate": {"backend": "100%", "frontend": "95%"},
+  "seed_data_creation": "Sent several TEST_*/UI_*/M_* text messages between match_a and match_b (some hidden for match_a, some tombstoned). Added coins to match_a/match_b/testuser1 via Mongo $inc 50. match_a language_pref set back to 'ru'.",
+  "retest_needed": false,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "Mobile long-press testing: Playwright page in browser_automation has no touch; JS-dispatched TouchEvent (new Touch/TouchEvent on the row) works without ghost clicks; a new_context(has_touch=True)+CDP Input.dispatchTouchEvent reproduces the ghost click bug. Login by setting localStorage 'lovreski_token'. match_a=user_4a6c98d1eb2b, match_b=user_3e49e86330a7. Grant clipboard-read/write permissions or copy shows 'copy failed' toast in headless.",
+  "rca of the issue": "Ghost click: long-press is implemented with a setTimeout in onTouchStart; nothing cancels the browser's synthesized mouse/click sequence on touchend, and onClickCapture guard only protects the message row, not the newly rendered sheet under the finger. Repro: mobile has_touch context, touch-hold 700ms on a received bubble located where the sheet's 'Delete for me' row renders (bottom ~740px on 390x844), release -> message deleted for me without user confirmation. Mitigation: preventDefault on touchend when long-press fired, or a short click-guard on Sheet mount."
+}
