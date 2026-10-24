@@ -20,6 +20,7 @@ import PushManager from "@/components/lovreski/PushManager";
 import SettingsPage from "@/pages/SettingsPage";
 import AdminPage from "@/pages/AdminPage";
 import AdminLogin from "@/pages/AdminLogin";
+import LocationLinkPage from "@/pages/LocationLinkPage";
 import { AdminProtectedRoute } from "@/components/admin/AdminProtectedRoute";
 
 const Protected = ({ children }) => {
@@ -55,6 +56,7 @@ const AppRouter = () => {
       <Route path="/purchase-history" element={<Protected><PurchaseHistoryPage /></Protected>} />
       <Route path="/settings" element={<Protected><SettingsPage /></Protected>} />
       <Route path="/settings/discovery" element={<Protected><SettingsPage /></Protected>} />
+      <Route path="/l/:token" element={<LocationLinkPage />} />
       <Route path="/admin/login" element={<AdminLogin />} />
       <Route path="/admin/dashboard" element={<AdminProtectedRoute><AdminPage /></AdminProtectedRoute>} />
       <Route path="/admin" element={<Navigate to="/admin/dashboard" replace />} />

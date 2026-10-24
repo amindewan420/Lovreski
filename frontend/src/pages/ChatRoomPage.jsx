@@ -9,6 +9,7 @@ import GiftPanel from "@/components/lovreski/GiftPanel";
 import LanguageSheet from "@/components/lovreski/LanguageSheet";
 import { LocationPicker, LocationBubble } from "@/components/lovreski/LocationShare";
 import { useChatTranslation } from "@/hooks/useChatTranslation";
+import { startLiveShare } from "@/lib/liveLocation";
 import { MessageActionSheet, SelectionBar, BulkDeleteDialog } from "@/components/lovreski/MessageActions";
 import { ChatMediaViewer, isPdfMsg, downloadChatMedia } from "@/components/lovreski/ChatMediaViewer";
 import {
@@ -172,6 +173,13 @@ export default function ChatRoomPage() {
       },
       onRead: (fromId) => {
         if (fromId === id) setMsgs((prev) => prev.map((m) => m.from_user === user?.user_id ? { ...m, read: true } : m));
+      },
+      onLocation: (u) => {
+        setMsgs((prev) => prev.map((x) => {
+          if (x.message_id !== u.message_id || !x.location) return x;
+          if (u.expired) return { ...x, location: null, location_expired: true };
+          return { ...x, location: { ...x.location, lat: u.lat, lng: u.lng, updated_at: u.updated_at } };
+        }));
       },
       onDeleted: (info) => {
         // Tombstone the message locally so all viewers see the placeholder instantly.
@@ -342,11 +350,36 @@ export default function ChatRoomPage() {
   };
 
   // ─── Location share (map pin picker) ─────────────────────────────────
-  const shareLocation = () => { setShowTray(false); setShowLocation(true); };
-  const sendLocation = async ({ lat, lng, place }) => {
+  const LOCATION_COST = 2;
+  const [locBusy, setLocBusy] = useState(false);
+  const noCoinsForLocation = () => {
     setShowLocation(false);
-    await send({ kind: "location", lat, lng, place });
+    toast.error(t("chat.loc_no_coins"), { duration: 5000 });
+    nav("/premium");
   };
+  const shareLocation = () => {
+    setShowTray(false);
+    if ((status.coins || 0) < LOCATION_COST) return noCoinsForLocation();
+    setShowLocation(true);
+  };
+  const sendLocation = async ({ lat, lng, place, live }) => {
+    setLocBusy(true);
+    try {
+      const { data } = await api.post(`/chats/${id}/send`, { kind: "location", lat, lng, place, live, reply_to: reply?.message_id });
+      setMsgs((prev) => prev.some((x) => x.message_id === data.message_id) ? prev : [...prev, data]);
+      setShowLocation(false); setReply(null);
+      if (live) startLiveShare(data.message_id, data.location_expires_at);
+      toast.success(t("chat.loc_sent").replace("{n}", LOCATION_COST));
+      refreshStatus(); refresh(); scrollBottom();
+    } catch (e) {
+      if (e.response?.status === 402) { refreshStatus(); return noCoinsForLocation(); }
+      const d = e.response?.data?.detail;
+      toast.error(typeof d === "string" ? d : d?.message || t("common.error"));
+    } finally { setLocBusy(false); }
+  };
+  const onLocationExpired = useCallback((mid) => {
+    setMsgs((prev) => prev.map((x) => x.message_id === mid && x.location ? { ...x, location: null, location_expired: true } : x));
+  }, []);
 
   // ─── Input auto-grow + typing broadcast ──────────────────────────────
   const onInput = (e) => {
@@ -523,7 +556,7 @@ export default function ChatRoomPage() {
                           <div className="text-[10px] mt-1 text-slate-500">{t("chat.preview_gift")}</div>
                         </div>
                       ) : m.kind === "location" && !locked ? (
-                        <LocationBubble m={m} place={tx(m.location?.place)} />
+                        <LocationBubble m={m} mine={mine} place={tx(m.location?.place)} onExpire={onLocationExpired} />
                       ) : ["image", "voice", "video", "file"].includes(m.kind) && m.media_url ? (
                         <MediaBubble m={m} onOpen={setViewMedia} t={t} />
                       ) : (
@@ -697,7 +730,7 @@ export default function ChatRoomPage() {
         <EmojiPanel open={showEmoji} onClose={() => setShowEmoji(false)} onPick={(e) => { setShowEmoji(false); sendEmoji(e); }} />
         <GiftPanel open={showGifts} onClose={() => setShowGifts(false)} onSend={sendGift} coins={status.coins} />
         <ChatMediaViewer m={viewMedia} onClose={closeMedia} />
-        <LocationPicker open={showLocation} onClose={() => setShowLocation(false)} onSend={sendLocation} fallback={{ lat: user?.lat, lng: user?.lng }} />
+        <LocationPicker open={showLocation} onClose={() => setShowLocation(false)} onSend={sendLocation} fallback={{ lat: user?.lat, lng: user?.lng }} coins={status.coins} cost={LOCATION_COST} busy={locBusy} />
         <LanguageSheet open={showLang} onClose={() => setShowLang(false)} onSelect={async (l) => { const r = await setLang(l.code); setShowLang(false); if (r?.actualLang !== l.code) toast.error("Перевод недоступен, оставили русский"); else toast.success(`${l.flag} ${l.name}`); }} />
 
         {/* Block popup */}

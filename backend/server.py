@@ -278,6 +278,7 @@ class MessageBody(BaseModel):
     lat: Optional[float] = Field(default=None, ge=-90, le=90)
     lng: Optional[float] = Field(default=None, ge=-180, le=180)
     place: Optional[str] = Field(default=None, max_length=200)
+    live: bool = False
     file_name: Optional[str] = None
     gift_key: Optional[str] = None
     reply_to: Optional[str] = None
@@ -320,8 +321,8 @@ COIN_PACKAGES = [
 # messages TOTAL per chat (any kind). Beyond that the input is hard-blocked
 # unless the user has coins (or Premium for text/emoji). Note: 'gift' kind
 # does NOT use MSG_COST — its cost is looked up per-key in GIFT_COST_BY_KEY.
-MSG_COST = {"text": 1, "emoji": 2, "image": 5, "file": 5, "voice": 5, "video": 10, "location": 1}
-LOCATION_TTL_HOURS = 24
+MSG_COST = {"text": 1, "emoji": 2, "image": 5, "file": 5, "voice": 5, "video": 10, "location": 2}
+LOCATION_TTL_MINUTES = 5  # shared location links expire 5 min after sharing
 FREE_MSGS = 2
 
 # Gift catalog — illustrations use free Unicode emoji rendered inside a colored
@@ -391,6 +392,10 @@ class WSManager:
         payload = {"type": "message", "data": msg}
         for uid in msg.get('participants', []):
             await self.send_to(uid, payload)
+
+    async def broadcast_event(self, participants: list, type_: str, data: dict):
+        for uid in participants:
+            await self.send_to(uid, {"type": type_, "data": data})
 
     async def broadcast_deletion(self, chat_id_val: str, participants: list, message_id: str, scope: str, deleted_by: str):
         """Notify both participants that a message was deleted for everyone."""
@@ -681,7 +686,7 @@ def chat_id(a: str, b: str) -> str:
     return "chat_" + "_".join(sorted([a, b]))
 
 def expire_location(m: dict) -> dict:
-    """Strip coordinates from location messages once they expire (24h)."""
+    """Strip coordinates from location messages once they expire (5 min). Expiry is exposed for countdowns."""
     if m.get('kind') != 'location' or not m.get('location'):
         return m
     exp = m.get('location_expires_at')
@@ -694,6 +699,8 @@ def expire_location(m: dict) -> dict:
     if exp_dt is None or now_utc() >= exp_dt:
         m['location'] = None
         m['location_expired'] = True
+    else:
+        m['location_expired'] = False
     return m
 
 def _decorate_msg(m: dict, viewer_id: str, viewer_is_premium: bool) -> dict:
@@ -737,18 +744,23 @@ async def _do_send_message(sender: dict, other_id: str, body: MessageBody) -> di
     # First 2 messages are ALWAYS free (any kind). After that:
     #   - If user has enough coins → deduct
     #   - Otherwise → 402 with `blocked=True` in body so client shows purchase popup
-    if within_free or is_admin_sender:
+    # Location sharing is ALWAYS paid (2 coins), even inside the free-message quota.
+    if (within_free or is_admin_sender) and body.kind != 'location':
         cost_paid = 0
     else:
         if coins < cost:
             raise HTTPException(status_code=402, detail={
-                "message": "Купите монеты, чтобы продолжить общение",
+                "message": "Недостаточно монет. Купите монеты, чтобы продолжить." if body.kind == 'location' else "Купите монеты, чтобы продолжить общение",
                 "blocked": True,
                 "required": cost,
                 "have": coins,
                 "kind": body.kind,
             })
-        await db.users.update_one({"user_id": sender['user_id']}, {"$inc": {"coins": -cost}})
+        # Atomic check-and-deduct (prevents double-spend from parallel requests)
+        res = await db.users.update_one({"user_id": sender['user_id'], "coins": {"$gte": cost}}, {"$inc": {"coins": -cost}})
+        if res.modified_count == 0:
+            raise HTTPException(status_code=402, detail={"message": "Недостаточно монет. Купите монеты, чтобы продолжить.",
+                                                         "blocked": True, "required": cost, "have": 0, "kind": body.kind})
         cost_paid = cost
     msg = {
         "message_id": f"msg_{uuid.uuid4().hex[:12]}",
@@ -762,8 +774,9 @@ async def _do_send_message(sender: dict, other_id: str, body: MessageBody) -> di
         "file_name": body.file_name,
         "gift_key": body.gift_key,
         "reply_to": body.reply_to,
-        **({"location": {"lat": body.lat, "lng": body.lng, "place": body.place or ""},
-            "location_expires_at": iso(now_utc() + timedelta(hours=LOCATION_TTL_HOURS))} if body.kind == 'location' else {}),
+        **({"location": {"lat": body.lat, "lng": body.lng, "place": body.place or "", "live": bool(body.live),
+                         "token": uuid.uuid4().hex, "updated_at": iso(now_utc())},
+            "location_expires_at": iso(now_utc() + timedelta(minutes=LOCATION_TTL_MINUTES))} if body.kind == 'location' else {}),
         "read": False,
         "cost_paid": cost_paid,
         "created_at": iso(now_utc()),
@@ -999,6 +1012,13 @@ I18N_BASE_RU = {
     "chat.location": "Локация", "chat.preview_locked": "Новое сообщение",
     "chat.show_original": "Показать оригинал", "chat.show_translation": "Показать перевод",
     "chat.translating": "Переводим…",
+    "chat.loc_cost": "Отправка локации стоит {n} монеты", "chat.loc_share_live": "Транслировать моё местоположение (5 мин)",
+    "chat.loc_no_coins": "Недостаточно монет. Купите монеты, чтобы продолжить.",
+    "chat.loc_sent": "Локация отправлена · списано {n} монеты",
+    "chat.loc_link_expired": "Срок действия ссылки на локацию истёк", "chat.loc_link_missing": "Ссылка не найдена",
+    "chat.loc_distance": "Расстояние до вас: {d}", "chat.loc_copy_link": "Ссылка", "chat.loc_stop_live": "Остановить трансляцию",
+    "chat.loc_geo_denied": "Нет доступа к геолокации — разрешите её в настройках браузера",
+    "chat.loc_geo_unsupported": "Геолокация не поддерживается этим устройством",
     "chat.copy": "Копировать", "chat.copied": "Сообщение скопировано", "chat.copy_failed": "Не удалось скопировать",
     "chat.select": "Выбрать", "chat.n_selected": "Выбрано: {n}",
     "chat.delete_n_confirm": "Удалить выбранные сообщения ({n})?", "chat.deleted_toast": "Сообщения удалены",
@@ -1012,9 +1032,9 @@ I18N_BASE_RU = {
     "chat.location_hint": "Перетащите метку или нажмите на карту, чтобы выбрать место.",
     "chat.location_safety": "Ради вашей безопасности всегда встречайтесь в людных общественных местах и сообщите друзьям, куда идёте.",
     "chat.location_send": "Отправить локацию", "chat.location_mine": "Моё местоположение",
-    "chat.location_expires": "Метка исчезнет через 24 часа",
+    "chat.location_expires": "Ссылка на локацию действует 5 минут",
     "chat.location_expired": "Срок действия метки истёк",
-    "chat.location_open": "Открыть в картах",
+    "chat.location_open": "Открыть в Google Картах",
     "chat.location_place_ph": "Название места (необязательно), напр. «Кафе на Тверской»",
     "settings.section.push": "Push-уведомления",
     "settings.push_enable": "Включить push-уведомления",
@@ -1134,6 +1154,7 @@ async def on_start():
     await db.admin_sessions.create_index("jti", unique=True)
     await db.login_attempts.create_index("key", unique=True)
     await db.content_translations.create_index([("lang", 1), ("key", 1)], unique=True)
+    await db.messages.create_index("location.token", sparse=True)
     from routers.admin import prewarm_all_legal
     asyncio.create_task(prewarm_all_legal())
     await db.s3_files.create_index("owner_id")

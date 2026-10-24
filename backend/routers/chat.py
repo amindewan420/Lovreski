@@ -303,3 +303,64 @@ async def chat_media_file(message_id: str, download: int = 0, user: dict = Depen
     if obj.get("length"):
         headers["Content-Length"] = str(obj["length"])
     return StreamingResponse(obj["stream"], media_type=obj["content_type"], headers=headers)
+
+
+# ─── Location links (5-min expiry) & live updates ────────────────────────────
+def _parse_dt(s):
+    try:
+        d = datetime.fromisoformat(str(s).replace("Z", "+00:00"))
+        return d if d.tzinfo else d.replace(tzinfo=timezone.utc)
+    except Exception:
+        return None
+
+
+@api.get("/loc/{token}")
+async def open_location_link(token: str):
+    """Resolve a shared-location link. Server-side expiry: 410 after 5 minutes."""
+    if not _re.fullmatch(r"[0-9a-f]{32}", token or ""):
+        raise HTTPException(status_code=404, detail="Location link not found")
+    m = await db.messages.find_one({"kind": "location", "location.token": token}, {"_id": 0})
+    if not m or m.get('deleted'):
+        raise HTTPException(status_code=404, detail="Location link not found")
+    exp = _parse_dt(m.get('location_expires_at'))
+    if not exp or now_utc() >= exp:
+        raise HTTPException(status_code=410, detail="This location link has expired")
+    loc = m['location']
+    return {"valid": True, "lat": loc['lat'], "lng": loc['lng'], "place": loc.get('place') or "",
+            "live": bool(loc.get('live')), "updated_at": loc.get('updated_at'),
+            "expires_at": m['location_expires_at'], "seconds_left": int((exp - now_utc()).total_seconds())}
+
+
+class LiveUpdateBody(BaseModel):
+    lat: float = Field(ge=-90, le=90)
+    lng: float = Field(ge=-180, le=180)
+
+
+@api.post("/location/{message_id}/update")
+async def live_location_update(message_id: str, body: LiveUpdateBody, user: dict = Depends(get_current_user)):
+    """Sender pushes a new position for a live share (free; only while the 5-min window is open)."""
+    m = await db.messages.find_one({"message_id": message_id, "kind": "location"}, {"_id": 0})
+    if not m or m.get('from_user') != user['user_id'] or not (m.get('location') or {}).get('live'):
+        raise HTTPException(status_code=404, detail="Live location not found")
+    exp = _parse_dt(m.get('location_expires_at'))
+    if not exp or now_utc() >= exp or m.get('deleted'):
+        raise HTTPException(status_code=410, detail="This location link has expired")
+    upd = {"location.lat": body.lat, "location.lng": body.lng, "location.updated_at": iso(now_utc())}
+    await db.messages.update_one({"message_id": message_id}, {"$set": upd})
+    await ws_manager.broadcast_event(m.get('participants') or [], "location_update", {
+        "message_id": message_id, "chat_id": m['chat_id'], "lat": body.lat, "lng": body.lng, "updated_at": upd["location.updated_at"],
+    })
+    return {"ok": True}
+
+
+@api.post("/location/{message_id}/stop")
+async def live_location_stop(message_id: str, user: dict = Depends(get_current_user)):
+    m = await db.messages.find_one({"message_id": message_id, "kind": "location"}, {"_id": 0})
+    if not m or m.get('from_user') != user['user_id']:
+        raise HTTPException(status_code=404, detail="Live location not found")
+    now = iso(now_utc())
+    await db.messages.update_one({"message_id": message_id}, {"$set": {"location_expires_at": now}})
+    await ws_manager.broadcast_event(m.get('participants') or [], "location_update", {
+        "message_id": message_id, "chat_id": m['chat_id'], "expired": True,
+    })
+    return {"ok": True}
