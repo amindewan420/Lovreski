@@ -210,7 +210,20 @@ async def submit_receipt(body: ReceiptBody, user: dict = Depends(get_current_use
 @api.get("/support/my")
 async def my_submissions(user: dict = Depends(get_current_user)):
     subs = await db.receipt_submissions.find(
-        {"user_id": user['user_id']},
+        {"user_id": user['user_id'], "is_deleted_by_user": {"$ne": True}},
         {"_id": 0, "receipt_data_url": 0},
     ).sort("created_at", -1).to_list(50)
     return subs
+
+
+@api.patch("/support/my/{submission_id}/hide")
+async def hide_my_submission(submission_id: str, user: dict = Depends(get_current_user)):
+    """Soft delete: hides the record from the user's own history only.
+    The record stays for admin review/audit; Premium/coins are never affected."""
+    r = await db.receipt_submissions.update_one(
+        {"submission_id": submission_id, "user_id": user['user_id']},
+        {"$set": {"is_deleted_by_user": True, "deleted_by_user_at": iso(now_utc())}},
+    )
+    if r.matched_count == 0:
+        raise HTTPException(status_code=404, detail="Application not found")
+    return {"ok": True, "submission_id": submission_id}

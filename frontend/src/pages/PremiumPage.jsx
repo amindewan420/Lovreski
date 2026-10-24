@@ -8,6 +8,7 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 import { RECEIPT_ACCEPT, receiptFileError, readReceipt } from "@/lib/receiptFile";
+import { MyApplications } from "@/components/lovreski/MyApplications";
 import { useNavigate } from "react-router-dom";
 import { motion, AnimatePresence } from "framer-motion";
 
@@ -187,27 +188,8 @@ export default function PremiumPage() {
           📩 Premium Activation Support
         </button>
 
-        {/* My previous submissions */}
-        {mySubs.length > 0 && (
-          <div>
-            <h4 className="font-display font-bold text-sm mb-2">Мои заявки</h4>
-            <div className="space-y-2">
-              {mySubs.map((s) => (
-                <div key={s.submission_id} data-testid={`sub-${s.submission_id}`} className="p-3 rounded-xl bg-card border border-border flex items-center justify-between">
-                  <div>
-                    <p className="text-xs text-muted-foreground">{new Date(s.created_at).toLocaleString("ru")}</p>
-                    {s.message && <p className="text-xs mt-1">{s.message}</p>}
-                    {s.status === "rejected" && s.reject_reason && <p className="text-[11px] text-rose-500 mt-1">Причина: {s.reject_reason}</p>}
-                  </div>
-                  <span className={`text-xs font-bold px-2 py-1 rounded-full flex items-center gap-1 ${s.status === "verified" ? "bg-emerald-500/15 text-emerald-500" : s.status === "rejected" ? "bg-rose-500/15 text-rose-500" : "bg-amber-500/15 text-amber-500"}`}>
-                    {s.status === "verified" ? <Check className="w-3 h-3" /> : s.status === "rejected" ? <X className="w-3 h-3" /> : <Clock className="w-3 h-3" />}
-                    {s.status === "verified" ? "Одобрено" : s.status === "rejected" ? "Отклонено" : "Ожидание"}
-                  </span>
-                </div>
-              ))}
-            </div>
-          </div>
-        )}
+        {/* My previous submissions (long-press → delete from my history) */}
+        <MyApplications items={mySubs} onRemoved={(sid) => setMySubs((p) => p.filter((x) => x.submission_id !== sid))} />
       </div>
 
       {/* Support Submission Panel */}

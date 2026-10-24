@@ -616,6 +616,7 @@ export default function AdminPage() {
                       <div className="flex justify-between gap-2">
                         <span><b>{s.user_name}</b> · {new Date(s.created_at).toLocaleDateString("ru")}
                           {s.receipt_data_url && <button data-testid={`history-receipt-${s.submission_id}`} onClick={() => setViewImg(s.receipt_data_url)} className="ml-2 text-primary font-semibold underline">чек</button>}
+                          {s.is_deleted_by_user && <span data-testid={`history-hidden-${s.submission_id}`} className="ml-2 px-1.5 py-0.5 rounded bg-slate-500/15 text-slate-500 text-[10px]">скрыто пользователем</span>}
                         </span>
                         <span className={s.status === "verified" ? "text-emerald-500" : "text-rose-500"}>
                           {s.status === "verified" ? `✓ ${s.coins_added} 🪙` : `✗ ${s.reject_reason}`}
