@@ -16,7 +16,7 @@ from server import (
     AdminPaymentAction, COIN_PACKAGES,
 )
 import storage as _cloud
-from translation import translate_texts, translate_markdown
+from translation import translate_texts, translate_markdown, norm_lang
 from legal_defaults import LEGAL_DEFAULTS, DEFAULTS_BY_SLUG as LEGAL_DEFAULTS_BY_SLUG, ALIASES as LEGAL_ALIASES, canonical_slug
 
 class AdminApproveBody(BaseModel):
@@ -635,7 +635,7 @@ async def legal_list_public(response: Response, lang: str = ""):
     """Public: every legal doc (custom overrides built-in), no body. `lang` → titles translated."""
     _no_store(response)
     docs = _merged_legal(await db.legal_docs.find({}, {"_id": 0, "body": 0}).to_list(200), with_body=False)
-    if lang:
+    if norm_lang(lang):
         tr = await translate_texts(db, [d["title"] for d in docs], lang)
         for d in docs:
             d["original_title"] = d["title"]
@@ -643,12 +643,20 @@ async def legal_list_public(response: Response, lang: str = ""):
     return docs
 
 async def _localize_doc(doc: dict, lang: str) -> dict:
+    lang = norm_lang(lang)
     if not lang:
         return doc
     title = (await translate_texts(db, [doc["title"]], lang)).get(doc["title"], doc["title"])
     body = await translate_markdown(db, doc["body"], lang)
     return {**doc, "title": title, "body": body, "original_title": doc["title"], "original_body": doc["body"],
             "translated": body != doc["body"] or title != doc["title"], "lang": lang}
+
+_bg_tasks: set = set()
+
+def _spawn(coro) -> None:
+    t = asyncio.create_task(coro)
+    _bg_tasks.add(t)
+    t.add_done_callback(_bg_tasks.discard)
 
 async def _prewarm_legal(title: str, body: str) -> None:
     """Translate a freshly saved doc into every app language users have chosen."""
@@ -695,7 +703,7 @@ async def _upsert_legal(slug: str, title: str, body: str, admin: dict, action: s
         upsert=True,
     )
     await db.admin_audit.insert_one({"admin_id": admin['user_id'], "action": action, "slug": slug, "at": iso(now_utc())})
-    asyncio.create_task(_prewarm_legal(title, body))
+    _spawn(_prewarm_legal(title, body))
 
 @api.post("/admin/legal")
 async def admin_legal_create(body: LegalDocBody, admin: dict = Depends(require_admin)):

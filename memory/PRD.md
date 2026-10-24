@@ -140,3 +140,9 @@ Currently on Emergent (React + FastAPI + MongoDB). For amvera.cloud deployment, 
 - `/api/legal` + `/api/legal/{slug}` merge admin docs over built-ins (no-store); admin PUT on built-in creates override, DELETE reverts; built-ins undeletable.
 - Admin Правовые tab shows "Встроенный" / "Свой · заменяет встроенный" / "Свой" badges + revert. User side renders Markdown (`LegalDoc.jsx`, react-markdown); refund-policy page includes refund form.
 - Tested: iteration_43 (backend 14/14, frontend 100%).
+
+## 2026-06 — Iteration 44: Consistent in-app translation (chat + legal)
+- Shared engine `backend/translation.py` (Emergent LLM gpt-4o-mini, JSON-array batches of 40, cache `content_translations` by (lang, sha(text)), fail-open to original, ISO language whitelist).
+- `POST /api/translate/batch` (chat), `/api/translate` now uses the same engine. `GET /api/legal?lang=` and `/api/legal/{slug}?lang=` return translated titles/body (Markdown split by paragraphs) + originals; admin save pre-translates into all users' languages; startup prewarm.
+- Frontend `useChatTranslation`: whole thread translated in one pass (chunked, applied together), live WS messages auto-translate, pending bubbles pulse + "Переводим…" pill, per-bubble "Показать оригинал" toggle, reply quotes + location place translated. Legal pages show translated doc with original toggle. i18n loader guarded against stale responses.
+- Tested: iteration_44 (backend 11/11, frontend 100%).

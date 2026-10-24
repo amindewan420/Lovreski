@@ -33,9 +33,13 @@ export function useChatTranslation(msgs, lang) {
     if (!missing.length) return;
     missing.forEach((t) => inflight.current.add(`${lang}|${t}`));
     setPending((p) => new Set([...p, ...missing]));
-    api.post("/translate/batch", { target: lang, texts: missing })
-      .then(({ data }) => { for (const t of missing) cache.set(t, data?.translations?.[t] ?? t); })
-      .catch(() => { for (const t of missing) cache.set(t, t); }) // fail-open: keep original
+    // Chunked requests, but results are applied together in one pass.
+    const chunks = [];
+    for (let i = 0; i < missing.length; i += 100) chunks.push(missing.slice(i, i + 100));
+    Promise.all(chunks.map((c) => api.post("/translate/batch", { target: lang, texts: c })
+      .then(({ data }) => data?.translations || {})
+      .catch(() => ({})))) // fail-open: keep original
+      .then((parts) => { const all = Object.assign({}, ...parts); for (const t of missing) cache.set(t, all[t] ?? t); })
       .finally(() => {
         missing.forEach((t) => inflight.current.delete(`${lang}|${t}`));
         setPending((p) => { const n = new Set(p); missing.forEach((t) => n.delete(t)); return n; });

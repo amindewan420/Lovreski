@@ -1,0 +1,38 @@
+{
+  "summary": "Tested in-app content translation (Emergent LLM, shared engine) for chat + legal docs. Backend: 11/11 pytest pass (/translate/batch auth/empty/cache/same-lang passthrough/invalid-target fail-open, /translate single, /legal?lang list+doc, original without lang, 404, admin POST/PUT legal pre-warm -> subsequent GET ?lang=en <2s, cleanup). Frontend (mobile 390x844): match_a chat switched to English via tray-lang -> chat-translating pill shown, all Russian bubbles translated together (~2.6s), no Cyrillic left; toggle-orig works both ways; reply quotes + reply-preview translated; location place translated (incl. newly sent location); realtime incoming Russian message from match_b auto-translated in <1s without reload; switching back to Russian re-renders all (English -> Russian); deleted placeholder (scope=everyone) shows live in English; UI send/reply/location send OK. Legal: en list/doc correct (built-ins are authored in English so en shows original w/o toggle); de list+doc translated with legal-toggle-orig toggling; refund-policy still shows refund-form.",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {"endpoint": "GET /api/legal?lang=..., GET /api/legal/{slug}?lang=...", "issue": "Public, unauthenticated and lang is unvalidated (any 1-10 char string) -> anyone can trigger LLM translation of all legal docs for arbitrary language codes (cost abuse; each new code ~10-20s of LLM work and a cache row). Consider whitelisting supported language codes."},
+      {"endpoint": "_prewarm_legal", "issue": "Iterates every distinct users.language_pref including the doc's own source language (e.g. 'en' for English built-ins) -> wasted LLM calls; asyncio.create_task result not referenced (may be GC'd mid-run)."},
+      {"endpoint": "POST /api/translate/batch", "issue": "texts max_length=300 -> 422 for threads with >300 distinct texts; frontend hook sends all missing texts in one request without chunking, so very long chats would fail-open to originals (mixed screen). Chunk on frontend or raise/slice server-side."}
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [
+      {"component": "I18nProvider (lib/i18n.jsx)", "issue": "Intermittent (seen once, not reproducible on reload): after switching language en->de in same browser context, raw i18n keys rendered ('legal.translated · chat.show_original', bottom nav 'nav.home', 'nav.search'...). Backend /api/i18n/de returned full dict, so likely a race between concurrent load() calls (initial lang effect + user language_pref sync) with no request sequencing/abort.", "selector": "[data-testid=legal-toggle-orig], bottom nav", "priority": "LOW"}
+    ],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "Chat (ru)", "issues": ["LLM translates English-ish test markers too: 'TEST_hi' rendered as 'ТЕСТ_привет' - identifiers/code-like tokens get translated (expected behaviour per spec but may surprise)."]}
+    ]
+  },
+  "test_report_links": ["/app/backend/tests/test_translation_iter44.py", "/app/backend/tests/seed_chat_iter44.py", "/app/test_reports/pytest/pytest_iter44.xml"],
+  "action_items": [
+    "Optional: whitelist lang codes on public /api/legal?lang endpoints to prevent LLM cost abuse",
+    "Optional: chunk /translate/batch calls in useChatTranslation (<=300 texts per request) for long threads",
+    "Optional: add request sequencing (ignore stale responses) in I18nProvider.load to avoid rare raw-key render"
+  ],
+  "critical_code_review_comments": [
+    "translation.py: per-item update_one in a loop after each chunk - use bulk_write for fewer round trips",
+    "_prewarm_legal skips nothing: translates into the source language too",
+    "useChatTranslation: no chunking; frontend relies on server 300 cap"
+  ],
+  "updated_files": ["/app/backend/tests/test_translation_iter44.py", "/app/backend/tests/seed_chat_iter44.py"],
+  "success_rate": {"backend": "100%", "frontend": "100% (1 intermittent low-priority i18n race observed once)"},
+  "test_credentials": "match_a/match_b@lovreski.ru password123; admin admin@lovreski.ru / LovreskiAdmin2026!",
+  "seed_data_creation": "Seeded Russian chat messages between match_a and match_b (texts, location 'Кафе у Красной площади', reply, TEST_ messages, one deleted-for-everyone). Added 100 coins to match_a and match_b via admin add-coins. Temporary legal doc test-iter44-doc created+deleted. match_a language_pref reset to 'ru'.",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "match_a=user_4a6c98d1eb2b, match_b=user_3e49e86330a7. Built-in legal docs are authored in ENGLISH (so ?lang=en is a no-op, test translation with ru/de). admin add-coins body: {user_id, coins, reason}. Delete message for everyone needs ?scope=everyone. Set localStorage lovreski_token + lovreski_lang to skip UI login."
+}

@@ -109,10 +109,14 @@ export function I18nProvider({ children }) {
   const [loading, setLoading] = useState(false);
   const userSyncedRef = useRef(false);
 
+  const loadSeq = useRef(0);
   const load = useCallback(async (code) => {
+    const seq = ++loadSeq.current;
     setLoading(true);
     try {
       const { data } = await api.get(`/i18n/${code}`);
+      // A newer language request was started meanwhile → ignore this stale response.
+      if (seq !== loadSeq.current) return { requestedLang: code, actualLang: data.lang, stale: true };
       setStrings(data.strings || {});
       // Only persist the language client-side if the server actually
       // returned the requested one. Otherwise we would silently overwrite
@@ -125,7 +129,7 @@ export function I18nProvider({ children }) {
     } catch (e) {
       console.warn("i18n load failed:", e);
       return { requestedLang: code, actualLang: lang, error: String(e) };
-    } finally { setLoading(false); }
+    } finally { if (seq === loadSeq.current) setLoading(false); }
   }, [lang]);
 
   // Initial load

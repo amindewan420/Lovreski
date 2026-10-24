@@ -20,8 +20,15 @@ def _key(text: str) -> str:
     return hashlib.sha256(text.encode("utf-8")).hexdigest()[:24]
 
 
+# ISO-639-1 codes (+ common regional variants) accepted for translation; anything else → no translation.
+SUPPORTED_LANGS = set("""af am ar az be bg bn bs ca cs cy da de el en es et eu fa fi fil fr ga gl gu he hi hr hu hy id
+is it ja ka kk km kn ko ky lo lt lv mk ml mn mr ms my ne nl no pa pl ps pt ro ru si sk sl sq sr sv sw ta te tg th
+tk tl tr uk ur uz vi zh zh-cn zh-tw pt-br as en-us fr-ca es-419 en-gb""".split())
+
+
 def norm_lang(lang: str) -> str:
-    return (lang or "").strip().lower()[:10]
+    code = (lang or "").strip().lower()[:10]
+    return code if code in SUPPORTED_LANGS else ""
 
 
 async def _llm_translate(items: list[str], lang: str) -> list[str]:
