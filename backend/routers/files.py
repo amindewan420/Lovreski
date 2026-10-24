@@ -59,7 +59,7 @@ async def _check_access(file_id: str, kind: str, owner: Optional[str],
     user = await _try_auth(authorization, session_token)
     if not user:
         return False
-    if user.get("is_admin") or (owner and owner == user["user_id"]):
+    if owner and owner == user["user_id"]:
         return True
     if kind.startswith("chat_") and await _is_chat_participant(user["user_id"], file_id):
         return True
@@ -149,7 +149,7 @@ async def get_signed_file_url(file_id: str, user: dict = Depends(get_current_use
 
     if kind in PUBLIC_KINDS:
         return {"url": plain, "public": True}
-    allowed = user.get("is_admin") or (owner and owner == user["user_id"])
+    allowed = bool(owner and owner == user["user_id"])
     if not allowed and kind.startswith("chat_"):
         allowed = await _is_chat_participant(user["user_id"], file_id)
     if not allowed:

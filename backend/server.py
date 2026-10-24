@@ -202,6 +202,32 @@ async def verify_admin(authorization: Optional[str] = Header(None)) -> dict:
 
 require_admin = verify_admin
 
+# ── Generic brute-force lockout (login_attempts collection) ──
+async def lockout_remaining(key: str) -> int:
+    rec = await db.login_attempts.find_one({"key": key}, {"_id": 0}) or {}
+    lu = rec.get("locked_until")
+    if lu:
+        left = (datetime.fromisoformat(lu) - now_utc()).total_seconds()
+        if left > 0:
+            return int(left)
+    return 0
+
+async def register_failed_login(key: str, max_fails: int, lock_minutes: int = 15) -> None:
+    rec = await db.login_attempts.find_one({"key": key}, {"_id": 0}) or {}
+    fails = (0 if rec.get("locked_until") else int(rec.get("fails", 0))) + 1
+    upd = {"key": key, "fails": fails, "last_fail": iso(now_utc()), "locked_until": None}
+    if fails >= max_fails:
+        upd.update({"fails": 0, "locked_until": iso(now_utc() + timedelta(minutes=lock_minutes))})
+    await db.login_attempts.update_one({"key": key}, {"$set": upd}, upsert=True)
+
+async def clear_failed_logins(*keys: str) -> None:
+    await db.login_attempts.delete_many({"key": {"$in": list(keys)}})
+
+def client_ip(request: Request) -> str:
+    """Rightmost X-Forwarded-For hop = address seen by our own ingress (not client-spoofable)."""
+    fwd = [p.strip() for p in request.headers.get("x-forwarded-for", "").split(",") if p.strip()]
+    return fwd[-1] if fwd else (request.client.host if request.client else "unknown")
+
 # ────────────────────────────── Models ──────────────────────────────
 class RegisterBody(BaseModel):
     email: EmailStr
@@ -680,7 +706,7 @@ async def _do_send_message(sender: dict, other_id: str, body: MessageBody) -> di
         raise HTTPException(status_code=400, detail="Location requires lat/lng")
     cid = chat_id(sender['user_id'], other_id)
     sent_count = await db.messages.count_documents({"chat_id": cid, "from_user": sender['user_id']})
-    is_admin_sender = sender.get('is_admin', False)
+    is_admin_sender = False
 
     # Refresh coin/premium status from DB
     fresh = await db.users.find_one({"user_id": sender['user_id']}, {"_id": 0, "coins": 1, "is_premium": 1})
@@ -1074,7 +1100,7 @@ async def on_start():
     await db.push_tokens.create_index([("user_id", 1), ("last_seen", -1)])
     await db.s3_files.create_index("kind")
     await db.admin_sessions.create_index("jti", unique=True)
-    await db.admin_login_attempts.create_index("ip", unique=True)
+    await db.login_attempts.create_index("key", unique=True)
     await db.s3_files.create_index("owner_id")
     await db.profile_visits.create_index([("viewer", 1), ("target", 1)], unique=True)
     # Initialize Firebase from Admin-Panel config (no-op if not configured)

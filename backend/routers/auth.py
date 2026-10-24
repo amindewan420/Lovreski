@@ -11,7 +11,8 @@ from server import (
     get_current_user,
     RegisterBody, LoginBody, SessionExchange, ForgotBody, ResetBody,
     user_public, calc_age,
-    JWT_SECRET, JWT_ALG, ADMIN_EMAIL, ADMIN_PASSWORD,
+    JWT_SECRET, JWT_ALG,
+    lockout_remaining, register_failed_login, clear_failed_logins,
 )
 
 @api.post("/auth/register")
@@ -52,26 +53,17 @@ async def register(body: RegisterBody):
 
 @api.post("/auth/login")
 async def login(body: LoginBody):
-    # Admin special login
-    if body.email.lower() == ADMIN_EMAIL.lower() and body.password == ADMIN_PASSWORD:
-        admin = await db.users.find_one({"email": ADMIN_EMAIL.lower()}, {"_id": 0})
-        if not admin:
-            admin_id = f"user_{uuid.uuid4().hex[:12]}"
-            admin = {
-                "user_id": admin_id, "email": ADMIN_EMAIL.lower(), "password_hash": hash_pw(ADMIN_PASSWORD),
-                "name": "Admin", "gender": "male", "dob": "1990-01-01", "photos": [],
-                "interests": [], "coins": 999999, "is_premium": True, "verified": True, "is_admin": True,
-                "created_at": iso(now_utc()), "last_active": iso(now_utc()),
-            }
-            await db.users.insert_one(admin)
-        token = make_jwt(admin['user_id'], is_admin=True)
-        admin.pop('password_hash', None); admin.pop('_id', None)
-        return {"token": token, "user": admin}
+    lock_key = f"user:{body.email.lower()}"
+    left = await lockout_remaining(lock_key)
+    if left:
+        raise HTTPException(status_code=429, detail=f"Слишком много попыток. Попробуйте через {left // 60 + 1} мин.")
     user = await db.users.find_one({"email": body.email.lower()})
     if not user:
         raise HTTPException(status_code=404, detail="Account not found. Please sign up first.")
     if not check_pw(body.password, user.get('password_hash', '')):
+        await register_failed_login(lock_key, max_fails=10)
         raise HTTPException(status_code=401, detail="Incorrect password")
+    await clear_failed_logins(lock_key)
     if user.get('deactivated'):
         raise HTTPException(status_code=403, detail="Аккаунт деактивирован. Обратитесь в поддержку.")
     banned_until = user.get('banned_until')

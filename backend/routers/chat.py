@@ -119,7 +119,7 @@ async def delete_message(message_id: str, scope: str = "me", user: dict = Depend
     if not m:
         raise HTTPException(status_code=404, detail="Message not found")
     uid = user['user_id']
-    is_admin = bool(user.get('is_admin'))
+    is_admin = False  # admin powers live only in the Admin Panel
     if uid not in (m.get('participants') or []) and not is_admin:
         raise HTTPException(status_code=403, detail="Not your chat")
 
@@ -205,7 +205,7 @@ async def chat_status(other_id: str, user: dict = Depends(get_current_user)):
     coins = int((fresh or {}).get('coins') or 0)
     is_premium = bool((fresh or {}).get('is_premium'))
     # Free-message limit reached AND no coins → blocked
-    is_blocked = (sent >= FREE_MSGS) and coins < MSG_COST['text'] and not is_premium and not user.get('is_admin')
+    is_blocked = (sent >= FREE_MSGS) and coins < MSG_COST['text'] and not is_premium
     return {
         "chat_id": cid,
         "sent_count": sent,

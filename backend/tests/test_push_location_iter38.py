@@ -30,7 +30,10 @@ def register():
 
 @pytest.fixture(scope="module")
 def admin():
-    return login("admin@lovreski.ru", "LovreskiAdmin2026!")[0]
+    # Admin panel token (separate admin JWT) — normal /api/auth/login tokens are rejected on /api/admin/*
+    r = requests.post(f"{API}/admin/login", json={"email": BENV['ADMIN_EMAIL'], "password": BENV['ADMIN_PASSWORD']})
+    assert r.status_code == 200, r.text
+    return {"Authorization": f"Bearer {r.json()['token']}"}
 
 
 @pytest.fixture(scope="module")
@@ -65,8 +68,8 @@ class TestPushConfig:
         assert r.status_code == 200 and r.json() == {"configured": False}
 
     def test_admin_config_forbidden_for_user(self, ua):
-        assert requests.get(f"{API}/admin/push/config", headers=ua[0]).status_code == 403
-        assert requests.put(f"{API}/admin/push/config", headers=ua[0], json={"api_key": "x"}).status_code == 403
+        assert requests.get(f"{API}/admin/push/config", headers=ua[0]).status_code == 401
+        assert requests.put(f"{API}/admin/push/config", headers=ua[0], json={"api_key": "x"}).status_code == 401
 
     def test_admin_config_get(self, admin):
         r = requests.get(f"{API}/admin/push/config", headers=admin)
@@ -140,7 +143,7 @@ class TestPushConfig:
 # ---- Announcements ----
 class TestAnnounce:
     def test_forbidden(self, ua):
-        assert requests.post(f"{API}/admin/push/announce", headers=ua[0], json={"title": "x", "body": "y"}).status_code == 403
+        assert requests.post(f"{API}/admin/push/announce", headers=ua[0], json={"title": "x", "body": "y"}).status_code == 401
 
     def test_announce(self, admin, ua):
         t = f"TEST_{uuid.uuid4().hex[:6]}"

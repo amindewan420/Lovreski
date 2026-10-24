@@ -4,14 +4,11 @@ from datetime import timedelta
 from fastapi import Depends, HTTPException
 from server import (
     api, db, logger, now_utc, iso,
-    hash_pw, get_current_user,
+    hash_pw, get_current_user, verify_admin,
 )
 
 @api.post("/demo/seed")
-async def seed_demo(user: dict = Depends(get_current_user)):
-    # Dev convenience — admins only in production; harmless when feed is empty.
-    if not user.get("is_admin"):
-        raise HTTPException(status_code=403, detail="Admins only")
+async def seed_demo(user: dict = Depends(verify_admin)):
     existing = await db.users.count_documents({"is_demo": True})
     if existing >= 15:
         return {"ok": True, "already": existing}
