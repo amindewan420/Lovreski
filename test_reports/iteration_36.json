@@ -1,0 +1,23 @@
+{
+  "summary": "Retest of ProfileCard pointer-events-none fix. All 7 target scenarios PASSED. Overlay no longer blocks like/pass buttons; elementFromPoint on like-btn center returns the button itself. Like keeps card in grid with disabled '✓ Лайкнуто' state that persists on reload. Pass removes card. Disabled like button fires no API call. Image click still navigates to /profile/<id>. /likes renders ProfileCards. /discover uses a swipe-stack layout (different component — no profile-card-<id> testid) but renders without errors.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": ["/app/backend/tests/test_home_feed_liked_filters.py (prev iter35, not re-run)"],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "ProfileCard overlay fix is correct — `pointer-events-none` on both gradient overlay (line 18) and name/distance overlay (line 39), so the Link remains clickable through them and the action buttons are no longer intercepted.",
+    "Informational: /discover uses a different swipe-stack UI (no `profile-card-<id>` testid). The review request's smoke on /discover passes functionally but doesn't exercise ProfileCard; no action required."
+  ],
+  "updated_files": [],
+  "success_rate": {"backend": "not re-tested (8/8 in iter35)", "frontend": "100% (7/7 scenarios)"},
+  "test_credentials": "testuser1@lovreski.ru / password123 (worked). Also registered TEST_retest<rand>@lovreski.ru fallback (not needed — testuser1 still had 5 unliked cards).",
+  "seed_data_creation": "Registered one fresh TEST_retest user as fallback via POST /api/auth/register (not used in final flow).",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Pointer-events fix on /app/frontend/src/components/lovreski/ProfileCard.jsx (line 39) is verified working. Home feed like/pass/image-nav/duplicate-prevention/persistence all pass. Backend tests from iter35 remain valid.",
+  "rca of the issue": "Root cause (iter35): absolutely positioned `.absolute inset-x-0 bottom-0 p-3 text-white` div was stacking above the action button row and intercepting pointer events because it had no `pointer-events-none`. Fix adds the class so the overlay is purely visual; underlying Link still receives clicks (confirmed by image-click navigation test), and sibling button row below is unobstructed."
+}
