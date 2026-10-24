@@ -8,7 +8,10 @@ import { getCurrentPosition, distanceKm, fmtDistance, googleMapsUrl } from "@/li
 // Public landing for a shared location link (server enforces the 5-minute expiry).
 export default function LocationLinkPage() {
   const { token } = useParams();
-  const { t } = useI18n();
+  const { t: rawT } = useI18n();
+  const FALLBACK = { "chat.loc_link_expired": "Срок действия ссылки на локацию истёк", "chat.loc_link_missing": "Ссылка не найдена",
+    "chat.loc_distance": "Расстояние до вас: {d}", "chat.location_open": "Открыть в Google Картах" };
+  const t = (k) => { const v = rawT(k); return v === k ? FALLBACK[k] || k : v; };
   const [st, setSt] = useState({ loading: true });
 
   useEffect(() => {

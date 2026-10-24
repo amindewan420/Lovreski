@@ -556,7 +556,7 @@ export default function ChatRoomPage() {
                           <div className="text-[10px] mt-1 text-slate-500">{t("chat.preview_gift")}</div>
                         </div>
                       ) : m.kind === "location" && !locked ? (
-                        <LocationBubble m={m} mine={mine} place={tx(m.location?.place)} onExpire={onLocationExpired} />
+                        <LocationBubble m={m} mine={mine} onExpire={onLocationExpired} />
                       ) : ["image", "voice", "video", "file"].includes(m.kind) && m.media_url ? (
                         <MediaBubble m={m} onOpen={setViewMedia} t={t} />
                       ) : (

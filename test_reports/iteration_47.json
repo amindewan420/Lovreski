@@ -1,0 +1,28 @@
+{
+  "summary": "Iter47: Location sharing with coins. Backend 11/11 pytest pass (2-coin deduction always incl. brand-new user inside free quota, 32-hex unique token, expires_at=created+5min, 402 blocked w/ no message + coins unchanged, 400 missing lat/lng, parallel double-spend -> only 1 success, /api/loc valid/410/404, messages list location:null+location_expired after expiry, live update + WS location_update to recipient, non-sender/non-live 404, stop -> 410 + WS expired, 422 bad coords). Frontend (390x844, geolocation granted) all flows pass: picker shows cost+balance, live share deducts 2 (237->235) with toast, LIVE badge, countdown decreasing (4:57->4:55), stop button only for sender; custom pin via map click + place name deducts 2; recipient tap opens new tab google.com/maps/dir/?api=1&destination=lat,lng&origin=... and shows distance toast + location-distance (9.5 km); live update via API moves recipient's map without reload (tiles changed); stop -> bubble becomes location-expired instantly; expired bubble has no open action; <2 coins -> toast 'Недостаточно монет...' + redirect /premium, picker not opened; /l/<token> valid redirects to Google Maps, expired -> 'Срок действия ссылки на локацию истёк', unknown -> 'Ссылка не найдена'. Regression: text send, delete-for-everyone (text + location; deleted location link -> 404) OK. Media viewer not re-tested.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [
+      {"component": "LocationBubble place label", "issue": "User-entered place name is passed through tx() auto-translation: 'TEST_pin_cafe' rendered as 'ТЕСТ_пин_кафе' (transliterated) for both sender and recipient. Place names should probably be shown verbatim (or only translated when the viewer's language differs).", "selector": "[data-testid^=location-bubble-] p.no-translate", "priority": "LOW"},
+      {"component": "LocationLinkPage", "issue": "For a fast 404 the raw i18n key 'chat.loc_link_missing' flashes briefly before i18n strings load (resolves after ~1s).", "selector": "[data-testid=loc-link-expired]", "priority": "LOW"}
+    ],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": ["/app/backend/tests/test_location_share_iter47.py", "/app/test_reports/pytest/pytest_iter47.xml"],
+  "action_items": [
+    "(Low) Don't transliterate/translate user-entered location place names in LocationBubble (ChatRoomPage passes place={tx(m.location?.place)})",
+    "(Low) LocationLinkPage: show a spinner until i18n strings are loaded or provide a fallback string to avoid raw key flash"
+  ],
+  "critical_code_review_comments": [
+    "POST /api/chats/{other}/send has no match/block check in _do_send_message — any authenticated user can send (incl. location) to any user_id (pre-existing; verify intended).",
+    "Recipient-side locked messages (non-premium beyond free quota) strip location correctly; WS broadcast_message sends full msg incl. token to recipient regardless of lock — check if a locked recipient could read location token via WS.",
+    "LocationLinkPage redirects immediately (window.location.href) so the distance text is visible only for a moment — acceptable but the distance is effectively not shown on /l/ page."
+  ],
+  "updated_files": ["/app/backend/tests/test_location_share_iter47.py"],
+  "success_rate": {"backend": "100%", "frontend": "100% (2 low-priority cosmetic issues)"},
+  "seed_data_creation": "Temporary registered TEST users deleted; TEST_ location messages deleted. Coins restored: match_a 252, testuser1 504 (temporarily set to 1). match_a language_pref=ru.",
+  "retest_needed": false,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "Use /app/backend/tests/test_location_share_iter47.py for location regression (uses pymongo to force expiry, websocket-client for WS). Playwright: grant geolocation via page.context.grant_permissions + set_geolocation; tray opened by [data-testid=btn-plus] then tray-location. match_a=user_4a6c98d1eb2b, match_b=user_3e49e86330a7."
+}

@@ -159,3 +159,9 @@ Currently on Emergent (React + FastAPI + MongoDB). For amvera.cloud deployment, 
 - Frontend `MessageActions.jsx`: long-press/right-click sheet [Copy (text only)] [Reply] [Select] + Delete for me / for everyone; selection mode (checkmarks, "Выбрано: N", Cancel, trash) → confirm dialog with Delete for me / for everyone (when all own & fresh); toasts "Сообщения удалены", "Сообщение скопировано" (clipboard API + execCommand fallback). Ghost-tap guard (sheet ignores taps 400ms, touchend preventDefault after long-press).
 - Tested: iteration_46 (backend 13/13, frontend 95% → ghost-click + animation fixed afterwards, self-verified).
 - Also: media viewer error state now has real "Повторить" retry; media proxy respects hidden_for.
+
+## 2026-06 — Iteration 47: Location sharing with coins + 5-min links
+- Location share costs 2 coins ALWAYS (atomic `$gte` deduction, 402 → toast + redirect /premium; client pre-check too).
+- Message `location` = {lat,lng,place,live,token,updated_at}; `location_expires_at` = +5 min. `GET /api/loc/{token}` (public, 410 expired), `POST /api/location/{mid}/update` (live sender, WS `location_update`), `/stop`.
+- Frontend: picker with cost/balance, "Транслировать моё местоположение (5 мин)" (watchPosition via `lib/liveLocation.js`, 8s throttle) or custom pin; bubble with LIVE badge, mm:ss countdown, stop button, copy link; tap → server-validated → Google Maps directions + distance toast; public `/l/:token` page. Free OSM map kept (no Google SDK).
+- Tested: iteration_47 (backend 11/11, frontend 100%); place names now shown verbatim.

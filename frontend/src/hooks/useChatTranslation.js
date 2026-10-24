@@ -16,7 +16,6 @@ export const translatableTexts = (msgs) => {
   for (const m of msgs) {
     if (m.deleted || m.locked) continue;
     if ((m.kind === "text" || m.kind === "emoji") && m.text && HAS_LETTERS.test(m.text)) out.push(m.text);
-    if (m.kind === "location" && m.location?.place && HAS_LETTERS.test(m.location.place)) out.push(m.location.place);
   }
   return out;
 };
