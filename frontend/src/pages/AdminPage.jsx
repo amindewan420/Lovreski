@@ -1,6 +1,5 @@
 import { useEffect, useState } from "react";
-import { api } from "@/lib/api";
-import { useAuth } from "@/context/AuthContext";
+import { adminApi as api, adminLogout } from "@/lib/adminApi";
 import { useNavigate } from "react-router-dom";
 import { LineChart, Line, BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid } from "recharts";
 import { Shield, Users, Crown, Clock, TrendingUp, Check, X, Flag, LogOut, Search as SearchIcon, MinusCircle, AlertTriangle, Ban, UserX, FileText, Trash2, Plus, Pencil, Database } from "lucide-react";
@@ -39,7 +38,6 @@ const KIND_COLORS = {
 };
 
 export default function AdminPage() {
-  const { user, logout } = useAuth();
   const nav = useNavigate();
   const [tab, setTab] = useState("dashboard");
   const [stats, setStats] = useState(null);
@@ -78,13 +76,11 @@ export default function AdminPage() {
   const [migrating, setMigrating] = useState(false);
 
   useEffect(() => {
-    if (!user) return;
-    if (!user.is_admin) { nav("/home"); return; }
     load();
     // Auto-refresh admin data every 10s so new pending receipts appear live
     const t = setInterval(load, 10000);
     return () => clearInterval(t);
-  }, [user, nav]);
+  }, []);
 
   const load = async () => {
     try {
@@ -253,8 +249,7 @@ export default function AdminPage() {
         <Shield className="w-6 h-6 text-primary" />
         <h1 className="font-display font-black text-2xl">Lovreski Admin</h1>
         <div className="ml-auto flex gap-2">
-          <button onClick={() => nav("/home")} className="text-sm px-3 py-1.5 rounded-full bg-muted">← В приложение</button>
-          <button onClick={async () => { await logout(); nav("/"); }} className="text-sm px-3 py-1.5 rounded-full bg-muted"><LogOut className="w-4 h-4 inline" /> Выход</button>
+          <button data-testid="admin-logout-btn" onClick={async () => { await adminLogout(); nav("/admin/login", { replace: true }); }} className="text-sm px-4 py-1.5 rounded-full bg-rose-500 text-white font-semibold hover:bg-rose-600 transition-colors"><LogOut className="w-4 h-4 inline mr-1" /> Выйти</button>
         </div>
       </header>
 

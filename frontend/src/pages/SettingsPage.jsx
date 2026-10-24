@@ -236,9 +236,6 @@ export default function SettingsPage() {
 
         <button data-testid="btn-install" onClick={install} className="w-full btn-pill bg-primary text-primary-foreground"><Download className="w-4 h-4 mr-2" /> {installed ? t("settings.installed") : t("settings.install")}</button>
 
-        {user?.is_admin && (
-          <button onClick={() => nav("/admin")} className="w-full btn-pill bg-foreground text-background"><Shield className="w-4 h-4 mr-2" /> {t("settings.admin")}</button>
-        )}
         <button onClick={async () => { await logout(); nav("/"); }} className="w-full btn-pill bg-muted"><LogOut className="w-4 h-4 mr-2" /> {t("settings.logout")}</button>
       </div>
       <LanguageSheet open={showLang} onClose={() => setShowLang(false)} onSelect={async (l) => { const r = await setLang(l.code); setShowLang(false); if (r?.actualLang !== l.code) toast.error("Перевод недоступен, оставили русский"); else toast.success(`${l.flag} ${l.name}`); }} />

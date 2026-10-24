@@ -528,11 +528,6 @@ export default function ProfilePage() {
 
       {/* Admin + logout */}
       <section className="px-4 mt-3 space-y-2 pb-6">
-        {user.is_admin && (
-          <button onClick={() => nav("/admin")} className="w-full btn-pill bg-foreground text-background">
-            🛡 Админ панель
-          </button>
-        )}
         <button data-testid="btn-logout" onClick={async () => { await logout(); nav("/"); }} className="w-full btn-pill bg-muted hover:bg-muted/70">
           <LogOut className="w-4 h-4 mr-2" /> Выйти
         </button>

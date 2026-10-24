@@ -75,7 +75,7 @@ export default function Landing() {
       if (mode === "login") {
         const u = await login(form.email, form.password);
         toast.success(`С возвращением, ${u.name}!`);
-        nav(u.is_admin ? "/admin" : "/home");
+        nav("/home");
       } else {
         const u = await register(form);
         toast.success("Добро пожаловать в Lovreski!");

@@ -38,7 +38,7 @@ mongo_url = os.environ['MONGO_URL']
 client = AsyncIOMotorClient(mongo_url)
 db = client[os.environ['DB_NAME']]
 
-JWT_SECRET = os.environ.get('JWT_SECRET', 'change-me')
+JWT_SECRET = os.environ['JWT_SECRET']
 JWT_ALG = 'HS256'
 # ── Encryption for admin SBP phone (at rest in DB) ──
 _ENC_KEY = os.environ.get('SBP_ENCRYPT_KEY')
@@ -62,8 +62,8 @@ def mask_phone(p: str) -> str:
     if len(digits) < 4: return "***"
     return f"+{digits[0]} (***) ***-**-{digits[-2:]}"
 
-ADMIN_EMAIL = os.environ.get('ADMIN_EMAIL', 'admin@lovreski.ru')
-ADMIN_PASSWORD = os.environ.get('ADMIN_PASSWORD', 'ChangeMe!')
+ADMIN_EMAIL = os.environ['ADMIN_EMAIL'].strip()
+ADMIN_PASSWORD = os.environ['ADMIN_PASSWORD']
 
 app = FastAPI(title="Lovreski API")
 api = APIRouter(prefix="/api")
@@ -171,10 +171,36 @@ async def get_current_user(
     except Exception:
         raise HTTPException(status_code=401, detail="Invalid token")
 
-async def require_admin(user: dict = Depends(get_current_user)) -> dict:
-    if not user.get('is_admin'):
-        raise HTTPException(status_code=403, detail="Admin only")
-    return user
+# ── Admin Panel auth (separate from user auth; credentials only from env) ──
+def admin_fingerprint() -> str:
+    """Changes whenever ADMIN_EMAIL/ADMIN_PASSWORD change in .env → old admin tokens become invalid."""
+    return hashlib.sha256(f"{ADMIN_EMAIL.lower()}:{ADMIN_PASSWORD}".encode()).hexdigest()[:24]
+
+def make_admin_jwt(jti: str) -> str:
+    # No `exp`: admin stays logged in until manual logout (server-side revocation via admin_sessions).
+    payload = {"type": "admin", "sub": ADMIN_EMAIL.lower(), "jti": jti, "fp": admin_fingerprint(), "iat": int(now_utc().timestamp())}
+    return pyjwt.encode(payload, JWT_SECRET, algorithm=JWT_ALG)
+
+async def verify_admin(authorization: Optional[str] = Header(None)) -> dict:
+    if not authorization or not authorization.lower().startswith('bearer '):
+        raise HTTPException(status_code=401, detail="Admin authentication required")
+    try:
+        payload = pyjwt.decode(authorization.split(' ', 1)[1], JWT_SECRET, algorithms=[JWT_ALG])
+    except pyjwt.InvalidTokenError:
+        raise HTTPException(status_code=401, detail="Invalid admin token")
+    if (payload.get("type") != "admin" or payload.get("fp") != admin_fingerprint()
+            or payload.get("sub") != ADMIN_EMAIL.lower()):
+        raise HTTPException(status_code=401, detail="Invalid admin token")
+    sess = await db.admin_sessions.find_one({"jti": payload.get("jti"), "revoked": False}, {"_id": 0})
+    if not sess:
+        raise HTTPException(status_code=401, detail="Admin session ended")
+    doc = await db.users.find_one({"email": ADMIN_EMAIL.lower()}, {"_id": 0, "password_hash": 0})
+    admin = doc or {"user_id": "admin", "email": ADMIN_EMAIL.lower(), "name": "Admin"}
+    admin["is_admin"] = True
+    admin["admin_jti"] = payload["jti"]
+    return admin
+
+require_admin = verify_admin
 
 # ────────────────────────────── Models ──────────────────────────────
 class RegisterBody(BaseModel):
@@ -961,6 +987,7 @@ I18N_VERSION = hashlib.sha256(_json.dumps(I18N_BASE_RU, sort_keys=True, ensure_a
 
 # ────────────────────────────── Router Registration ──────────────────────────────
 # Importing routers triggers their @api.X decorators to register routes on the shared api instance.
+from routers import admin_auth  # noqa: E402,F401
 from routers import auth, profile, discover, chat, files, notifications, reports, admin, i18n, demo, misc, cron  # noqa: E402,F401
 from routers import coins as _coins_router  # noqa: E402,F401 — aliased to avoid F811 with `coins` local in _do_send_message
 
@@ -1046,6 +1073,8 @@ async def on_start():
     await db.push_tokens.create_index("token", unique=True)
     await db.push_tokens.create_index([("user_id", 1), ("last_seen", -1)])
     await db.s3_files.create_index("kind")
+    await db.admin_sessions.create_index("jti", unique=True)
+    await db.admin_login_attempts.create_index("ip", unique=True)
     await db.s3_files.create_index("owner_id")
     await db.profile_visits.create_index([("viewer", 1), ("target", 1)], unique=True)
     # Initialize Firebase from Admin-Panel config (no-op if not configured)

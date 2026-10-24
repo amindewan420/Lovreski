@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { api } from "@/lib/api";
+import { adminApi as api } from "@/lib/adminApi";
 import { toast } from "sonner";
 import { BellRing, Upload, CheckCircle2, AlertCircle, Trash2, Send, KeyRound } from "lucide-react";
 

@@ -1,8 +1,7 @@
 import { useEffect, useRef } from "react";
-import { useAuth } from "@/context/AuthContext";
-import { api } from "@/lib/api";
+import { adminApi as api, getAdminToken } from "@/lib/adminApi";
 import { toast } from "sonner";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useLocation } from "react-router-dom";
 
 /**
  * AdminNotifier — mounts globally. When user.is_admin is true, polls the
@@ -14,21 +13,22 @@ import { useNavigate } from "react-router-dom";
  * Ignores the very first poll to avoid a startup false-positive.
  */
 export default function AdminNotifier() {
-  const { user } = useAuth();
+  const loc = useLocation();
+  const isAdmin = loc.pathname.startsWith("/admin") && loc.pathname !== "/admin/login" && !!getAdminToken();
   const nav = useNavigate();
   const lastCount = useRef(null);
 
   // Ask for Notification permission once per admin session
   useEffect(() => {
-    if (!user?.is_admin) return;
+    if (!isAdmin) return;
     if ("Notification" in window && Notification.permission === "default") {
       // Non-blocking: ignore rejection silently
       Notification.requestPermission().catch(() => {});
     }
-  }, [user?.is_admin]);
+  }, [isAdmin]);
 
   useEffect(() => {
-    if (!user?.is_admin) { lastCount.current = null; return; }
+    if (!isAdmin) { lastCount.current = null; return; }
     let cancelled = false;
 
     const poll = async () => {
@@ -45,7 +45,7 @@ export default function AdminNotifier() {
             duration: 8000,
             action: {
               label: "Open",
-              onClick: () => nav("/admin"),
+              onClick: () => nav("/admin/dashboard"),
             },
           });
           // Native browser notification (works even when tab is backgrounded)
@@ -56,7 +56,7 @@ export default function AdminNotifier() {
                 icon: "/favicon.ico",
                 tag: "lovreski-admin-receipt",
               });
-              n.onclick = () => { window.focus(); nav("/admin"); n.close(); };
+              n.onclick = () => { window.focus(); nav("/admin/dashboard"); n.close(); };
             }
           } catch { /* not-supported */ }
           // Soft chime — 440 Hz for 120 ms
@@ -83,7 +83,7 @@ export default function AdminNotifier() {
     poll();
     const t = setInterval(poll, 10000);
     return () => { cancelled = true; clearInterval(t); };
-  }, [user?.is_admin, nav]);
+  }, [isAdmin, nav]);
 
   return null;
 }
