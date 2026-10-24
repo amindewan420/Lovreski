@@ -36,7 +36,7 @@ export const ProfileCard = ({ user, testid, onLike, onPass, compact = false }) =
             </span>
           )}
         </div>
-        <div className="absolute inset-x-0 bottom-0 p-3 text-white">
+        <div className="absolute inset-x-0 bottom-0 p-3 text-white pointer-events-none">
           <h3 className="font-display font-bold text-lg leading-tight">
             {user.name}, {user.age}
           </h3>

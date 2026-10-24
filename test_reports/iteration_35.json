@@ -1,0 +1,44 @@
+{
+  "summary": "Backend fixes for Home feed (`liked` flag, idempotent like, age hard-filter, distance hard-filter, discover-excludes-liked regression) ALL PASS (8/8 pytest). CRITICAL frontend regression: both the like-btn and pass-btn in ProfileCard on Home are NOT clickable — the absolutely-positioned name/distance overlay inside the `<Link>` extends with `bottom-0` relative to the OUTER card container (which now includes the pass/like action bar beneath the image), overlapping and intercepting pointer events on the entire button row. Underlying React `liked:true` mapping logic in HomePage.doLike + ProfileCard disabled '✓ Лайкнуто' state works correctly when the click is dispatched programmatically.",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [
+      {
+        "component": "ProfileCard (used on /home)",
+        "issue": "Like and Pass buttons on Home are completely unclickable. The <div className=\"absolute inset-x-0 bottom-0 p-3 text-white\"> containing <h3> name and <p> distance sits INSIDE the <Link> but is positioned relative to the OUTER .relative card wrapper. Since the outer wrapper now has the pass/like button bar below the aspect-[3/4] image, `bottom-0` places that overlay directly over the button row. elementFromPoint on button centers returns the overlay <p>/<h3> (ancestor is <a href='/profile/...'>). Playwright click times out with 'subtree intercepts pointer events', and force-click navigates to the profile instead of liking. Confirmed on 6/6 visible cards (desktop + 390x844 mobile viewport).",
+        "selector": "[data-testid^='like-btn-'], [data-testid^='pass-btn-']",
+        "priority": "CRITICAL"
+      }
+    ],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_home_feed_liked_filters.py",
+    "/app/test_reports/pytest/iter35_results.xml"
+  ],
+  "action_items": [
+    "FIX ProfileCard.jsx overlay positioning: either (a) move the absolute name/distance overlay INSIDE the aspect-[3/4] image div so `bottom-0` is anchored to the image bottom (recommended), or (b) add `pointer-events-none` to the overlay div (line ~39 of ProfileCard.jsx: `<div className=\"absolute inset-x-0 bottom-0 p-3 text-white\">`). Option (a) is cleanest since the overlay should visually sit at the bottom of the image, not the whole card. The gradient div already has pointer-events-none but the text overlay does not.",
+    "After fix, re-verify: like button click keeps card and shows '✓ Лайкнуто' disabled; pass button click removes card; both via UI click (no force)."
+  ],
+  "critical_code_review_comments": [
+    "ProfileCard.jsx line 39: text overlay missing `pointer-events-none` creates clickability regression once button bar was added below image. This is the only blocker; backend contract is fully correct and well-tested.",
+    "Backend home_feed in /app/backend/routers/discover.py cleanly implements liked flag + hard distance filter and keeps idempotent like semantics (upsert). _base_candidates(exclude_liked=False) correctly branches for Home vs Discover."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_home_feed_liked_filters.py"
+  ],
+  "success_rate": {
+    "backend": "100% (8/8)",
+    "frontend": "33% — liked:true persistence logic + disabled state + card-retention + likes/discover pages all work when click is dispatched; but real user clicks on like/pass buttons are blocked by overlay"
+  },
+  "test_credentials": "testuser1@lovreski.ru / password123 — works",
+  "seed_data_creation": "None. Used existing demo seed; home feed had 6 cards.",
+  "retest_needed": true,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Backend fully verified in /app/backend/tests/test_home_feed_liked_filters.py (run with `pytest backend/tests/test_home_feed_liked_filters.py -o addopts= -v`). The frontend ProfileCard pointer-event bug is the only remaining issue. After fix, repeat the Playwright flow: login testuser1 → /home → click like-btn-<id> → assert card still present + button disabled + text '✓ Лайкнуто' → reload → assert same state. Underlying React state logic in HomePage.doLike and ProfileCard disabled styling is already verified correct via JS-dispatched click (card stayed; button became disabled with '✓ Лайкнуто').",
+  "rca of the issue": "Root cause: In /app/frontend/src/components/lovreski/ProfileCard.jsx, the outer wrapper is `<div className=\"relative overflow-hidden rounded-2xl ...\">`. Inside the <Link>, line 39 renders `<div className=\"absolute inset-x-0 bottom-0 p-3 text-white\">` (name + distance). Because this div is `absolute bottom-0`, it is positioned relative to the OUTER .relative container, not the aspect-[3/4] image div. When CHANGE 1 added the `<div className=\"flex gap-2 p-2 bg-card\">` button bar below the image (lines 50-73), the outer container grew taller — but the `bottom-0` overlay followed, now covering the button bar. `elementFromPoint` on the like-btn center returns the <p> distance element inside the <a>. Playwright click fails with 'subtree intercepts pointer events'. Mitigation: add `pointer-events-none` to the text overlay div, OR nest it inside the aspect-[3/4] div so bottom-0 is anchored to the image. Reproduction: login testuser1, open /home, inspect any card, attempt to click like-btn — click lands on the <a href='/profile/...'> instead."
+}
