@@ -3,7 +3,7 @@ from fastapi import HTTPException, Depends, Request
 from pydantic import BaseModel, Field, EmailStr
 from typing import Optional
 from datetime import datetime, timedelta, timezone
-import os, uuid
+import os, re, uuid
 from server import (
     api, db, logger, now_utc, iso, fcm,
     get_current_user, require_admin, user_public,
@@ -424,8 +424,13 @@ async def admin_reports(_: dict = Depends(require_admin)):
     return out
 
 @api.get("/admin/users")
-async def admin_users(_: dict = Depends(require_admin), limit: int = 100):
-    users = await db.users.find({"is_admin": {"$ne": True}}, {"_id": 0, "password_hash": 0}).limit(limit).to_list(limit)
+async def admin_users(_: dict = Depends(require_admin), limit: int = 100, q: str = ""):
+    query = {"is_admin": {"$ne": True}}
+    if q.strip():
+        rx = {"$regex": re.escape(q.strip()[:100]), "$options": "i"}
+        query["$or"] = [{"name": rx}, {"email": rx}, {"user_id": rx}]
+    limit = min(max(limit, 1), 500)
+    users = await db.users.find(query, {"_id": 0, "password_hash": 0}).sort("created_at", -1).limit(limit).to_list(limit)
     return [user_public(u) for u in users]
 
 @api.post("/admin/users/{user_id}/deactivate")

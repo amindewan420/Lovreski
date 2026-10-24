@@ -37,7 +37,7 @@ export const AdminDeviceCard = ({ ready, devices, onChange }) => {
       <div className="flex items-center gap-2 mb-1"><Smartphone className="w-4 h-4 text-primary" /><h3 className="font-display font-bold">Уведомления администратора</h3></div>
       <p className="text-xs text-muted-foreground mb-3">Новые чеки, запросы на возврат, жалобы, а также входы и блокировки админ-панели. Подключено устройств: <b data-testid="admin-devices-count">{devices ?? 0}</b></p>
       {!ready ? (
-        <p className="text-xs p-3 rounded-xl bg-muted text-muted-foreground">Сначала настройте Firebase ниже.</p>
+        <p className="text-xs p-3 rounded-xl bg-muted text-muted-foreground">Сначала настройте Firebase в карточках «Service account» и «Web app config».</p>
       ) : on ? (
         <div className="grid grid-cols-2 gap-2">
           <button data-testid="admin-device-test" onClick={test} className="py-2.5 rounded-full bg-muted font-semibold text-sm">🧪 Тест</button>

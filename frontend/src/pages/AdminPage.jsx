@@ -1,5 +1,5 @@
-import { useEffect, useState } from "react";
-import { adminApi as api, adminLogout } from "@/lib/adminApi";
+import { useEffect, useRef, useState } from "react";
+import { adminApi as api, adminApi, adminLogout } from "@/lib/adminApi";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { AdminNav } from "@/components/admin/AdminNav";
 import { useAdminBadges } from "@/hooks/useAdminBadges";
@@ -47,6 +47,9 @@ export default function AdminPage() {
   const setTab = (k) => { setParams({ tab: k }, { replace: true }); window.scrollTo({ top: 0 }); };
   const [refundsKey, setRefundsKey] = useState(0);
   const [pushTarget, setPushTarget] = useState(null);
+  const [userQ, setUserQ] = useState("");
+  const userQRef = useRef("");
+  userQRef.current = userQ;
   const [stats, setStats] = useState(null);
   const [payments, setPayments] = useState([]);
   const [reports, setReports] = useState([]);
@@ -90,13 +93,18 @@ export default function AdminPage() {
 
   const badges = useAdminBadges(tab, { onNew: (k) => { if (k === "refunds") setRefundsKey((n) => n + 1); else load(); } });
 
+  useEffect(() => {
+    const t = setTimeout(() => { adminApi.get("/admin/users", { params: { q: userQ, limit: 200 } }).then((r) => setUsers(r.data)).catch(() => {}); }, 300);
+    return () => clearTimeout(t);
+  }, [userQ]);
+
   const load = async () => {
     try {
       const [s, p, r, u, cfg, pend, hist] = await Promise.all([
         api.get("/admin/stats"),
         api.get("/admin/payments"),
         api.get("/admin/reports"),
-        api.get("/admin/users"),
+        api.get("/admin/users", { params: { q: userQRef.current, limit: 200 } }),
         api.get("/admin/settings"),
         api.get("/admin/support/pending"),
         api.get("/admin/support/history"),
@@ -493,7 +501,9 @@ export default function AdminPage() {
             {reports.map(r => (
               <div key={r.target_user} data-testid={`report-${r.target_user}`} className="p-4 bg-card border border-border rounded-2xl">
                 <div className="flex items-center gap-4">
-                  <img src={r.user?.photos?.[0]} alt="" className="w-16 h-16 rounded-full object-cover" />
+                  {r.user?.photos?.[0]
+                    ? <img src={r.user.photos[0]} alt="" className="w-16 h-16 rounded-full object-cover" />
+                    : <div className="w-16 h-16 rounded-full bg-muted flex items-center justify-center font-bold text-xl text-muted-foreground">{(r.user?.name || "?")[0]}</div>}
                   <div className="flex-1 min-w-0">
                     <p className="font-bold">{r.user?.name}, {r.user?.age}</p>
                     <p className="text-xs text-muted-foreground truncate">{r.user?.email || r.target_user}</p>
@@ -514,6 +524,12 @@ export default function AdminPage() {
         )}
 
         {tab === "users" && (
+          <div>
+          <div className="flex items-center gap-2 bg-muted rounded-full px-3 py-2 mb-4 md:max-w-sm">
+            <SearchIcon className="w-4 h-4 text-muted-foreground" />
+            <input data-testid="users-search" value={userQ} onChange={(e) => setUserQ(e.target.value)} placeholder="Имя, email или ID…" className="flex-1 bg-transparent outline-none text-sm" />
+          </div>
+          {users.length === 0 && <p className="text-center text-muted-foreground py-8">Никого не найдено</p>}
           <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
             {users.map(u => (
               <div key={u.user_id} data-testid={`user-card-${u.user_id}`} className="p-3 bg-card border border-border rounded-2xl">
@@ -528,6 +544,7 @@ export default function AdminPage() {
                 </div>
               </div>
             ))}
+          </div>
           </div>
         )}
 

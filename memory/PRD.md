@@ -118,3 +118,11 @@ Currently on Emergent (React + FastAPI + MongoDB). For amvera.cloud deployment, 
 ## Known / backlog
 - Receipts in S3 are public-read URLs (pre-existing design) — consider private bucket + presigned URLs.
 - /api/auth/login reveals whether an email is registered (404 vs 401) — product UX choice.
+
+## 2026-06 — Iteration 41: Admin mobile polish + admin push + unread badges
+- Mobile admin: `AdminNav.jsx` — bottom tab bar (Главная/Чеки/Возвраты/Жалобы/Ещё sheet) <768px, top pills on desktop; tab in URL `?tab=`; sticky compact header; payments as cards on mobile; users search (`GET /api/admin/users?q=`, newest first).
+- Badges: refund_requests & reports get `is_read:false`; `GET /api/admin/refund-requests/unread-count`, `GET /api/admin/complaints/unread-count`, `POST .../mark-read`; `useAdminBadges` polls every 12s, marks read when tab open; Verification badge = pending receipts.
+- Admin device push: tokens stored under `push_tokens.user_id="__admin_panel__"` (`POST/DELETE /api/admin/push/token`, `POST /api/admin/push/test-self`); alerts for new receipts, refunds, complaints, admin login success & lockout (tap opens the right tab).
+- Direct push to one user (`POST /api/admin/push/user/{id}`, Push button on user cards) + in-app notification; push history log (`push_log`, `GET /api/admin/push/history`) for direct + announcements.
+- Payment result notifications to users now in Russian (receipt approve/reject, refund decision).
+- Tested: iteration_41 (backend 22/22, frontend 100%).

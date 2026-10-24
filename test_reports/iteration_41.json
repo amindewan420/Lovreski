@@ -1,0 +1,30 @@
+{
+  "summary": "Iter41 tested the admin mobile nav, the push additions and the unread badges. Backend: 22/22 pytest pass. Refund and report creation set is_read:false. The unread-count endpoints go up by one and mark-read resets them to 0. All 10 new admin endpoints return 401 for a user token and for no token. Admin device token POST/DELETE updates admin_devices. test-self returns sent:0 with a graceful reason. Direct push to a user creates an admin_message in-app notification and a push_log entry (newest first, status not-configured, no _id). An unknown user gives 404 and an empty title gives 422. The announcement log entry changes to sent after the background task runs. Receipt approve/reject and refund approve create the Russian notifications. Admin login works for both a failure and a success. Frontend (390x800): the bottom nav has all 5 items and the desktop pills are hidden. The 'Ещё' sheet opens all 5 secondary tabs and updates ?tab=. Payments render as 87 payment-card-* items, and the last card ends above the bottom bar. 'Выйти' is visible. The Push tab device card shows 'Сначала настройте Firebase ниже.' and push-history renders. Badges: a new refund and a new report showed '1' on admin-mtab-refunds-badge and admin-mtab-reports-badge within 14s. Opening each tab cleared its badge and the API then returned 0. The support badge showed 19. Desktop (1920): all 9 admin-tab-* are visible and the bottom nav is hidden. /admin/dashboard?tab=reports opened Жалобы. badge-refunds appeared and cleared on open, and no badge-reports showed while that tab was open. In the Users tab, push-user opened direct-push-sheet. Sending showed the toast 'Сохранено в уведомлениях (push-устройств нет)' and the entry appeared in the Push tab push-history.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [
+      {"component": "Users tab", "issue": "A newly registered user does not appear in the list (the list seems to be capped or sorted, so new users are missing). push-user-<new_id> was not found, so the test pushed to the first card instead. Admins may be unable to reach recent users without search.", "selector": "[data-testid^='push-user-']", "priority": "LOW"}
+    ],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "Push tab (mobile)", "issues": ["The device card says 'Сначала настройте Firebase ниже.', but on mobile the Firebase status card is above it and the config forms come after the announcement card. Suggest 'в разделе Firebase'."]},
+      {"screen": "Жалобы tab", "issues": ["The report avatars render as empty placeholders. This existed before this iteration."]}
+    ]
+  },
+  "test_report_links": ["/app/backend/tests/test_admin_badges_push_iter41.py", "/app/test_reports/pytest/pytest_iter41.xml"],
+  "action_items": [
+    "Optional: add search or newest-first sorting to the Users tab so direct push can reach recently registered users",
+    "Optional: change the wording of 'Сначала настройте Firebase ниже.'"
+  ],
+  "critical_code_review_comments": [
+    "AdminNav BottomBar defines the Item component inside render, so it remounts on every render. Hoist it out.",
+    "useAdminBadges: when the open tab has new items, the poll silently calls mark-read. This is intended, but the admin gets no visual cue for items that arrive while the tab is open, beyond the onNew callback.",
+    "Reports with a nonexistent target_user_id are accepted by POST /api/report (no target validation) and still count toward the unread badge, but they are not shown in the Жалобы tab, which groups reports by existing users. This can produce a badge with nothing visible."
+  ],
+  "updated_files": ["/app/backend/tests/test_admin_badges_push_iter41.py (new)"],
+  "success_rate": {"backend": "100% (22/22)", "frontend": "100% of requested flows"},
+  "seed_data_creation": "TEST_iter41* users, refunds, reports, receipts, notifications and push_log entries were created and then cleaned up. The test announcement in-app notifications were deleted. db.login_attempts was reset.",
+  "retest_needed": false,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "Run: pytest tests/test_admin_badges_push_iter41.py -o addopts=\"\". Firebase is not configured, so push statuses are not-configured or no-tokens. The tests assume the unread counts start at 0 after mark-read, so they will fail if real users submit at the same time."
+}
