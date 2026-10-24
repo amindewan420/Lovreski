@@ -73,7 +73,8 @@ export default function HomePage() {
   const doLike = async (u) => {
     try {
       const { data } = await api.post(`/like/${u.user_id}`);
-      setFeed((f) => f.filter((x) => x.user_id !== u.user_id));
+      // Card stays visible — only the like button switches to the "Liked ✓" state.
+      setFeed((f) => f.map((x) => x.user_id === u.user_id ? { ...x, liked: true } : x));
       if (data.match) setMatchUser(data.target || u);
       else toast.success(`Симпатия отправлена ${u.name}`);
     } catch { toast.error("Ошибка"); }

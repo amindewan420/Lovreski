@@ -58,10 +58,16 @@ export const ProfileCard = ({ user, testid, onLike, onPass, compact = false }) =
           </button>
           <button
             data-testid={`like-btn-${user.user_id}`}
-            onClick={() => onLike?.(user)}
-            className="flex-1 py-2 rounded-full bg-primary text-primary-foreground font-semibold text-sm hover:opacity-90 transition-opacity duration-200"
+            onClick={() => !user.liked && onLike?.(user)}
+            disabled={!!user.liked}
+            aria-label={user.liked ? "Лайкнуто" : "Лайк"}
+            className={`flex-1 py-2 rounded-full font-semibold text-sm transition-colors duration-200 ${
+              user.liked
+                ? "bg-slate-100 text-slate-400 cursor-not-allowed"
+                : "bg-primary text-primary-foreground hover:opacity-90 transition-opacity"
+            }`}
           >
-            ❤
+            {user.liked ? "✓ Лайкнуто" : "❤"}
           </button>
         </div>
       )}

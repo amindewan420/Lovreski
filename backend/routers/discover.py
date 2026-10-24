@@ -49,7 +49,12 @@ async def home_feed(user: dict = Depends(get_current_user), limit: int = 6, skip
          4. Recently came Online (online_at DESC)
          5. Offline + Nearby
          6. Offline (any)"""
-    pool = await _base_candidates(user, pool_limit=800)
+    pool = await _base_candidates(user, pool_limit=800, exclude_liked=False)
+    # Liked profiles stay visible on Home — flag them so the UI can show a
+    # disabled "Liked ✓" state instead of removing the card.
+    liked_ids = {s['to_user'] for s in await db.likes.find(
+        {"from_user": user['user_id'], "type": "like"}, {"_id": 0, "to_user": 1}
+    ).to_list(2000)}
     hard_limit = user.get('distance_km') if user.get('distance_mode') == 'limited' else None
     if hard_limit is not None and not isinstance(hard_limit, (int, float)):
         hard_limit = None
@@ -86,7 +91,12 @@ async def home_feed(user: dict = Depends(get_current_user), limit: int = 6, skip
         dist_score = d if d is not None else 10 ** 9
         scored.append((tier, online_at_score, dist_score, last_seen_score, u))
     scored.sort(key=lambda t: (t[0], t[1], t[2], t[3]))
-    return [user_public(t[4], viewer=user) for t in scored[skip:skip + limit]]
+    out = []
+    for t in scored[skip:skip + limit]:
+        p = user_public(t[4], viewer=user)
+        p['liked'] = p['user_id'] in liked_ids
+        out.append(p)
+    return out
 
 @api.post("/like/{target_id}")
 async def like_user(target_id: str, user: dict = Depends(get_current_user)):

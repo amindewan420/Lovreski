@@ -580,13 +580,19 @@ def _dist_km(viewer: dict, u: dict) -> Optional[float]:
         return None
     return haversine_km(viewer['lat'], viewer['lng'], u['lat'], u['lng'])
 
-async def _base_candidates(user: dict, pool_limit: int = 500) -> list[dict]:
-    """Common candidate pool: gender + age-range filter, no blocked/self, no already-swiped, no admins."""
+async def _base_candidates(user: dict, pool_limit: int = 500, exclude_liked: bool = True) -> list[dict]:
+    """Common candidate pool: gender + age-range filter, no blocked/self, no admins.
+    exclude_liked=True (Discover): also drops profiles the user already liked/passed.
+    exclude_liked=False (Home): drops only passes; liked profiles stay visible
+    and are flagged with `liked=True` downstream."""
     show_me = user.get('show_me', 'both')
     gender_q: dict = {"gender": show_me} if show_me in ('male', 'female') else {}
     blocked = user.get('blocked', []) + [user['user_id']]
-    swipes = await db.likes.find({"from_user": user['user_id']}, {"_id": 0, "to_user": 1}).to_list(2000)
-    already = {s['to_user'] for s in swipes}
+    swipes = await db.likes.find({"from_user": user['user_id']}, {"_id": 0, "to_user": 1, "type": 1}).to_list(2000)
+    if exclude_liked:
+        already = {s['to_user'] for s in swipes}
+    else:
+        already = {s['to_user'] for s in swipes if s.get('type') == 'pass'}
     already.update(blocked)
     q = {"user_id": {"$nin": list(already)}, "is_admin": {"$ne": True}, "deactivated": {"$ne": True}, **gender_q}
     pool = await db.users.find(q, {"_id": 0, "password_hash": 0}).limit(pool_limit).to_list(pool_limit)
