@@ -9,6 +9,7 @@ import GiftPanel from "@/components/lovreski/GiftPanel";
 import LanguageSheet from "@/components/lovreski/LanguageSheet";
 import { LocationPicker, LocationBubble } from "@/components/lovreski/LocationShare";
 import { useChatTranslation } from "@/hooks/useChatTranslation";
+import { MessageActionSheet, SelectionBar, BulkDeleteDialog } from "@/components/lovreski/MessageActions";
 import { ChatMediaViewer, isPdfMsg, downloadChatMedia } from "@/components/lovreski/ChatMediaViewer";
 import {
   ArrowLeft, Send, Plus, Image as ImageIcon, File as FileIcon, Video, Mic, Square,
@@ -116,6 +117,7 @@ export default function ChatRoomPage() {
   const [showBlockPopup, setShowBlockPopup] = useState(false);
   const [actionTarget, setActionTarget] = useState(null);   // message-action sheet (Reply / Delete)
   const longPressTimerRef = useRef(null);
+  const longPressFired = useRef(false);
   const [showScrollDown, setShowScrollDown] = useState(false);
 
   // Swipe-to-reply state
@@ -248,45 +250,46 @@ export default function ChatRoomPage() {
   const [showOrig, setShowOrig] = useState(() => new Set());
   const toggleOrig = (mid) => setShowOrig((p) => { const n = new Set(p); n.has(mid) ? n.delete(mid) : n.add(mid); return n; });
 
-  // ─── Delete ──────────────────────────────────────────────────────────
-  const doDelete = async (scope) => {
-    if (!actionTarget) return;
-    const m = actionTarget;
-    setActionTarget(null);
+  // ─── Delete (single + bulk) & selection mode ─────────────────────────
+  const [selectMode, setSelectMode] = useState(false);
+  const [selected, setSelected] = useState(() => new Set());
+  const [bulkConfirm, setBulkConfirm] = useState(null);
+  const exitSelect = () => { setSelectMode(false); setSelected(new Set()); };
+  const startSelect = (m) => { setSelectMode(true); setSelected(new Set([m.message_id])); };
+  const toggleSelected = (mid) => setSelected((p) => { const n = new Set(p); n.has(mid) ? n.delete(mid) : n.add(mid); return n; });
+
+  const deleteMessages = async (list, scope) => {
+    setBulkConfirm(null);
+    const ids = list.map((m) => m.message_id);
     try {
-      await api.delete(`/messages/${m.message_id}?scope=${scope}`);
-      if (scope === "everyone") {
-        // WS will broadcast to both — but update ours immediately for snappiness.
-        setMsgs((prev) => prev.map((x) => x.message_id === m.message_id
-          ? { ...x, deleted: true, text: "", media_url: null, file_name: null, gift_key: null } : x));
-      } else {
-        setMsgs((prev) => prev.filter((x) => x.message_id !== m.message_id));
-      }
-      toast.success(t("chat.deleted"));
+      if (ids.length === 1) await api.delete(`/messages/${ids[0]}?scope=${scope}`);
+      else await api.post("/messages/delete-bulk", { message_ids: ids, scope });
+      const idSet = new Set(ids);
+      setMsgs((prev) => scope === "everyone"
+        ? prev.map((x) => idSet.has(x.message_id) ? { ...x, deleted: true, text: "", media_url: null, file_name: null, gift_key: null, location: null } : x)
+        : prev.filter((x) => !idSet.has(x.message_id)));
+      exitSelect();
+      toast.success(t("chat.deleted_toast"));
     } catch (e) {
       toast.error(e.response?.data?.detail || t("common.error"));
     }
   };
 
-  const canDeleteEveryone = (m) => {
-    if (!user) return false;
-    if (m.from_user !== user.user_id) return false;
-    if (m.deleted) return false;
-    const age = (Date.now() - new Date(m.created_at).getTime()) / 1000;
-    return age <= 3600;
-  };
-
   const startLongPress = (m) => {
     clearTimeout(longPressTimerRef.current);
+    if (selectMode) return;
     longPressTimerRef.current = setTimeout(() => {
-      if (!m.deleted) { setActionTarget(m); navigator.vibrate?.(15); }
+      longPressFired.current = true;
+      setActionTarget(m); navigator.vibrate?.(15);
     }, 550);
   };
   const cancelLongPress = () => { clearTimeout(longPressTimerRef.current); };
 
   // ─── Swipe-right to reply ─────────────────────────────────────────────
   const onMsgTouchStart = (m) => (e) => {
-    if (m.deleted) return;
+    longPressFired.current = false;
+    startLongPress(m);
+    if (m.deleted || selectMode) return;
     const t0 = e.touches[0];
     swipeRef.current = { startX: t0.clientX, startY: t0.clientY, id: m.message_id, active: true, locked: null };
   };
@@ -296,6 +299,7 @@ export default function ChatRoomPage() {
     const t0 = e.touches[0];
     const dx = t0.clientX - s.startX;
     const dy = t0.clientY - s.startY;
+    if (Math.abs(dx) > 8 || Math.abs(dy) > 8) cancelLongPress();
     // Decide gesture axis once, then stick with it (avoids fighting vertical scroll)
     if (s.locked === null) {
       if (Math.abs(dx) < 6 && Math.abs(dy) < 6) return;
@@ -373,6 +377,8 @@ export default function ChatRoomPage() {
       <div className="w-full max-w-md bg-white flex flex-col relative" style={{ height: "100dvh" }}>
         {/* Header */}
         <header className="sticky top-0 z-30 flex items-center gap-3 px-3 py-2.5 bg-white border-b border-slate-200">
+          {selectMode && <SelectionBar count={selected.size} t={t} onCancel={exitSelect}
+            onDelete={() => setBulkConfirm(msgs.filter((x) => selected.has(x.message_id)))} />}
           <button data-testid="chat-back" onClick={() => nav(-1)} className="p-2 -ml-2 rounded-full hover:bg-slate-100"><ArrowLeft className="w-5 h-5 text-slate-700" /></button>
           {other && (
             <>
@@ -410,7 +416,7 @@ export default function ChatRoomPage() {
             const m = row.m; const mine = m.from_user === user?.user_id;
             const replied = m.reply_to ? msgs.find((x) => x.message_id === m.reply_to) : null;
             const locked = m.locked && !mine;
-            const canLongPress = !m.deleted;
+            const isSel = selected.has(m.message_id);
             const swiping = swipeState.id === m.message_id;
             const dx = swiping ? swipeState.dx : 0;
             const showHint = swiping && dx > 8;
@@ -433,13 +439,26 @@ export default function ChatRoomPage() {
                 key={m.message_id}
                 id={`m-${m.message_id}`}
                 data-testid={`msg-${m.message_id}`}
-                className={`chat-msg-row flex relative ${mine ? "justify-end" : "justify-start"} ${highlighted ? "chat-msg-flash" : ""}`}
+                className={`chat-msg-row flex relative items-center gap-2 ${mine ? "justify-end" : "justify-start"} ${highlighted ? "chat-msg-flash" : ""} ${selectMode ? "cursor-pointer -mx-3 px-3 py-0.5" : ""} ${isSel ? "bg-sky-100/70" : ""}`}
                 style={{ transform: dx ? `translateX(${dx}px)` : undefined }}
                 onTouchStart={onMsgTouchStart(m)}
                 onTouchMove={onMsgTouchMove(m)}
-                onTouchEnd={onMsgTouchEnd(m)}
-                onTouchCancel={onMsgTouchEnd(m)}
+                onTouchEnd={(e) => { cancelLongPress(); onMsgTouchEnd(m)(e); }}
+                onTouchCancel={(e) => { cancelLongPress(); onMsgTouchEnd(m)(e); }}
+                onMouseDown={() => { longPressFired.current = false; startLongPress(m); }}
+                onMouseUp={cancelLongPress}
+                onMouseLeave={cancelLongPress}
+                onContextMenu={(e) => { e.preventDefault(); if (!selectMode) setActionTarget(m); }}
+                onClickCapture={(e) => {
+                  if (selectMode) { e.preventDefault(); e.stopPropagation(); toggleSelected(m.message_id); }
+                  else if (longPressFired.current) { e.preventDefault(); e.stopPropagation(); longPressFired.current = false; }
+                }}
               >
+                {selectMode && (
+                  <span data-testid={`select-check-${m.message_id}`} className={`order-first w-5 h-5 shrink-0 rounded-full border-2 flex items-center justify-center ${isSel ? "bg-sky-500 border-sky-500 text-white" : "border-slate-300 bg-white"} ${mine ? "mr-auto" : ""}`}>
+                    {isSel && <Check className="w-3 h-3" />}
+                  </span>
+                )}
                 {showHint && (
                   <div
                     className="swipe-reply-hint"
@@ -492,12 +511,6 @@ export default function ChatRoomPage() {
                     </div>
                   ) : (
                     <div
-                      onMouseDown={canLongPress ? () => startLongPress(m) : undefined}
-                      onMouseUp={cancelLongPress}
-                      onMouseLeave={cancelLongPress}
-                      onTouchStart={canLongPress ? () => startLongPress(m) : undefined}
-                      onTouchEnd={cancelLongPress}
-                      onContextMenu={canLongPress ? (e) => { e.preventDefault(); setActionTarget(m); } : undefined}
                       className={`relative px-3 py-2 rounded-2xl shadow-sm ${
                         mine
                           ? "bg-[#DCF2FF] text-slate-900 rounded-br-md"
@@ -712,35 +725,10 @@ export default function ChatRoomPage() {
           </div>
         )}
 
-        {/* Message actions sheet — Reply / Delete for me / Delete for everyone */}
-        {actionTarget && (
-          <div className="fixed inset-0 z-[80] flex items-end sm:items-center sm:justify-center px-4" data-testid="action-sheet">
-            <div className="absolute inset-0 bg-black/60" onClick={() => setActionTarget(null)} />
-            <div className="relative bg-white rounded-t-3xl sm:rounded-3xl w-full sm:max-w-xs p-5" style={{ animation: "chatSheetIn 220ms cubic-bezier(0.2,0.9,0.3,1)" }}>
-              <div className="mx-auto w-10 h-1 rounded-full bg-slate-200 mb-3 sm:hidden" />
-              <button
-                data-testid="action-reply-btn"
-                onClick={() => { const m = actionTarget; setActionTarget(null); setReply(m); }}
-                className="w-full py-3 rounded-2xl bg-primary/10 text-primary font-semibold text-sm mb-2 flex items-center justify-center gap-2"
-              >
-                <Reply className="w-4 h-4" /> {t("chat.reply")}
-              </button>
-              {actionTarget.from_user === user?.user_id && (
-                <>
-                  <button data-testid="delete-me-btn" onClick={() => doDelete("me")} className="w-full py-3 rounded-2xl bg-slate-100 text-slate-800 font-medium text-sm mb-2 flex items-center justify-center gap-2">
-                    <Trash2 className="w-4 h-4" /> {t("chat.delete_me")}
-                  </button>
-                  {canDeleteEveryone(actionTarget) && (
-                    <button data-testid="delete-everyone-btn" onClick={() => doDelete("everyone")} className="w-full py-3 rounded-2xl bg-red-500 text-white font-semibold text-sm mb-2 flex items-center justify-center gap-2">
-                      <Trash2 className="w-4 h-4" /> {t("chat.delete_everyone")}
-                    </button>
-                  )}
-                </>
-              )}
-              <button data-testid="action-cancel" onClick={() => setActionTarget(null)} className="w-full py-2 text-sm text-slate-500">{t("chat.cancel")}</button>
-            </div>
-          </div>
-        )}
+        <MessageActionSheet m={actionTarget} uid={user?.user_id} t={t}
+          copyValue={actionTarget ? (showOrig.has(actionTarget.message_id) ? actionTarget.text : tx(actionTarget.text)) : ""}
+          onClose={() => setActionTarget(null)} onReply={setReply} onSelect={startSelect} onDelete={deleteMessages} />
+        <BulkDeleteDialog msgs={bulkConfirm} uid={user?.user_id} t={t} onClose={() => setBulkConfirm(null)} onDelete={deleteMessages} />
       </div>
     </div>
   );

@@ -1,7 +1,7 @@
 """Chat routes — /chats/*, /messages/*, /chat/*, /gifts"""
 from fastapi import HTTPException, Depends
-from pydantic import BaseModel
-from typing import Optional, Literal
+from pydantic import BaseModel, Field
+from typing import Optional, Literal, List
 from datetime import datetime, timezone
 import io, base64, uuid
 from server import (
@@ -20,8 +20,15 @@ async def list_chats(user: dict = Depends(get_current_user)):
     chats: dict[str, dict] = {}
     for m in msgs:
         cid = m['chat_id']
+        hidden = uid in (m.get('hidden_for') or [])
         if cid not in chats:
+            # Placeholder keeps the chat listed even if every message is hidden for this user
+            chats[cid] = m if not hidden else {**m, "text": "", "media_url": None, "kind": "text", "_hidden": True,
+                                                 "location": None, "file_name": None, "gift_key": None}
+        elif chats[cid].get('_hidden') and not hidden:
             chats[cid] = m
+    for c in chats.values():
+        c.pop('_hidden', None)
     if not chats:
         return []
     # 2) Batch-fetch every partner user in ONE query (fixes N+1).
@@ -118,45 +125,74 @@ async def delete_message(message_id: str, scope: str = "me", user: dict = Depend
     m = await db.messages.find_one({"message_id": message_id}, {"_id": 0})
     if not m:
         raise HTTPException(status_code=404, detail="Message not found")
-    uid = user['user_id']
-    is_admin = False  # admin powers live only in the Admin Panel
-    if uid not in (m.get('participants') or []) and not is_admin:
-        raise HTTPException(status_code=403, detail="Not your chat")
+    err = _delete_error(m, user['user_id'], scope)
+    if err:
+        raise HTTPException(status_code=403, detail=err)
+    await _apply_delete([m], user['user_id'], scope)
+    return {"ok": True, "scope": scope, "message_id": message_id}
 
+
+EVERYONE_WINDOW_SEC = 3600
+
+
+def _delete_error(m: dict, uid: str, scope: str) -> Optional[str]:
+    """None if `uid` may delete `m` with `scope`, else a reason. Admin powers live only in the Admin Panel."""
+    if uid not in (m.get('participants') or []):
+        return "Not your chat"
     if scope == "me":
-        await db.messages.update_one({"message_id": message_id}, {"$addToSet": {"hidden_for": uid}})
-        return {"ok": True, "scope": "me", "message_id": message_id}
-
-    # scope == "everyone"
+        return None  # any participant can hide any message (sent or received) from their own view
     if m.get('deleted'):
-        return {"ok": True, "scope": "everyone", "message_id": message_id, "already": True}
-    if m.get('from_user') != uid and not is_admin:
-        raise HTTPException(status_code=403, detail="Only the sender can delete for everyone")
-    # 1-hour window (admins bypass)
+        return None
+    if m.get('from_user') != uid:
+        return "Only the sender can delete for everyone"
     try:
         created = datetime.fromisoformat(m['created_at'].replace('Z', '+00:00'))
     except Exception:
         created = now_utc()
-    if not is_admin and (now_utc() - created).total_seconds() > 3600:
-        raise HTTPException(status_code=403, detail="Прошло больше часа — нельзя удалить у всех")
+    if (now_utc() - created).total_seconds() > EVERYONE_WINDOW_SEC:
+        return "Прошло больше часа — нельзя удалить у всех"
+    return None
 
-    await db.messages.update_one(
-        {"message_id": message_id},
-        {"$set": {
-            "deleted": True,
-            "deleted_at": iso(now_utc()),
-            "deleted_by": uid,
-            "text": "",
-            "media_url": None,
-            "file_name": None,
-            "gift_key": None,
-        }},
+
+async def _apply_delete(msgs: list, uid: str, scope: str) -> None:
+    ids = [m['message_id'] for m in msgs]
+    if scope == "me":
+        await db.messages.update_many({"message_id": {"$in": ids}}, {"$addToSet": {"hidden_for": uid}})
+        return
+    live = [m for m in msgs if not m.get('deleted')]
+    if not live:
+        return
+    await db.messages.update_many(
+        {"message_id": {"$in": [m['message_id'] for m in live]}},
+        {"$set": {"deleted": True, "deleted_at": iso(now_utc()), "deleted_by": uid,
+                  "text": "", "media_url": None, "file_name": None, "gift_key": None, "location": None}},
     )
-    try:
-        await ws_manager.broadcast_deletion(m['chat_id'], m.get('participants') or [], message_id, "everyone", uid)
-    except Exception as e:
-        logger.warning(f"ws deletion broadcast failed: {e}")
-    return {"ok": True, "scope": "everyone", "message_id": message_id}
+    for m in live:
+        try:
+            await ws_manager.broadcast_deletion(m['chat_id'], m.get('participants') or [], m['message_id'], "everyone", uid)
+        except Exception as e:
+            logger.warning(f"ws deletion broadcast failed: {e}")
+
+
+class BulkDeleteBody(BaseModel):
+    message_ids: List[str] = Field(min_length=1, max_length=200)
+    scope: Literal['me', 'everyone'] = 'me'
+
+
+@api.post("/messages/delete-bulk")
+async def delete_messages_bulk(body: BulkDeleteBody, user: dict = Depends(get_current_user)):
+    """Delete many messages at once. All-or-nothing: any disallowed message → 403, nothing changes."""
+    uid = user['user_id']
+    ids = list(dict.fromkeys(body.message_ids))
+    msgs = await db.messages.find({"message_id": {"$in": ids}}, {"_id": 0}).to_list(len(ids))
+    if len(msgs) != len(ids):
+        raise HTTPException(status_code=404, detail="Message not found")
+    for m in msgs:
+        err = _delete_error(m, uid, body.scope)
+        if err:
+            raise HTTPException(status_code=403, detail=err)
+    await _apply_delete(msgs, uid, body.scope)
+    return {"ok": True, "scope": body.scope, "deleted": len(msgs)}
 
 @api.post("/chats/{other_id}/send")
 async def send_message(other_id: str, body: MessageBody, user: dict = Depends(get_current_user)):
@@ -237,7 +273,7 @@ async def chat_media_file(message_id: str, download: int = 0, user: dict = Depen
     m = await db.messages.find_one({"message_id": message_id}, {"_id": 0})
     if not m or user['user_id'] not in (m.get('from_user'), m.get('to_user')):
         raise HTTPException(status_code=404, detail="File not found")
-    if m.get('deleted') or not m.get('media_url'):
+    if m.get('deleted') or not m.get('media_url') or user['user_id'] in (m.get('hidden_for') or []):
         raise HTTPException(status_code=404, detail="File not found")
     url = m['media_url']
     key = _cloud.key_from_public_url(url)

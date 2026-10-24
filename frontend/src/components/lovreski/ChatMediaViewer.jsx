@@ -127,7 +127,10 @@ export const ChatMediaViewer = ({ m, onClose }) => {
           <div data-testid="media-viewer-error" className="flex flex-col items-center gap-3 text-white text-center px-6">
             <AlertTriangle className="w-10 h-10 text-amber-400" />
             <p className="font-semibold">{t("media.load_failed")}</p>
-            <button data-testid="media-viewer-retry" onClick={() => downloadChatMedia(m, t)} className="px-4 py-2 rounded-full bg-white/15 text-sm">{t("media.try_download")}</button>
+            <div className="flex gap-2">
+              <button data-testid="media-viewer-retry" onClick={() => setAttempt((a) => a + 1)} className="px-4 py-2 rounded-full bg-white text-black text-sm font-semibold">{t("media.retry")}</button>
+              <button data-testid="media-viewer-try-download" onClick={() => downloadChatMedia(m, t)} className="px-4 py-2 rounded-full bg-white/15 text-sm">{t("media.try_download")}</button>
+            </div>
           </div>
         ) : pdf ? (
           <PdfPages blob={st.blob} onError={() => setSt((s) => ({ ...s, error: true }))} />
