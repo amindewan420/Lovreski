@@ -165,3 +165,7 @@ Currently on Emergent (React + FastAPI + MongoDB). For amvera.cloud deployment, 
 - Message `location` = {lat,lng,place,live,token,updated_at}; `location_expires_at` = +5 min. `GET /api/loc/{token}` (public, 410 expired), `POST /api/location/{mid}/update` (live sender, WS `location_update`), `/stop`.
 - Frontend: picker with cost/balance, "Транслировать моё местоположение (5 мин)" (watchPosition via `lib/liveLocation.js`, 8s throttle) or custom pin; bubble with LIVE badge, mm:ss countdown, stop button, copy link; tap → server-validated → Google Maps directions + distance toast; public `/l/:token` page. Free OSM map kept (no Google SDK).
 - Tested: iteration_47 (backend 11/11, frontend 100%); place names now shown verbatim.
+
+## 2026-06 — Iteration 48: My Applications soft delete
+- `PATCH /api/support/my/{id}/hide` sets `is_deleted_by_user` (+timestamp); `GET /api/support/my` excludes hidden. Admin pending/history unchanged, tagged "скрыто пользователем". Premium/coins untouched; hidden pending still reviewed.
+- `MyApplications.jsx`: long-press/right-click → red Удалить sheet → confirm → card animates out, toast. Tested iteration_48 (100%).

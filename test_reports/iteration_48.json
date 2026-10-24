@@ -1,0 +1,23 @@
+{
+  "summary": "Tested soft-delete (hide) of 'Мои заявки' entries end to end. Backend: 8/8 pytest pass. PATCH /api/support/my/{id}/hide returns 200 and sets is_deleted_by_user; GET /support/my then leaves it out; it returns 404 for another user's or an unknown id and 401/403 without auth; repeating it is harmless. Admin pending and history still show the record with is_deleted_by_user=true. Hiding a verified record leaves coins and is_premium unchanged. Hiding a pending one and then approving it still credits coins and Premium. Rejected records hide too. Frontend at 390x844: mouse hold (750ms), right-click and a CDP touch hold all open app-action-sheet; a short 200ms tap does not; tapping the backdrop closes it. app-delete-option opens the confirm dialog with the correct text. Cancel keeps the card and sends no PATCH. Confirm sends one PATCH, removes only that card with no reload, and shows the toast 'Запись удалена из истории'. Pending, rejected and verified cards all removed; after reload they stay gone and the untouched card remains. The admin history tab shows the history-hidden-<id> tag 'скрыто пользователем' on hidden processed records.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "Admin Verification pending list", "issues": ["Optional: hidden PENDING cards show no 'скрыто пользователем' tag (only history does). Not required by spec, but would give the admin useful context."]}
+    ]
+  },
+  "test_report_links": ["/app/backend/tests/test_hide_submission_iter48.py", "/app/backend/tests/setup_ui_iter48.py", "/app/test_reports/pytest/pytest_iter48.xml"],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "On touch devices a long press can fire both the 550ms timer and onContextMenu, so setMenu runs twice. This is harmless because it is idempotent.",
+    "hide_my_submission does not check whether the record is already hidden, so repeat calls just refresh deleted_by_user_at. Acceptable."
+  ],
+  "updated_files": ["/app/backend/tests/test_hide_submission_iter48.py", "/app/backend/tests/setup_ui_iter48.py"],
+  "success_rate": {"backend": "100%", "frontend": "100%"},
+  "seed_data_creation": "Fresh users test_hide_*@lovreski.ru and test_ui_hide_*@lovreski.ru (password123) with TEST_ receipts. Leftover pending test receipts were rejected with reason 'TEST cleanup'; some were approved, which credited test coins to the test users.",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "To set up UI tests, run setup_ui_iter48.py with REACT_APP_BACKEND_URL exported; it prints the token and submission ids. In the browser, set localStorage lovreski_token and open /premium. Admin support tab: /admin/dashboard?tab=support; expand the 'История' <details> element."
+}

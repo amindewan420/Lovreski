@@ -594,7 +594,9 @@ export default function AdminPage() {
                 <div className="flex gap-4">
                   <ReceiptThumb src={s.receipt_data_url} onOpen={() => setViewImg(s.receipt_data_url)} testid={`receipt-thumb-${s.submission_id}`} />
                   <div className="flex-1 min-w-0">
-                    <p className="font-bold">{s.user_name} <span className="text-xs text-muted-foreground">({s.user_email})</span></p>
+                    <p className="font-bold">{s.user_name} <span className="text-xs text-muted-foreground">({s.user_email})</span>
+                      {s.is_deleted_by_user && <span data-testid={`pending-hidden-${s.submission_id}`} className="ml-2 px-1.5 py-0.5 rounded bg-slate-500/15 text-slate-500 text-[10px] font-normal">скрыто пользователем</span>}
+                    </p>
                     <p className="text-[11px] text-muted-foreground">ID: {s.user_id}</p>
                     <p className="text-[11px] text-muted-foreground">{new Date(s.created_at).toLocaleString("ru")}</p>
                     {s.message && <p className="text-xs mt-1 italic">"{s.message}"</p>}
