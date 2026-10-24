@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, useMemo } from "react";
+import { useEffect, useRef, useState, useMemo, useCallback } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { api } from "@/lib/api";
 import { createChatSocket } from "@/lib/ws";
@@ -9,9 +9,10 @@ import GiftPanel from "@/components/lovreski/GiftPanel";
 import LanguageSheet from "@/components/lovreski/LanguageSheet";
 import { LocationPicker, LocationBubble } from "@/components/lovreski/LocationShare";
 import { useChatTranslation } from "@/hooks/useChatTranslation";
+import { ChatMediaViewer, isPdfMsg, downloadChatMedia } from "@/components/lovreski/ChatMediaViewer";
 import {
   ArrowLeft, Send, Plus, Image as ImageIcon, File as FileIcon, Video, Mic, Square,
-  Smile, Gift, Globe, Reply, X, Check, CheckCheck, Lock, ShoppingBag, Trash2, MapPin, ChevronDown,
+  Smile, Gift, Globe, Reply, X, Check, CheckCheck, Lock, ShoppingBag, Trash2, MapPin, ChevronDown, Download,
 } from "lucide-react";
 import { toast } from "sonner";
 
@@ -54,10 +55,14 @@ const useSignedMediaUrl = (url) => {
   return [src, remint];
 };
 
-const MediaBubble = ({ m }) => {
+const MediaBubble = ({ m, onOpen, t }) => {
   const [src, onErr] = useSignedMediaUrl(m.media_url);
   if (m.kind === "image") {
-    return <img src={src} onError={onErr} alt="" className="rounded-lg max-h-64 object-cover" data-testid={`media-img-${m.message_id}`} />;
+    return (
+      <button type="button" onClick={() => onOpen(m)} className="block cursor-zoom-in" data-testid={`media-open-${m.message_id}`}>
+        <img src={src} onError={onErr} alt="" className="rounded-lg max-h-64 object-cover" data-testid={`media-img-${m.message_id}`} />
+      </button>
+    );
   }
   if (m.kind === "voice") {
     return <audio controls src={src} onError={onErr} className="max-w-[220px]" data-testid={`media-audio-${m.message_id}`} />;
@@ -65,12 +70,20 @@ const MediaBubble = ({ m }) => {
   if (m.kind === "video") {
     return <video controls src={src} onError={onErr} className="rounded-lg max-h-64" data-testid={`media-video-${m.message_id}`} />;
   }
-  // file download link — kept fresh by the proactive interval
+  // PDF → in-app viewer; other files → direct download
+  const pdf = isPdfMsg(m);
   return (
-    <a href={src} download={m.file_name || "file"} className="flex items-center gap-2 text-sm" data-testid={`media-file-${m.message_id}`}>
-      <FileIcon className="w-5 h-5" />
-      <span className="underline truncate max-w-[180px] no-translate">{m.file_name || "file"}</span>
-    </a>
+    <div className="flex items-center gap-2 text-sm">
+      <button type="button" onClick={() => (pdf ? onOpen(m) : downloadChatMedia(m, t))} className="flex items-center gap-2 min-w-0" data-testid={`media-file-${m.message_id}`}>
+        <span className={`w-9 h-9 rounded-lg flex items-center justify-center shrink-0 ${pdf ? "bg-rose-100 text-rose-600" : "bg-slate-100 text-slate-600"}`}>
+          {pdf ? <span className="text-[10px] font-black">PDF</span> : <FileIcon className="w-5 h-5" />}
+        </span>
+        <span className="underline truncate max-w-[160px] no-translate text-left">{m.file_name || "file"}</span>
+      </button>
+      <button type="button" onClick={() => downloadChatMedia(m, t)} className="p-1.5 rounded-full hover:bg-black/5 shrink-0" data-testid={`media-download-${m.message_id}`} aria-label="download">
+        <Download className="w-4 h-4" />
+      </button>
+    </div>
   );
 };
 
@@ -95,6 +108,8 @@ export default function ChatRoomPage() {
   // Sheets / modals
   const [showTray, setShowTray] = useState(false);
   const [showLocation, setShowLocation] = useState(false);
+  const [viewMedia, setViewMedia] = useState(null);
+  const closeMedia = useCallback(() => setViewMedia(null), []);
   const [showEmoji, setShowEmoji] = useState(false);
   const [showGifts, setShowGifts] = useState(false);
   const [showLang, setShowLang] = useState(false);
@@ -497,7 +512,7 @@ export default function ChatRoomPage() {
                       ) : m.kind === "location" && !locked ? (
                         <LocationBubble m={m} place={tx(m.location?.place)} />
                       ) : ["image", "voice", "video", "file"].includes(m.kind) && m.media_url ? (
-                        <MediaBubble m={m} />
+                        <MediaBubble m={m} onOpen={setViewMedia} t={t} />
                       ) : (
                         <p data-testid={`msg-text-${m.message_id}`} className={`whitespace-pre-wrap break-words text-[15px] leading-snug no-translate transition-opacity ${isPending(m.text) ? "opacity-50 animate-pulse" : ""}`}>
                           {showOrig.has(m.message_id) ? m.text : tx(m.text)}
@@ -668,6 +683,7 @@ export default function ChatRoomPage() {
         {/* Bottom sheets */}
         <EmojiPanel open={showEmoji} onClose={() => setShowEmoji(false)} onPick={(e) => { setShowEmoji(false); sendEmoji(e); }} />
         <GiftPanel open={showGifts} onClose={() => setShowGifts(false)} onSend={sendGift} coins={status.coins} />
+        <ChatMediaViewer m={viewMedia} onClose={closeMedia} />
         <LocationPicker open={showLocation} onClose={() => setShowLocation(false)} onSend={sendLocation} fallback={{ lat: user?.lat, lng: user?.lng }} />
         <LanguageSheet open={showLang} onClose={() => setShowLang(false)} onSelect={async (l) => { const r = await setLang(l.code); setShowLang(false); if (r?.actualLang !== l.code) toast.error("Перевод недоступен, оставили русский"); else toast.success(`${l.flag} ${l.name}`); }} />
 

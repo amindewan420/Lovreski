@@ -221,3 +221,49 @@ async def gifts_list():
     """Public gift catalog: key, name, emoji, cost, tailwind gradient."""
     return GIFT_CATALOG
 
+
+
+# ─── Media file proxy (same-origin bytes for viewer / download) ─────────────
+import re as _re
+from fastapi.responses import StreamingResponse, RedirectResponse
+import storage as _cloud
+
+_FILE_ID_RE = _re.compile(r"/api/files/([0-9a-f]{24})")
+
+
+@api.get("/chat/media-file/{message_id}")
+async def chat_media_file(message_id: str, download: int = 0, user: dict = Depends(get_current_user)):
+    """Stream a chat attachment through the API so the browser can view/save it (no S3 CORS needed)."""
+    m = await db.messages.find_one({"message_id": message_id}, {"_id": 0})
+    if not m or user['user_id'] not in (m.get('from_user'), m.get('to_user')):
+        raise HTTPException(status_code=404, detail="File not found")
+    if m.get('deleted') or not m.get('media_url'):
+        raise HTTPException(status_code=404, detail="File not found")
+    url = m['media_url']
+    key = _cloud.key_from_public_url(url)
+    if not key:
+        fid = _FILE_ID_RE.search(url)
+        if fid:
+            sdoc = await db.s3_files.find_one({"_id": fid.group(1)}, {"public_url": 1})
+            key = _cloud.key_from_public_url((sdoc or {}).get("public_url", ""))
+            if not key:  # legacy GridFS → signed same-origin URL
+                return RedirectResponse(sign_file_url(url), status_code=302)
+    if not key:
+        raise HTTPException(status_code=404, detail="File not found")
+    try:
+        obj = await _cloud.open_object(key)
+    except Exception as e:
+        code = getattr(e, "response", {}).get("Error", {}).get("Code", "")
+        if code in ("NoSuchKey", "404", "NotFound"):
+            raise HTTPException(status_code=404, detail="File not found")
+        logger.warning(f"[chat-media] fetch failed {key}: {e}")
+        raise HTTPException(status_code=502, detail="Download failed")
+    name = (m.get('file_name') or key.rsplit("/", 1)[-1]).replace('"', '')
+    from urllib.parse import quote
+    headers = {
+        "Content-Disposition": f"{'attachment' if download else 'inline'}; filename*=UTF-8''{quote(name)}",
+        "Cache-Control": "private, max-age=600",
+    }
+    if obj.get("length"):
+        headers["Content-Length"] = str(obj["length"])
+    return StreamingResponse(obj["stream"], media_type=obj["content_type"], headers=headers)
