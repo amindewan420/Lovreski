@@ -91,7 +91,7 @@ export const LocationPicker = ({ open, onClose, onSend, fallback }) => {
   );
 };
 
-export const LocationBubble = ({ m }) => {
+export const LocationBubble = ({ m, place }) => {
   const { t } = useI18n();
   const loc = m.location;
   if (!loc) {
@@ -111,7 +111,7 @@ export const LocationBubble = ({ m }) => {
           <Marker position={pos} icon={pinIcon} />
         </MapContainer>
       </a>
-      {loc.place && <p className="mt-1 text-sm font-semibold no-translate">{loc.place}</p>}
+      {loc.place && <p className="mt-1 text-sm font-semibold no-translate">{place || loc.place}</p>}
       <a data-testid={`location-open-${m.message_id}`} href={mapsUrl(loc.lat, loc.lng)} target="_blank" rel="noreferrer" className="mt-1 text-xs text-sky-600 flex items-center gap-1">
         <ExternalLink className="w-3 h-3" /> {t("chat.location_open")}
       </a>

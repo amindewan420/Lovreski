@@ -1,15 +1,21 @@
 import { useEffect, useState } from "react";
 import ReactMarkdown from "react-markdown";
-import { Loader2, AlertTriangle } from "lucide-react";
+import { Loader2, AlertTriangle, Globe } from "lucide-react";
 import { api } from "@/lib/api";
+import { useI18n } from "@/lib/i18n";
 
-// Live list of legal docs (admin custom versions override built-ins).
+// Live list of legal docs (admin custom versions override built-ins), titles in app language.
 export function useLegalDocs() {
+  const { lang } = useI18n();
   const [docs, setDocs] = useState([]);
   const [error, setError] = useState(false);
   useEffect(() => {
-    api.get("/legal", { params: { t: Date.now() } }).then((r) => setDocs(r.data || [])).catch(() => setError(true));
-  }, []);
+    const plain = () => api.get("/legal", { params: { t: Date.now() } });
+    api.get("/legal", { params: { lang, t: Date.now() }, timeout: 30000 })
+      .catch(plain)
+      .then((r) => { setDocs(r.data || []); setError(false); })
+      .catch(() => setError(true));
+  }, [lang]);
   return { docs, error };
 }
 
@@ -24,22 +30,32 @@ const md = {
   strong: (p) => <strong className="font-bold" {...p} />,
 };
 
-export const LegalDocView = ({ slug, onLoaded }) => {
+export const LegalDocView = ({ slug }) => {
+  const { lang, t } = useI18n();
   const [doc, setDoc] = useState(null);
   const [error, setError] = useState("");
+  const [orig, setOrig] = useState(false);
   useEffect(() => {
-    setDoc(null); setError("");
-    api.get(`/legal/${slug}`, { params: { t: Date.now() } })
-      .then((r) => { setDoc(r.data); onLoaded?.(r.data); })
+    setDoc(null); setError(""); setOrig(false);
+    const get = (params, timeout) => api.get(`/legal/${slug}`, { params: { ...params, t: Date.now() }, timeout });
+    // Translated version first; on any failure fall back to the original text.
+    get({ lang }, 90000)
+      .catch((e) => (e.response?.status === 404 ? Promise.reject(e) : get({}, 20000)))
+      .then((r) => setDoc(r.data))
       .catch((e) => setError(e.response?.status === 404 ? "Документ не найден" : "Не удалось загрузить документ"));
-    // eslint-disable-next-line
-  }, [slug]);
+  }, [slug, lang]);
   if (error) return <div data-testid="legal-error" className="p-8 flex flex-col items-center gap-2 text-muted-foreground"><AlertTriangle className="w-6 h-6" />{error}</div>;
-  if (!doc) return <div data-testid="legal-loading" className="p-10 flex justify-center"><Loader2 className="w-6 h-6 animate-spin text-muted-foreground" /></div>;
+  if (!doc) return <div data-testid="legal-loading" className="p-10 flex flex-col items-center gap-2 text-muted-foreground text-sm"><Loader2 className="w-6 h-6 animate-spin" />{t("legal.translating")}</div>;
+  const body = orig && doc.original_body ? doc.original_body : doc.body;
   return (
-    <article data-testid={`legal-doc-${slug}`} className="p-4 text-sm leading-relaxed">
-      <ReactMarkdown components={md}>{doc.body}</ReactMarkdown>
-      {doc.updated_at && <p className="mt-6 text-[11px] text-muted-foreground">Обновлено: {new Date(doc.updated_at).toLocaleDateString("ru")}</p>}
+    <article data-testid={`legal-doc-${slug}`} className="p-4 text-sm leading-relaxed no-translate">
+      {doc.translated && (
+        <button data-testid="legal-toggle-orig" onClick={() => setOrig((v) => !v)} className="mb-3 text-xs text-primary flex items-center gap-1">
+          <Globe className="w-3.5 h-3.5" /> {t("legal.translated")} · {orig ? t("chat.show_translation") : t("chat.show_original")}
+        </button>
+      )}
+      <ReactMarkdown components={md}>{body}</ReactMarkdown>
+      {doc.updated_at && <p className="mt-6 text-[11px] text-muted-foreground">{new Date(doc.updated_at).toLocaleDateString(lang || "ru")}</p>}
     </article>
   );
 };

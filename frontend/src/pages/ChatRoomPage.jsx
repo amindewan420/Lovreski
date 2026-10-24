@@ -8,6 +8,7 @@ import EmojiPanel from "@/components/lovreski/EmojiPanel";
 import GiftPanel from "@/components/lovreski/GiftPanel";
 import LanguageSheet from "@/components/lovreski/LanguageSheet";
 import { LocationPicker, LocationBubble } from "@/components/lovreski/LocationShare";
+import { useChatTranslation } from "@/hooks/useChatTranslation";
 import {
   ArrowLeft, Send, Plus, Image as ImageIcon, File as FileIcon, Video, Mic, Square,
   Smile, Gift, Globe, Reply, X, Check, CheckCheck, Lock, ShoppingBag, Trash2, MapPin, ChevronDown,
@@ -227,13 +228,10 @@ export default function ChatRoomPage() {
   const stopRecording = () => { clearInterval(recordTimerRef.current); setRecording(false); try { recorderRef.current?.stop(); } catch { /* noop */ } };
   const cancelRecording = () => { clearInterval(recordTimerRef.current); setRecording(false); try { const mr = recorderRef.current; if (mr) { mr.ondataavailable = null; mr.onstop = null; mr.stop(); } } catch { /* noop */ } chunksRef.current = []; };
 
-  // ─── Translate ───────────────────────────────────────────────────────
-  const translate = async (m) => {
-    try {
-      const { data } = await api.post('/translate', { text: m.text, target: lang });
-      setMsgs((p) => p.map((x) => x.message_id === m.message_id ? { ...x, translated: data.translated } : x));
-    } catch { toast.error("Не удалось перевести"); }
-  };
+  // ─── Auto-translation (whole thread, incl. live messages) ────────────
+  const { tx, isTranslated, isPending, busy: translating } = useChatTranslation(msgs, lang);
+  const [showOrig, setShowOrig] = useState(() => new Set());
+  const toggleOrig = (mid) => setShowOrig((p) => { const n = new Set(p); n.has(mid) ? n.delete(mid) : n.add(mid); return n; });
 
   // ─── Delete ──────────────────────────────────────────────────────────
   const doDelete = async (scope) => {
@@ -380,6 +378,11 @@ export default function ChatRoomPage() {
               </div>
             </>
           )}
+          {translating && (
+            <span data-testid="chat-translating" className="absolute left-1/2 -translate-x-1/2 -bottom-3 z-10 text-[10px] px-2 py-0.5 rounded-full bg-sky-100 text-sky-700 flex items-center gap-1 shadow-sm">
+              <Globe className="w-3 h-3 animate-spin" /> {t("chat.translating")}
+            </span>
+          )}
         </header>
 
         {/* Message list */}
@@ -401,7 +404,7 @@ export default function ChatRoomPage() {
               ? (replied.from_user === user?.user_id ? t("chat.you") : (other?.name || ""))
               : "";
             const repliedSnippet = replied
-              ? (replied.text || {
+              ? (tx(replied.text) || {
                   image: "🖼 " + t("chat.gift_gallery"),
                   video: "🎬 " + t("chat.gift_camera"),
                   voice: "🎤 " + (t("chat.recording") || ""),
@@ -492,13 +495,19 @@ export default function ChatRoomPage() {
                           <div className="text-[10px] mt-1 text-slate-500">{t("chat.preview_gift")}</div>
                         </div>
                       ) : m.kind === "location" && !locked ? (
-                        <LocationBubble m={m} />
+                        <LocationBubble m={m} place={tx(m.location?.place)} />
                       ) : ["image", "voice", "video", "file"].includes(m.kind) && m.media_url ? (
                         <MediaBubble m={m} />
                       ) : (
-                        <p className="whitespace-pre-wrap break-words text-[15px] leading-snug no-translate">{m.text}</p>
+                        <p data-testid={`msg-text-${m.message_id}`} className={`whitespace-pre-wrap break-words text-[15px] leading-snug no-translate transition-opacity ${isPending(m.text) ? "opacity-50 animate-pulse" : ""}`}>
+                          {showOrig.has(m.message_id) ? m.text : tx(m.text)}
+                        </p>
                       )}
-                      {m.translated && <p className="mt-1 pt-1 border-t border-slate-200 text-[12px] text-slate-500 italic no-translate">{m.translated}</p>}
+                      {isTranslated(m.text) && (
+                        <button data-testid={`toggle-orig-${m.message_id}`} onClick={() => toggleOrig(m.message_id)} className="mt-0.5 text-[10px] text-sky-600 flex items-center gap-1">
+                          <Globe className="w-3 h-3" /> {showOrig.has(m.message_id) ? t("chat.show_translation") : t("chat.show_original")}
+                        </button>
+                      )}
                       <div className="flex items-center justify-end gap-1 mt-0.5 text-[10px] text-slate-500">
                         <span>{fmtTime(m.created_at)}</span>
                         {mine && (m.read ? <CheckCheck className="w-3.5 h-3.5 text-sky-500" /> : <Check className="w-3.5 h-3.5" />)}
@@ -508,7 +517,6 @@ export default function ChatRoomPage() {
                   {!locked && !m.deleted && (
                     <div className={`flex gap-2 mt-0.5 text-[10px] text-slate-400 opacity-0 group-hover:opacity-100 transition-opacity ${mine ? "justify-end" : ""}`}>
                       <button onClick={() => setReply(m)} data-testid={`reply-${m.message_id}`}>{t("chat.reply")}</button>
-                      {!mine && m.text && <button onClick={() => translate(m)} data-testid={`translate-${m.message_id}`}>{t("chat.translate")}</button>}
                       {mine && <button onClick={() => setActionTarget(m)} data-testid={`delete-${m.message_id}`}>{t("chat.delete_me")}</button>}
                     </div>
                   )}
@@ -527,7 +535,7 @@ export default function ChatRoomPage() {
         {reply && (() => {
           const replyMine = reply.from_user === user?.user_id;
           const senderName = replyMine ? t("chat.you") : (other?.name || "");
-          const snippet = reply.text || {
+          const snippet = tx(reply.text) || {
             image: "🖼 " + t("chat.gift_gallery"),
             video: "🎬 " + t("chat.gift_camera"),
             voice: "🎤 " + t("chat.recording"),

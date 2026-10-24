@@ -996,7 +996,10 @@ I18N_BASE_RU = {
     "push.prompt_body": "Узнавайте о новых лайках, матчах и сообщениях сразу.",
     "push.enable": "Включить", "push.later": "Позже", "push.open": "Открыть",
     "push.denied": "Уведомления запрещены в настройках браузера",
-    "chat.location": "Локация", "chat.preview_locked": "Новое сообщение", "chat.location_title": "Отправить место встречи",
+    "chat.location": "Локация", "chat.preview_locked": "Новое сообщение",
+    "chat.show_original": "Показать оригинал", "chat.show_translation": "Показать перевод",
+    "chat.translating": "Переводим…",
+    "legal.translated": "Переведено автоматически", "legal.translating": "Переводим документ…", "chat.location_title": "Отправить место встречи",
     "chat.location_hint": "Перетащите метку или нажмите на карту, чтобы выбрать место.",
     "chat.location_safety": "Ради вашей безопасности всегда встречайтесь в людных общественных местах и сообщите друзьям, куда идёте.",
     "chat.location_send": "Отправить локацию", "chat.location_mine": "Моё местоположение",
@@ -1121,6 +1124,9 @@ async def on_start():
     await db.s3_files.create_index("kind")
     await db.admin_sessions.create_index("jti", unique=True)
     await db.login_attempts.create_index("key", unique=True)
+    await db.content_translations.create_index([("lang", 1), ("key", 1)], unique=True)
+    from routers.admin import prewarm_all_legal
+    asyncio.create_task(prewarm_all_legal())
     await db.s3_files.create_index("owner_id")
     await db.profile_visits.create_index([("viewer", 1), ("target", 1)], unique=True)
     # Initialize Firebase from Admin-Panel config (no-op if not configured)

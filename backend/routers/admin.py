@@ -4,7 +4,7 @@ from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field, EmailStr
 from typing import Optional
 from datetime import datetime, timedelta, timezone
-import os, re, uuid
+import asyncio, os, re, uuid
 from server import (
     api, db, logger, now_utc, iso, fcm,
     get_current_user, require_admin, user_public,
@@ -16,6 +16,7 @@ from server import (
     AdminPaymentAction, COIN_PACKAGES,
 )
 import storage as _cloud
+from translation import translate_texts, translate_markdown
 from legal_defaults import LEGAL_DEFAULTS, DEFAULTS_BY_SLUG as LEGAL_DEFAULTS_BY_SLUG, ALIASES as LEGAL_ALIASES, canonical_slug
 
 class AdminApproveBody(BaseModel):
@@ -630,23 +631,54 @@ def _no_store(resp: Response):
     resp.headers["Cache-Control"] = "no-store"
 
 @api.get("/legal")
-async def legal_list_public(response: Response):
-    """Public: every legal doc (custom overrides built-in), no body."""
+async def legal_list_public(response: Response, lang: str = ""):
+    """Public: every legal doc (custom overrides built-in), no body. `lang` → titles translated."""
     _no_store(response)
-    return _merged_legal(await db.legal_docs.find({}, {"_id": 0, "body": 0}).to_list(200), with_body=False)
+    docs = _merged_legal(await db.legal_docs.find({}, {"_id": 0, "body": 0}).to_list(200), with_body=False)
+    if lang:
+        tr = await translate_texts(db, [d["title"] for d in docs], lang)
+        for d in docs:
+            d["original_title"] = d["title"]
+            d["title"] = tr.get(d["title"], d["title"])
+    return docs
+
+async def _localize_doc(doc: dict, lang: str) -> dict:
+    if not lang:
+        return doc
+    title = (await translate_texts(db, [doc["title"]], lang)).get(doc["title"], doc["title"])
+    body = await translate_markdown(db, doc["body"], lang)
+    return {**doc, "title": title, "body": body, "original_title": doc["title"], "original_body": doc["body"],
+            "translated": body != doc["body"] or title != doc["title"], "lang": lang}
+
+async def _prewarm_legal(title: str, body: str) -> None:
+    """Translate a freshly saved doc into every app language users have chosen."""
+    langs = [l for l in await db.users.distinct("language_pref") if isinstance(l, str) and l.strip()][:12]
+    for lang in langs:
+        try:
+            await translate_texts(db, [title], lang)
+            await translate_markdown(db, body, lang)
+        except Exception as e:
+            logger.warning(f"[legal] prewarm {lang} failed: {e}")
+
+async def prewarm_all_legal() -> None:
+    """Startup: make sure every current legal doc is cached in every chosen app language."""
+    await asyncio.sleep(5)
+    docs = _merged_legal(await db.legal_docs.find({}, {"_id": 0}).to_list(200), with_body=True)
+    for d in docs:
+        await _prewarm_legal(d["title"], d["body"])
 
 @api.get("/legal/{slug}")
-async def legal_get_public(slug: str, response: Response):
+async def legal_get_public(slug: str, response: Response, lang: str = ""):
     _no_store(response)
     slug = canonical_slug(slug)
     aliases = [a for a, c in LEGAL_ALIASES.items() if c == slug]
     d = await db.legal_docs.find_one({"slug": {"$in": [slug, *aliases]}}, {"_id": 0})
     if d:
-        return {**d, "slug": slug, "source": "custom"}
+        return await _localize_doc({**d, "slug": slug, "source": "custom"}, lang)
     b = LEGAL_DEFAULTS_BY_SLUG.get(slug)
     if not b:
         raise HTTPException(status_code=404, detail="Document not found")
-    return {"slug": slug, "title": b["title"], "body": b["body"], "updated_at": None, "source": "builtin"}
+    return await _localize_doc({"slug": slug, "title": b["title"], "body": b["body"], "updated_at": None, "source": "builtin"}, lang)
 
 @api.get("/admin/legal")
 async def admin_legal_list(_: dict = Depends(require_admin)):
@@ -663,6 +695,7 @@ async def _upsert_legal(slug: str, title: str, body: str, admin: dict, action: s
         upsert=True,
     )
     await db.admin_audit.insert_one({"admin_id": admin['user_id'], "action": action, "slug": slug, "at": iso(now_utc())})
+    asyncio.create_task(_prewarm_legal(title, body))
 
 @api.post("/admin/legal")
 async def admin_legal_create(body: LegalDocBody, admin: dict = Depends(require_admin)):

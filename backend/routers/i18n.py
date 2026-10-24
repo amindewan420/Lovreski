@@ -1,6 +1,7 @@
 """Translation & app-wide i18n routes."""
 from fastapi import Depends, HTTPException
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
+from translation import translate_texts
 from typing import List
 import asyncio, hashlib, json as _json
 import os
@@ -12,19 +13,21 @@ from server import (
 
 @api.post("/translate")
 async def translate(body: TranslateBody, user: dict = Depends(get_current_user)):
-    """Auto-translate text using Emergent LLM key."""
-    try:
-        from emergentintegrations.llm.chat import LlmChat, UserMessage  # type: ignore
-        chat = LlmChat(
-            api_key=os.environ['EMERGENT_LLM_KEY'],
-            session_id=f"trans_{user['user_id']}",
-            system_message=f"You are a professional translator. Detect the source language and translate the user text to {body.target}. Respond ONLY with the translated text, no explanations, no quotes.",
-        ).with_model("openai", "gpt-4o-mini")
-        resp = await chat.send_message(UserMessage(text=body.text))
-        return {"translated": str(resp).strip(), "target": body.target}
-    except Exception as e:
-        logger.exception("translate failed")
-        raise HTTPException(status_code=500, detail=str(e))
+    """Single text → same shared engine as chat batches & legal docs (cached, fail-open)."""
+    tr = await translate_texts(db, [body.text], body.target)
+    return {"translated": tr.get(body.text, body.text), "target": body.target}
+
+
+class ContentBatchBody(BaseModel):
+    target: str = Field(min_length=2, max_length=10)
+    texts: List[str] = Field(max_length=300)
+
+
+@api.post("/translate/batch")
+async def translate_batch(body: ContentBatchBody, user: dict = Depends(get_current_user)):
+    """Translate many chat texts in one consistent pass. Returns {translations: {original: translated}}."""
+    texts = [t[:4000] for t in body.texts if isinstance(t, str)]
+    return {"target": body.target, "translations": await translate_texts(db, texts, body.target)}
 
 class I18nBatchBody(BaseModel):
     lang: str
