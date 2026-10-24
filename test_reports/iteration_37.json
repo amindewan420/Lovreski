@@ -1,0 +1,22 @@
+{
+  "summary": "Iter-37 Search/Discovery refresh semantics verified end-to-end. Backend: 5/5 new tests pass (GET /api/search/refresh pool semantics — likes permanently exclude, passes cycle back; DELETE /api/like/<id> unlike restores user to pool; age hard filter 25-35; distance hard filter 10km; pool shrinks by exactly 1 on like, unchanged on pass). Regression: 8/8 iter-35/36 home_feed_liked_filters tests still green. Frontend (mobile 390x844): /discover loads, data-testid='btn-refresh-feed' present in Поиск header and triggers refetch (loading pulse then cards). Swipe-pass cycle verified — after 3 initial passes + manual refresh + 15 more passes, 3 previously-passed user_ids reappeared confirming cycle behavior (liked would NOT reappear).",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {"ui_bugs": [], "integration_issues": [], "design_issues": []},
+  "test_report_links": [
+    "/app/backend/tests/test_search_refresh_iter37.py",
+    "/app/backend/tests/test_home_feed_liked_filters.py",
+    "/app/test_reports/pytest/iter37_results.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "DiscoverPage.load() falls back to POST /api/demo/seed when data.length===0 — fine for dev/preview but should be gated to admin or removed before prod to avoid any authenticated user triggering seed.",
+    "Auto-refresh signature compare only runs on window 'focus'; on SPA client-side navigation back from /settings (via bottom nav) focus event may not fire. Consider also listening to visibilitychange or location changes if auto-refresh on filter-change doesn't trigger in all nav modes. (Did not reproduce as a failing test since manual refresh works.)"
+  ],
+  "updated_files": ["/app/backend/tests/test_search_refresh_iter37.py"],
+  "success_rate": {"backend": "100% (5/5 new + 8/8 regression)", "frontend": "100% (manual refresh + cycle verified)"},
+  "test_credentials": "testuser1@lovreski.ru / password123 (per /app/memory/test_credentials.md)",
+  "seed_data_creation": "Called POST /api/demo/seed (idempotent) at module scope to ensure sufficient candidate users.",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Iter-37 Search/Discovery semantics fully verified. Backend tests live at /app/backend/tests/test_search_refresh_iter37.py; run with `pytest -o addopts='' ...` because pytest.ini has xdist args that break single-file runs. testuser1 profile is reset to age_min=18/age_max=85, distance_mode=unlimited after tests. One minor UX concern logged: SPA client-side nav from /settings → /discover via bottom nav may not fire 'focus' event — manual refresh still works so no blocker. Not retested: match celebration via match_a/match_b (regression unchanged from iter-36)."
+}
