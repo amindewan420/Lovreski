@@ -1,5 +1,5 @@
 """Admin dashboard, payments, user management, settings routes."""
-from fastapi import HTTPException, Depends, Request
+from fastapi import HTTPException, Depends, Request, Response
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field, EmailStr
 from typing import Optional
@@ -16,6 +16,7 @@ from server import (
     AdminPaymentAction, COIN_PACKAGES,
 )
 import storage as _cloud
+from legal_defaults import LEGAL_DEFAULTS, DEFAULTS_BY_SLUG as LEGAL_DEFAULTS_BY_SLUG, ALIASES as LEGAL_ALIASES, canonical_slug
 
 class AdminApproveBody(BaseModel):
     coins: int = Field(gt=0, le=100000)
@@ -604,53 +605,97 @@ class LegalDocBody(BaseModel):
     title: str = Field(min_length=1, max_length=200)
     body: str = Field(min_length=1)
 
+def _merged_legal(customs: list, with_body: bool) -> list:
+    """Built-in defaults overridden by admin docs with the same (canonical) slug, then extra custom docs."""
+    by_slug = {}
+    for c in customs:
+        by_slug[canonical_slug(c["slug"])] = c
+    out = []
+    for d in LEGAL_DEFAULTS:
+        c = by_slug.pop(d["slug"], None)
+        src = c or d
+        item = {"slug": d["slug"], "title": src["title"], "updated_at": (c or {}).get("updated_at"),
+                "source": "custom" if c else "builtin", "has_builtin": True}
+        if with_body:
+            item["body"] = src["body"]
+        out.append(item)
+    for c in sorted(by_slug.values(), key=lambda x: x.get("title", "")):
+        item = {"slug": c["slug"], "title": c["title"], "updated_at": c.get("updated_at"), "source": "custom", "has_builtin": False}
+        if with_body:
+            item["body"] = c["body"]
+        out.append(item)
+    return out
+
+def _no_store(resp: Response):
+    resp.headers["Cache-Control"] = "no-store"
+
 @api.get("/legal")
-async def legal_list_public():
-    """Public: list all published legal docs (slug, title, updated_at)."""
-    docs = await db.legal_docs.find({}, {"_id": 0, "body": 0}).sort("title", 1).to_list(100)
-    return docs
+async def legal_list_public(response: Response):
+    """Public: every legal doc (custom overrides built-in), no body."""
+    _no_store(response)
+    return _merged_legal(await db.legal_docs.find({}, {"_id": 0, "body": 0}).to_list(200), with_body=False)
 
 @api.get("/legal/{slug}")
-async def legal_get_public(slug: str):
-    d = await db.legal_docs.find_one({"slug": slug}, {"_id": 0})
-    if not d:
+async def legal_get_public(slug: str, response: Response):
+    _no_store(response)
+    slug = canonical_slug(slug)
+    aliases = [a for a, c in LEGAL_ALIASES.items() if c == slug]
+    d = await db.legal_docs.find_one({"slug": {"$in": [slug, *aliases]}}, {"_id": 0})
+    if d:
+        return {**d, "slug": slug, "source": "custom"}
+    b = LEGAL_DEFAULTS_BY_SLUG.get(slug)
+    if not b:
         raise HTTPException(status_code=404, detail="Document not found")
-    return d
+    return {"slug": slug, "title": b["title"], "body": b["body"], "updated_at": None, "source": "builtin"}
 
 @api.get("/admin/legal")
 async def admin_legal_list(_: dict = Depends(require_admin)):
-    return await db.legal_docs.find({}, {"_id": 0}).sort("title", 1).to_list(200)
+    return _merged_legal(await db.legal_docs.find({}, {"_id": 0}).to_list(200), with_body=True)
+
+async def _upsert_legal(slug: str, title: str, body: str, admin: dict, action: str) -> None:
+    aliases = [a for a, c in LEGAL_ALIASES.items() if c == slug]
+    if aliases:
+        await db.legal_docs.delete_many({"slug": {"$in": aliases}})
+    await db.legal_docs.update_one(
+        {"slug": slug},
+        {"$set": {"slug": slug, "title": title, "body": body, "updated_at": iso(now_utc())},
+         "$setOnInsert": {"created_at": iso(now_utc())}},
+        upsert=True,
+    )
+    await db.admin_audit.insert_one({"admin_id": admin['user_id'], "action": action, "slug": slug, "at": iso(now_utc())})
 
 @api.post("/admin/legal")
 async def admin_legal_create(body: LegalDocBody, admin: dict = Depends(require_admin)):
-    exists = await db.legal_docs.find_one({"slug": body.slug}, {"_id": 0, "slug": 1})
-    if exists:
-        raise HTTPException(status_code=409, detail="Slug already exists")
-    doc = {**body.model_dump(), "created_at": iso(now_utc()), "updated_at": iso(now_utc())}
-    await db.legal_docs.insert_one(doc)
-    await db.admin_audit.insert_one({"admin_id": admin['user_id'], "action": "legal_create", "slug": body.slug, "at": iso(now_utc())})
-    return {"ok": True, "slug": body.slug}
+    slug = canonical_slug(body.slug)
+    aliases = [a for a, c in LEGAL_ALIASES.items() if c == slug]
+    if await db.legal_docs.find_one({"slug": {"$in": [slug, *aliases]}}, {"_id": 0, "slug": 1}):
+        raise HTTPException(status_code=409, detail="Документ с таким slug уже существует — отредактируйте его")
+    await _upsert_legal(slug, body.title, body.body, admin, "legal_create")
+    return {"ok": True, "slug": slug, "overrides_builtin": slug in LEGAL_DEFAULTS_BY_SLUG}
 
 @api.put("/admin/legal/{slug}")
 async def admin_legal_update(slug: str, body: LegalDocBody, admin: dict = Depends(require_admin)):
-    if body.slug != slug:
+    slug = canonical_slug(slug)
+    if canonical_slug(body.slug) != slug:
         raise HTTPException(status_code=400, detail="Slug in body must match URL")
-    r = await db.legal_docs.update_one(
-        {"slug": slug},
-        {"$set": {"title": body.title, "body": body.body, "updated_at": iso(now_utc())}},
-    )
-    if r.matched_count == 0:
+    aliases = [a for a, c in LEGAL_ALIASES.items() if c == slug]
+    exists = await db.legal_docs.find_one({"slug": {"$in": [slug, *aliases]}}, {"_id": 0, "slug": 1})
+    if not exists and slug not in LEGAL_DEFAULTS_BY_SLUG:
         raise HTTPException(status_code=404, detail="Document not found")
-    await db.admin_audit.insert_one({"admin_id": admin['user_id'], "action": "legal_update", "slug": slug, "at": iso(now_utc())})
-    return {"ok": True}
+    await _upsert_legal(slug, body.title, body.body, admin, "legal_update")
+    return {"ok": True, "slug": slug}
 
 @api.delete("/admin/legal/{slug}")
 async def admin_legal_delete(slug: str, admin: dict = Depends(require_admin)):
-    r = await db.legal_docs.delete_one({"slug": slug})
+    slug = canonical_slug(slug)
+    aliases = [a for a, c in LEGAL_ALIASES.items() if c == slug]
+    r = await db.legal_docs.delete_many({"slug": {"$in": [slug, *aliases]}})
     if r.deleted_count == 0:
+        if slug in LEGAL_DEFAULTS_BY_SLUG:
+            raise HTTPException(status_code=400, detail="Встроенный документ нельзя удалить — его можно только изменить")
         raise HTTPException(status_code=404, detail="Document not found")
     await db.admin_audit.insert_one({"admin_id": admin['user_id'], "action": "legal_delete", "slug": slug, "at": iso(now_utc())})
-    return {"ok": True}
+    return {"ok": True, "reverted_to_builtin": slug in LEGAL_DEFAULTS_BY_SLUG}
 # ────────── Admin Audit Log (read-only viewer) ──────────
 @api.get("/admin/audit")
 async def admin_audit_list(_: dict = Depends(require_admin), limit: int = 200):

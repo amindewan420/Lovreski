@@ -6,7 +6,7 @@ import { useAdminBadges } from "@/hooks/useAdminBadges";
 import { DirectPushSheet } from "@/components/admin/AdminPushExtras";
 import { ReceiptViewer, ReceiptThumb } from "@/components/admin/ReceiptViewer";
 import { LineChart, Line, BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid } from "recharts";
-import { Send, Shield, Users, Crown, Clock, TrendingUp, Check, X, Flag, LogOut, Search as SearchIcon, MinusCircle, AlertTriangle, Ban, UserX, FileText, Trash2, Plus, Pencil, Database } from "lucide-react";
+import { Undo2, Send, Shield, Users, Crown, Clock, TrendingUp, Check, X, Flag, LogOut, Search as SearchIcon, MinusCircle, AlertTriangle, Ban, UserX, FileText, Trash2, Plus, Pencil, Database } from "lucide-react";
 import { toast } from "sonner";
 import { PushConfigTab } from "@/components/admin/PushConfigTab";
 
@@ -189,12 +189,13 @@ export default function AdminPage() {
     try {
       if (isNew) await api.post("/admin/legal", { slug, title, body });
       else await api.put(`/admin/legal/${slug}`, { slug, title, body });
-      toast.success("Сохранено"); setLegalEdit(null); load();
+      toast.success("Сохранено — уже видно пользователям"); setLegalEdit(null); load();
     } catch (e) { toast.error(e.response?.data?.detail || "Ошибка"); }
   };
-  const removeLegal = async (slug) => {
-    if (!window.confirm(`Удалить документ "${slug}"?`)) return;
-    try { await api.delete(`/admin/legal/${slug}`); toast.success("Удалено"); load(); }
+  const removeLegal = async (d) => {
+    const msg = d.has_builtin ? `Удалить вашу версию «${d.title}» и вернуть встроенный текст?` : `Удалить документ "${d.slug}"?`;
+    if (!window.confirm(msg)) return;
+    try { await api.delete(`/admin/legal/${d.slug}`); toast.success(d.has_builtin ? "Возвращён встроенный текст" : "Удалено"); load(); }
     catch (e) { toast.error(e.response?.data?.detail || "Ошибка"); }
   };
 
@@ -552,7 +553,10 @@ export default function AdminPage() {
         {tab === "legal" && (
           <div className="max-w-3xl">
             <div className="flex items-center justify-between mb-4">
-              <h3 className="font-display font-bold text-lg">Правовые документы</h3>
+              <div>
+                <h3 className="font-display font-bold text-lg">Правовые документы</h3>
+                <p className="text-xs text-muted-foreground">«Встроенный» — текст по умолчанию. Сохраните изменения, и ваша версия («Свой») сразу появится у пользователей в Настройки → Правовая информация.</p>
+              </div>
               <button data-testid="legal-new" onClick={() => setLegalEdit({ slug: "", title: "", body: "", isNew: true })} className="btn-pill bg-primary text-primary-foreground text-sm !py-2"><Plus className="w-4 h-4 mr-1" /> Новый</button>
             </div>
             <div className="grid gap-2">
@@ -561,11 +565,18 @@ export default function AdminPage() {
                 <div key={d.slug} data-testid={`legal-${d.slug}`} className="p-3 rounded-xl bg-card border border-border flex items-center gap-3">
                   <FileText className="w-5 h-5 text-muted-foreground" />
                   <div className="flex-1 min-w-0">
-                    <p className="font-semibold text-sm truncate">{d.title}</p>
-                    <p className="text-[11px] text-muted-foreground">/{d.slug} · {new Date(d.updated_at).toLocaleDateString("ru")}</p>
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <p className="font-semibold text-sm truncate">{d.title}</p>
+                      <span data-testid={`legal-source-${d.slug}`} className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${d.source === "custom" ? "bg-emerald-500/15 text-emerald-600" : "bg-muted text-muted-foreground border border-border"}`}>
+                        {d.source === "custom" ? (d.has_builtin ? "Свой · заменяет встроенный" : "Свой") : "Встроенный"}
+                      </span>
+                    </div>
+                    <p className="text-[11px] text-muted-foreground">/{d.slug}{d.updated_at ? ` · ${new Date(d.updated_at).toLocaleDateString("ru")}` : " · по умолчанию"}</p>
                   </div>
-                  <button data-testid={`legal-edit-${d.slug}`} onClick={() => setLegalEdit({ slug: d.slug, title: d.title, body: d.body, isNew: false })} className="p-2 rounded-full hover:bg-muted"><Pencil className="w-4 h-4" /></button>
-                  <button data-testid={`legal-delete-${d.slug}`} onClick={() => removeLegal(d.slug)} className="p-2 rounded-full hover:bg-rose-500/10 text-rose-500"><Trash2 className="w-4 h-4" /></button>
+                  <button data-testid={`legal-edit-${d.slug}`} onClick={() => setLegalEdit({ slug: d.slug, title: d.title, body: d.body, isNew: false })} className="p-2 rounded-full hover:bg-muted" title="Редактировать"><Pencil className="w-4 h-4" /></button>
+                  {d.source === "custom" && (
+                    <button data-testid={`legal-delete-${d.slug}`} onClick={() => removeLegal(d)} className="p-2 rounded-full hover:bg-rose-500/10 text-rose-500" title={d.has_builtin ? "Вернуть встроенный" : "Удалить"}>{d.has_builtin ? <Undo2 className="w-4 h-4" /> : <Trash2 className="w-4 h-4" />}</button>
+                  )}
                 </div>
               ))}
             </div>
@@ -802,7 +813,8 @@ export default function AdminPage() {
             <div className="mt-4 space-y-3 flex-1 overflow-y-auto">
               <div>
                 <label className="text-xs font-semibold">Slug (URL, латиница):</label>
-                <input data-testid="legal-slug" value={legalEdit.slug} onChange={(e) => setLegalEdit({ ...legalEdit, slug: e.target.value.toLowerCase() })} disabled={!legalEdit.isNew} placeholder="terms" className="mt-1 w-full px-3 py-2 rounded-xl bg-muted outline-none border border-transparent focus:border-primary disabled:opacity-60" />
+                <input data-testid="legal-slug" value={legalEdit.slug} onChange={(e) => setLegalEdit({ ...legalEdit, slug: e.target.value.toLowerCase() })} disabled={!legalEdit.isNew} placeholder="privacy-policy" className="mt-1 w-full px-3 py-2 rounded-xl bg-muted outline-none border border-transparent focus:border-primary disabled:opacity-60" />
+                {legalEdit.isNew && <p className="text-[11px] text-muted-foreground mt-1">Встроенные: terms-of-service, privacy-policy, payment-rules, refund-policy, community-guidelines, security-tips — такой slug заменит встроенный текст. Любой другой создаст новый документ.</p>}
               </div>
               <div>
                 <label className="text-xs font-semibold">Название:</label>
