@@ -133,3 +133,10 @@ Currently on Emergent (React + FastAPI + MongoDB). For amvera.cloud deployment, 
 - `GET /api/admin/receipt-file?src=&download=` — admin-only same-origin streaming proxy for S3 receipts (404 File not found).
 - Upload validation (client `lib/receiptFile.js` + server `validate_receipt_data_url`): JPG/PNG/WEBP/PDF, ≤10 MB, PDF magic bytes. Refund form now accepts PDF.
 - Tested: iteration_42 (backend 20/20, frontend all flows incl. 9 MB PDF, mobile).
+
+## 2026-06 — Iteration 43: Legal docs live on user side
+- Root cause: Settings → Legal used hard-coded frontend texts, never the API.
+- Built-ins moved to `backend/legal_defaults.py`: terms-of-service, privacy-policy, payment-rules, refund-policy, community-guidelines, security-tips (aliases terms/privacy/payment/refund/security/guidelines/community).
+- `/api/legal` + `/api/legal/{slug}` merge admin docs over built-ins (no-store); admin PUT on built-in creates override, DELETE reverts; built-ins undeletable.
+- Admin Правовые tab shows "Встроенный" / "Свой · заменяет встроенный" / "Свой" badges + revert. User side renders Markdown (`LegalDoc.jsx`, react-markdown); refund-policy page includes refund form.
+- Tested: iteration_43 (backend 14/14, frontend 100%).

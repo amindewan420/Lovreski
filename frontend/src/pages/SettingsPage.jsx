@@ -55,8 +55,8 @@ export default function SettingsPage() {
     return (
       <MobileShell>
         <header className="sticky top-0 z-40 bg-background/85 backdrop-blur-xl px-4 pt-4 pb-3 border-b border-border/50 flex items-center gap-2">
-          <button onClick={() => setSection(null)} className="text-sm text-muted-foreground">← Назад</button>
-          <h1 className="font-display font-black text-xl truncate">{l.title}</h1>
+          <button data-testid="legal-back" onClick={() => setSection(null)} className="text-sm text-muted-foreground shrink-0 whitespace-nowrap">← Назад</button>
+          <h1 className="font-display font-black text-xl truncate min-w-0">{l.title}</h1>
         </header>
         <LegalDocView slug={section} />
         {section === "refund-policy" && <RefundForm />}

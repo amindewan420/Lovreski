@@ -1,0 +1,24 @@
+{
+  "summary": "Tested the fix where legal docs are now driven by the backend, on both backend and frontend. Backend: 14/14 pytest tests pass. Public GET /api/legal returns the 6 built-ins in order with source=builtin, no body, Cache-Control no-store. Every legacy alias resolves to its canonical slug. POST with alias 'terms' saves as terms-of-service with overrides_builtin=true. POST on an existing slug gives 409. PUT on a built-in without a custom version creates an override. PUT with a slug that doesn't match the URL gives 400, unknown slug gives 404. DELETE of a custom doc returns reverted_to_builtin=true. DELETE of a built-in with no custom version gives 400. A new slug cookie-policy is listed after the built-ins and returns 404 once deleted. A bad slug or empty title gives 422. A user token gets 401 on every admin legal endpoint. Frontend E2E: on the admin Правовые tab all 6 rows show the 'Встроенный' badge and no revert button. Editing privacy-policy works (slug field disabled, body pre-filled). After saving, the badge changes to 'Свой · заменяет встроенный' and the revert button appears. Creating cookie-policy shows the 'Свой' badge with a trash button. On the user side, /settings immediately lists the new privacy title and cookie-policy. The doc page renders markdown correctly (h1→h2, bold, list items). Refund-policy shows the refund form (refund-upload-btn). Reverting from the admin UI (confirm dialog) brings back the built-in text, and deleting cookie-policy removes it for the user. No page errors. Cleanup done: legal_docs collection is empty, only built-ins remain.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "Settings → legal doc page header (mobile 390px)", "issues": ["With a long title (e.g. 'User Agreement — Lovreski Platform') the '← Назад' back button wraps onto 2 lines because it has no shrink-0/whitespace-nowrap; the title truncates fine. Fix: add 'shrink-0 whitespace-nowrap' to the back button and 'min-w-0' to the h1 in SettingsPage.jsx (around line 58)."]}
+    ]
+  },
+  "test_report_links": ["/app/backend/tests/test_legal_docs_iter43.py", "/app/test_reports/pytest/pytest_legal_iter43.xml"],
+  "action_items": ["Minor: stop the back button wrapping on the legal doc header in SettingsPage.jsx (shrink-0 whitespace-nowrap)."],
+  "critical_code_review_comments": [
+    "Custom docs without a built-in are sorted by title, not created_at. Fine, but the order changes when an admin renames a doc.",
+    "LegalDocBody.body has no max_length, so very large payloads are accepted. Consider a limit such as 200k.",
+    "Toast says 'уже видно пользователям', but a user who already has Settings open sees the update only after the useLegalDocs list refetches (on remount). This is acceptable."
+  ],
+  "updated_files": ["/app/backend/tests/test_legal_docs_iter43.py"],
+  "success_rate": {"backend": "100%", "frontend": "100%"},
+  "seed_data_creation": "None persisted. TEST_ docs created during tests were deleted; db.legal_docs is empty.",
+  "retest_needed": false,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "Legal docs: built-ins live in backend/legal_defaults.py, overrides in db.legal_docs. Routes are in routers/admin.py (lines ~603-698). Admin UI is at /admin/dashboard?tab=legal; you can inject the token through localStorage 'lovreski_admin_token' (from POST /api/admin/login). The user settings page uses 'lovreski_token'. Regression test: tests/test_legal_docs_iter43.py (it cleans up after itself)."
+}
