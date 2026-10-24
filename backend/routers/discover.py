@@ -13,7 +13,12 @@ async def discover_feed(user: dict = Depends(get_current_user), limit: int = 20)
        Sort formula: is_online DESC, distance ASC, last_seen DESC.
        Nearby = within `distance_km` when the user picked 'limited' mode
        (default: 100 km when unset)."""
-    pool = await _base_candidates(user)
+    pool = await _base_candidates(user, exclude=("like",))
+    # HARD distance filter — same rule as Home: when the user picked a limited
+    # distance range, profiles without geo or beyond it are excluded entirely.
+    hard_limit = user.get('distance_km') if user.get('distance_mode') == 'limited' else None
+    if hard_limit is not None and isinstance(hard_limit, (int, float)):
+        pool = [u for u in pool if (lambda d: d is not None and d <= hard_limit)(_dist_km(user, u))]
     nearby_km = user.get('distance_km') if user.get('distance_mode') == 'limited' else 100
     if not isinstance(nearby_km, (int, float)):
         nearby_km = 100
@@ -38,6 +43,15 @@ async def discover_feed(user: dict = Depends(get_current_user), limit: int = 20)
     scored.sort(key=lambda t: (t[0], t[1], t[2]))
     return [user_public(t[3], viewer=user) for t in scored[:limit]]
 
+@api.get("/search/refresh")
+async def search_refresh(user: dict = Depends(get_current_user), limit: int = 25):
+    """Lightweight pool refresh for the Search/Discovery cycle.
+    Called by the frontend on manual Refresh AND automatically whenever the
+    user changes Distance/Age filter settings. Same logic as /discover/feed:
+    age + distance hard filters applied first, liked users permanently excluded,
+    skipped users cycle back in."""
+    return await discover_feed(user=user, limit=limit)
+
 @api.get("/home/feed")
 async def home_feed(user: dict = Depends(get_current_user), limit: int = 6, skip: int = 0):
     """Home page (grid). HARD-filters by the user's selected distance range
@@ -49,7 +63,7 @@ async def home_feed(user: dict = Depends(get_current_user), limit: int = 6, skip
          4. Recently came Online (online_at DESC)
          5. Offline + Nearby
          6. Offline (any)"""
-    pool = await _base_candidates(user, pool_limit=800, exclude_liked=False)
+    pool = await _base_candidates(user, pool_limit=800, exclude=("pass",))
     # Liked profiles stay visible on Home — flag them so the UI can show a
     # disabled "Liked ✓" state instead of removing the card.
     liked_ids = {s['to_user'] for s in await db.likes.find(
@@ -126,6 +140,13 @@ async def like_user(target_id: str, user: dict = Depends(get_current_user)):
         except Exception as e:
             logger.warning(f"[push] match notify failed: {e}")
     return {"ok": True, "match": is_match, "target": user_public(target, viewer=user)}
+
+@api.delete("/like/{target_id}")
+async def unlike_user(target_id: str, user: dict = Depends(get_current_user)):
+    """Remove a like. The target re-enters the user's Search cycle on the next
+    pool fetch. Existing match is kept (match is its own record)."""
+    res = await db.likes.delete_one({"from_user": user['user_id'], "to_user": target_id, "type": "like"})
+    return {"ok": True, "removed": res.deleted_count > 0}
 
 @api.post("/pass/{target_id}")
 async def pass_user(target_id: str, user: dict = Depends(get_current_user)):

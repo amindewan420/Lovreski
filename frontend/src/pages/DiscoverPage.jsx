@@ -3,8 +3,9 @@ import { api } from "@/lib/api";
 import { MobileShell } from "@/components/lovreski/Shell";
 import { MatchCelebration } from "@/components/lovreski/MatchCelebration";
 import { motion, AnimatePresence, useMotionValue, useTransform } from "framer-motion";
-import { Heart, X, Star, MessageCircle, MapPin, ShieldCheck, Crown } from "lucide-react";
+import { Heart, X, Star, MessageCircle, MapPin, ShieldCheck, Crown, RefreshCw } from "lucide-react";
 import { toast } from "sonner";
+import { FILTER_SIG_KEY } from "@/lib/filterSync";
 import { Link } from "react-router-dom";
 
 const SwipeCard = ({ user, onSwipe, top }) => {
@@ -57,15 +58,30 @@ export default function DiscoverPage() {
   const [feed, setFeed] = useState([]);
   const [loading, setLoading] = useState(true);
   const [matchUser, setMatchUser] = useState(null);
+  const sigRef = useRef(null);
 
   const load = async () => {
+    setLoading(true);
     try {
-      const { data } = await api.get("/discover/feed?limit=25");
-      if (data.length === 0) { try { await api.post("/demo/seed"); } catch {}; const r = await api.get("/discover/feed?limit=25"); setFeed(r.data); }
+      const { data } = await api.get("/search/refresh?limit=25");
+      if (data.length === 0) { try { await api.post("/demo/seed"); } catch {}; const r = await api.get("/search/refresh?limit=25"); setFeed(r.data); }
       else setFeed(data);
+      sigRef.current = localStorage.getItem(FILTER_SIG_KEY);
     } finally { setLoading(false); }
   };
   useEffect(() => { load(); }, []);
+
+  // Auto-refresh when the user changed Distance/Age filters in Settings.
+  // Fires on window focus (returning from /settings) — compares the stamped
+  // filter signature with the one the current pool was built with.
+  useEffect(() => {
+    const onFocus = () => {
+      const sig = localStorage.getItem(FILTER_SIG_KEY);
+      if (sigRef.current && sig && sig !== sigRef.current) load();
+    };
+    window.addEventListener("focus", onFocus);
+    return () => window.removeEventListener("focus", onFocus);
+  }, []);
 
   const act = async (kind) => {
     const u = feed[feed.length - 1];
@@ -79,14 +95,24 @@ export default function DiscoverPage() {
         await api.post(`/pass/${u.user_id}`);
       }
     } catch { toast.error("Ошибка"); }
-    if (feed.length <= 3) load();
+    if (feed.length <= 3) load();  // cycle: skipped users come back, liked stay out
   };
 
   return (
     <MobileShell>
-      <header className="px-4 pt-4 pb-2">
-        <h1 className="font-display font-black text-2xl tracking-tight">Поиск</h1>
-        <p className="text-xs text-muted-foreground">Смахните вправо, если нравится</p>
+      <header className="px-4 pt-4 pb-2 flex items-start justify-between">
+        <div>
+          <h1 className="font-display font-black text-2xl tracking-tight">Поиск</h1>
+          <p className="text-xs text-muted-foreground">Смахните вправо, если нравится</p>
+        </div>
+        <button
+          data-testid="btn-refresh-feed"
+          onClick={load}
+          aria-label="Обновить ленту"
+          className="p-2.5 rounded-full bg-muted hover:bg-muted/70 transition-colors duration-200"
+        >
+          <RefreshCw className="w-5 h-5" />
+        </button>
       </header>
       <div className="relative mx-4 mt-2" style={{ height: "70vh" }}>
         {loading ? (

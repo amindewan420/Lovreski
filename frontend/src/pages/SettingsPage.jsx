@@ -9,6 +9,7 @@ import { useI18n, getLangMeta } from "@/lib/i18n";
 import LanguageSheet from "@/components/lovreski/LanguageSheet";
 import { Slider } from "@/components/ui/slider";
 import { usePushNotifications } from "@/hooks/usePushNotifications";
+import { FILTER_SIG_KEY } from "@/lib/filterSync";
 
 const LEGAL = {
   terms: {
@@ -43,7 +44,19 @@ export default function SettingsPage() {
     setInstalled(window.matchMedia("(display-mode: standalone)").matches);
   }, []);
 
-  const save = async (payload) => { try { await api.put("/profile", payload); await refresh(); toast.success("Сохранено"); } catch { toast.error("Ошибка"); } };
+  const save = async (payload) => {
+    try {
+      await api.put("/profile", payload);
+      await refresh();
+      // Stamp the filter signature so Discover auto-refreshes when filters change
+      const f = { ...form, ...payload };
+      localStorage.setItem(FILTER_SIG_KEY, JSON.stringify({
+        age_min: f.age_min ?? 18, age_max: f.age_max ?? 85,
+        distance_mode: f.distance_mode || "unlimited", distance_km: f.distance_km ?? 50,
+      }));
+      toast.success("Сохранено");
+    } catch { toast.error("Ошибка"); }
+  };
 
   const install = () => {
     if (installed) return toast.info("Приложение уже установлено");
