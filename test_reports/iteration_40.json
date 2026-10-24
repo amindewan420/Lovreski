@@ -1,0 +1,35 @@
+{
+  "summary": "Retested the 3 iter39 security fixes and ran a quick regression. Backend: 18/18 new iter40 tests pass, and 31/31 iter39 admin-auth tests pass after updating them to the new login_attempts collection. (1) Admin login lockout: 5 fails with a different spoofed X-Forwarded-For on each attempt still gives 429. All spoofed requests fall into one IP bucket (the rightmost hop). The global counter locks at 20 fails, and a successful login clears both keys. (2) /api/auth/login: 10 wrong passwords for a fresh user give 429 even with the correct password. A success clears the counter. The lockout is per email. Wrong passwords for admin@ are now counted. (3) A normal user JWT for admin@lovreski.ru gets 401 on /api/admin/* and on POST /api/demo/seed (seed returns 200 with an admin-panel token). It gets 403 when deleting another user's message for everyone and 403 past the 1h window on its own message. It gets 403 on /api/files/{id} and /files/{id}/signed for other users' receipts. The paywall applies: coins are deducted on the 3rd message. UI (Playwright): admin login shows an error on a wrong password, login succeeds, auto-login works on reload and on /admin/login, logout clears the token, and /admin/dashboard redirects to /admin/login after logout. Normal login works for testuser1, match_a and admin@ (no admin link is shown). Refund receipt images load (9/9) and the pending receipt viewer image loads.",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {"endpoint": "/api/auth/login, /api/auth/me", "issue": "The admin@lovreski.ru users doc still has is_admin:true. make_jwt embeds is_admin=True in the user JWT (the backend ignores it), and /auth/me returns is_admin:true. push.broadcast_to_admins sends admin push notifications (for example new receipts) to this regular account's devices. The account is also hidden from the feed and stats. Suggest setting is_admin:false on the doc and sending admin pushes another way."},
+      {"endpoint": "/api/auth/login", "issue": "Returns 404 'Account not found' for an unknown email and 401 for a wrong password, so attackers can tell which emails are registered. Unknown emails are also not counted toward the lockout."},
+      {"endpoint": "/api/files/{id} (S3 docs)", "issue": "Admin receipt URLs come back as direct public s3.twcstorage.ru URLs, and /api/files 302-redirects to that public URL. Anyone who has the URL can read the receipt, so the signed-URL check does not protect S3 files. This was a design choice from before this iteration."}
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [
+      {"component": "ChatRoomPage", "issue": "Because user.is_admin is still true for admin@lovreski.ru, the chat shows the delete and delete-for-everyone buttons on other people's messages. The backend now rejects these with 403, so the user sees a button that always fails.", "selector": "[data-testid^='delete-']", "priority": "LOW"},
+      {"component": "AdminPage Verification tab", "issue": "Pending receipt thumbnails only render an image when the URL starts with 'data:image/'. Receipts stored in S3 as .jpg URLs therefore show a 'PDF' placeholder (19 of 19). Clicking one opens the viewer, and the image loads there.", "selector": "[data-testid^='pending-'] button", "priority": "LOW"}
+    ],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": ["/app/backend/tests/test_security_fixes_iter40.py", "/app/backend/tests/test_admin_auth_iter39.py", "/app/test_reports/pytest/pytest_iter40.xml"],
+  "action_items": [
+    "Set is_admin:false on the admin@lovreski.ru users doc, or stop reading users.is_admin in make_jwt, /auth/me, ChatRoomPage and push.broadcast_to_admins, so the regular account has no admin flags at all",
+    "AdminPage pending thumbnails: also render <img> for http(s) URLs with image extensions, not only data:image/",
+    "Optional: return the same 401 for unknown email and wrong password in /api/auth/login"
+  ],
+  "critical_code_review_comments": [
+    "client_ip trusts the rightmost XFF hop. In preview every request shares one hop, so the 5-fail per-IP lockout effectively applies to everyone, and an attacker could lock the real admin out for 15 min (the global 20-fail lock works the same way). This is an accepted tradeoff, but it is worth documenting.",
+    "register_failed_login does a read then a write without atomicity, so parallel requests can slightly undercount fails. Use $inc with an upsert instead."
+  ],
+  "updated_files": ["/app/backend/tests/test_admin_auth_iter39.py (reset fixture now uses login_attempts)", "/app/backend/tests/test_security_fixes_iter40.py (new)"],
+  "success_rate": {"backend": "100% (49/49)", "frontend": "100% of requested flows"},
+  "seed_data_creation": "Temporary TEST_iter40_* users and messages were created and then deleted. POST /api/demo/seed was called once with an admin token. db.login_attempts was reset to 0 at the end.",
+  "retest_needed": false,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "Run the lockout tests serially: pytest tests/test_security_fixes_iter40.py tests/test_admin_auth_iter39.py -o addopts=\"\". Lockout records are in db.login_attempts with keys admin-ip:<ip>, admin-global and user:<email>. Always run deleteMany({}) on it afterwards. The admin@ user account has coins 999999 and is_premium."
+}

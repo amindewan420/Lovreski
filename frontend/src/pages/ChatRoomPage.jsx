@@ -257,9 +257,8 @@ export default function ChatRoomPage() {
 
   const canDeleteEveryone = (m) => {
     if (!user) return false;
-    if (m.from_user !== user.user_id && !user.is_admin) return false;
+    if (m.from_user !== user.user_id) return false;
     if (m.deleted) return false;
-    if (user.is_admin) return true;
     const age = (Date.now() - new Date(m.created_at).getTime()) / 1000;
     return age <= 3600;
   };
@@ -510,7 +509,7 @@ export default function ChatRoomPage() {
                     <div className={`flex gap-2 mt-0.5 text-[10px] text-slate-400 opacity-0 group-hover:opacity-100 transition-opacity ${mine ? "justify-end" : ""}`}>
                       <button onClick={() => setReply(m)} data-testid={`reply-${m.message_id}`}>{t("chat.reply")}</button>
                       {!mine && m.text && <button onClick={() => translate(m)} data-testid={`translate-${m.message_id}`}>{t("chat.translate")}</button>}
-                      {(mine || user?.is_admin) && <button onClick={() => setActionTarget(m)} data-testid={`delete-${m.message_id}`}>{t("chat.delete_me")}</button>}
+                      {mine && <button onClick={() => setActionTarget(m)} data-testid={`delete-${m.message_id}`}>{t("chat.delete_me")}</button>}
                     </div>
                   )}
                 </div>
@@ -702,7 +701,7 @@ export default function ChatRoomPage() {
               >
                 <Reply className="w-4 h-4" /> {t("chat.reply")}
               </button>
-              {(actionTarget.from_user === user?.user_id || user?.is_admin) && (
+              {actionTarget.from_user === user?.user_id && (
                 <>
                   <button data-testid="delete-me-btn" onClick={() => doDelete("me")} className="w-full py-3 rounded-2xl bg-slate-100 text-slate-800 font-medium text-sm mb-2 flex items-center justify-center gap-2">
                     <Trash2 className="w-4 h-4" /> {t("chat.delete_me")}

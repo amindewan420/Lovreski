@@ -24,9 +24,9 @@ def H(t):
 
 @pytest.fixture(autouse=True)
 def reset_attempts():
-    mdb.admin_login_attempts.delete_many({})
+    mdb.login_attempts.delete_many({})
     yield
-    mdb.admin_login_attempts.delete_many({})
+    mdb.login_attempts.delete_many({})
 
 
 @pytest.fixture(scope="module")

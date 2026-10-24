@@ -537,7 +537,7 @@ export default function AdminPage() {
               <div key={s.submission_id} data-testid={`pending-${s.submission_id}`} className="p-4 rounded-2xl bg-card border border-border">
                 <div className="flex gap-4">
                   <button onClick={() => setViewImg(s.receipt_data_url)} className="w-24 h-24 rounded-xl overflow-hidden bg-muted flex-shrink-0">
-                    {s.receipt_data_url?.startsWith("data:image/") ? (
+                    {(s.receipt_data_url?.startsWith("data:image/") || /\.(jpe?g|png|webp|gif)(\?|$)/i.test(s.receipt_data_url || "")) ? (
                       <img src={s.receipt_data_url} alt="receipt" className="w-full h-full object-cover" data-testid={`receipt-img-${s.submission_id}`} />
                     ) : (
                       <div className="w-full h-full flex items-center justify-center text-xs text-muted-foreground">PDF</div>

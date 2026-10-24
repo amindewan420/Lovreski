@@ -106,3 +106,15 @@ Currently on Emergent (React + FastAPI + MongoDB). For amvera.cloud deployment, 
 ## Backlog
 - P1: Voice hold-to-record button in chat
 - P2: Admin panel mobile polish
+
+## 2026-06 — Iteration 39/40: Separate secure Admin Login
+- Admin panel credentials ONLY from env `ADMIN_EMAIL` / `ADMIN_PASSWORD` (+ `JWT_SECRET`, no code defaults).
+- `POST /api/admin/login` (hmac compare, 1s delay on fail, lockout 5 fails/IP + 20 global → 15 min, IP = rightmost X-Forwarded-For hop), `GET /api/admin/verify-token`, `POST /api/admin/logout` (revokes `admin_sessions.jti`).
+- Admin JWT: `type:"admin"`, no exp, bound to a fingerprint of the env creds (changing .env logs out all admin devices). `verify_admin` (= `require_admin`) guards all admin routes + `/demo/seed`; user tokens rejected.
+- Normal `/api/auth/login` no longer has the special admin branch; added per-email lockout (10 fails → 15 min). The is_admin user account has no admin powers on user endpoints (chat delete, files, paywall).
+- Frontend: `/admin/login` (AdminLogin.jsx), `/admin/dashboard` wrapped in `AdminProtectedRoute` (silent verify, auto-login), `lib/adminApi.js` (token key `lovreski_admin_token`, 401 → login), red "Выйти" logout button. Removed admin buttons from Settings & Profile; Landing never routes to /admin.
+- Tested: iteration_39 + iteration_40 (backend 49/49, frontend 100%).
+
+## Known / backlog
+- Receipts in S3 are public-read URLs (pre-existing design) — consider private bucket + presigned URLs.
+- /api/auth/login reveals whether an email is registered (404 vs 401) — product UX choice.

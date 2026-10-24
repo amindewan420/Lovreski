@@ -195,10 +195,10 @@ async def verify_admin(authorization: Optional[str] = Header(None)) -> dict:
     if not sess:
         raise HTTPException(status_code=401, detail="Admin session ended")
     doc = await db.users.find_one({"email": ADMIN_EMAIL.lower()}, {"_id": 0, "password_hash": 0})
-    admin = doc or {"user_id": "admin", "email": ADMIN_EMAIL.lower(), "name": "Admin"}
-    admin["is_admin"] = True
-    admin["admin_jti"] = payload["jti"]
-    return admin
+    ident = doc or {"user_id": "admin", "email": ADMIN_EMAIL.lower(), "name": "Admin"}
+    ident["is_admin"] = True
+    ident["admin_jti"] = payload["jti"]
+    return ident
 
 require_admin = verify_admin
 
