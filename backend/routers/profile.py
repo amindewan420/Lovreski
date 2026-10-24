@@ -23,6 +23,16 @@ async def update_profile(body: ProfileUpdate, user: dict = Depends(get_current_u
         age = calc_age(update['dob'])
         if age < 18:
             raise HTTPException(status_code=400, detail="Возраст должен быть 18+")
+    # Age range filter bounds: 18–85, min ≤ max
+    if 'age_min' in update or 'age_max' in update:
+        amin = update.get('age_min', user.get('age_min') or 18)
+        amax = update.get('age_max', user.get('age_max') or 85)
+        amin = max(18, min(85, int(amin)))
+        amax = max(18, min(85, int(amax)))
+        if amin > amax:
+            raise HTTPException(status_code=400, detail="Минимальный возраст не может быть больше максимального")
+        if 'age_min' in update: update['age_min'] = amin
+        if 'age_max' in update: update['age_max'] = amax
     update['last_active'] = iso(now_utc())
     await db.users.update_one({"user_id": user['user_id']}, {"$set": update})
     fresh = await db.users.find_one({"user_id": user['user_id']}, {"_id": 0, "password_hash": 0})

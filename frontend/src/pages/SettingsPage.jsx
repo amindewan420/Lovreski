@@ -7,6 +7,7 @@ import { toast } from "sonner";
 import { ChevronRight, User, Search, Crown, Bell, Languages, FileText, Download, Shield, LogOut, BellRing, BellOff } from "lucide-react";
 import { useI18n, getLangMeta } from "@/lib/i18n";
 import LanguageSheet from "@/components/lovreski/LanguageSheet";
+import { Slider } from "@/components/ui/slider";
 import { usePushNotifications } from "@/hooks/usePushNotifications";
 
 const LEGAL = {
@@ -88,12 +89,28 @@ export default function SettingsPage() {
               <option value="female">{t("settings.show_female")}</option><option value="male">{t("settings.show_male")}</option><option value="both">{t("settings.show_both")}</option>
             </select>
           </Row>
-          <Row label={`Возраст: ${form.age_min || 18}–${form.age_max || 60}`}>
-            <div className="flex gap-1">
-              <input type="number" min={18} max={80} value={form.age_min || 18} onChange={(e) => setForm({ ...form, age_min: +e.target.value })} onBlur={() => save({ age_min: form.age_min })} className="w-14 bg-muted rounded px-1 text-right" />
-              <input type="number" min={18} max={80} value={form.age_max || 60} onChange={(e) => setForm({ ...form, age_max: +e.target.value })} onBlur={() => save({ age_max: form.age_max })} className="w-14 bg-muted rounded px-1 text-right" />
+          <div className="px-4 py-3" data-testid="age-range-block">
+            <div className="flex items-center justify-between mb-3">
+              <span className="text-sm text-slate-700">Возраст</span>
+              <span data-testid="age-range-label" className="text-sm font-semibold text-primary">
+                {form.age_min || 18}–{form.age_max || 85}
+              </span>
             </div>
-          </Row>
+            <Slider
+              min={18}
+              max={85}
+              step={1}
+              minStepsBetweenThumbs={1}
+              value={[form.age_min || 18, form.age_max || 85]}
+              onValueChange={([a, b]) => setForm({ ...form, age_min: a, age_max: b })}
+              onValueCommit={([a, b]) => save({ age_min: a, age_max: b })}
+              data-testid="age-range-slider"
+              aria-label="Возраст"
+            />
+            <div className="flex justify-between text-[10px] text-slate-400 mt-1.5">
+              <span>18</span><span>85</span>
+            </div>
+          </div>
           <Row label={t("settings.distance")}>
             <select data-testid="distance-mode" value={form.distance_mode || "unlimited"} onChange={(e) => { setForm({ ...form, distance_mode: e.target.value }); save({ distance_mode: e.target.value }); }} className="bg-transparent text-right outline-none">
               <option value="limited">{t("settings.distance_near")}</option><option value="unlimited">{t("settings.distance_world")}</option>

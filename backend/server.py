@@ -581,7 +581,7 @@ def _dist_km(viewer: dict, u: dict) -> Optional[float]:
     return haversine_km(viewer['lat'], viewer['lng'], u['lat'], u['lng'])
 
 async def _base_candidates(user: dict, pool_limit: int = 500) -> list[dict]:
-    """Common candidate pool: gender filter, no blocked/self, no already-swiped, no admins."""
+    """Common candidate pool: gender + age-range filter, no blocked/self, no already-swiped, no admins."""
     show_me = user.get('show_me', 'both')
     gender_q: dict = {"gender": show_me} if show_me in ('male', 'female') else {}
     blocked = user.get('blocked', []) + [user['user_id']]
@@ -589,7 +589,13 @@ async def _base_candidates(user: dict, pool_limit: int = 500) -> list[dict]:
     already = {s['to_user'] for s in swipes}
     already.update(blocked)
     q = {"user_id": {"$nin": list(already)}, "is_admin": {"$ne": True}, "deactivated": {"$ne": True}, **gender_q}
-    return await db.users.find(q, {"_id": 0, "password_hash": 0}).limit(pool_limit).to_list(pool_limit)
+    pool = await db.users.find(q, {"_id": 0, "password_hash": 0}).limit(pool_limit).to_list(pool_limit)
+    # Age-range filter (from Settings → Поиск → Возраст)
+    amin = user.get('age_min') or 18
+    amax = user.get('age_max') or 85
+    if amin != 18 or amax != 85:
+        pool = [u for u in pool if amin <= calc_age(u.get('dob', '')) <= amax]
+    return pool
 def chat_id(a: str, b: str) -> str:
     return "chat_" + "_".join(sorted([a, b]))
 
