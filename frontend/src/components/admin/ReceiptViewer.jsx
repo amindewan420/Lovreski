@@ -10,7 +10,8 @@ import { API_BASE } from "@/lib/api";
 
 pdfjs.GlobalWorkerOptions.workerSrc = new URL("pdfjs-dist/build/pdf.worker.min.mjs", import.meta.url).toString();
 
-export const receiptKind = (src = "") => {
+export const receiptKind = (src) => {
+  if (!src || typeof src !== "string") return "unknown";
   if (src.startsWith("data:")) return src.startsWith("data:application/pdf") ? "pdf" : "image";
   const path = src.split("?")[0].toLowerCase();
   if (path.endsWith(".pdf")) return "pdf";
@@ -102,7 +103,7 @@ export const ReceiptViewer = ({ src, onClose }) => {
   const fail = (msg = "Unable to load receipt") => setState((s) => ({ ...s, error: msg }));
 
   return (
-    <div data-testid="receipt-viewer" className="fixed inset-0 z-[95] bg-black/95 flex flex-col">
+    <div data-testid="receipt-viewer" className="fixed inset-0 z-[95] bg-black flex flex-col">
       <div className="flex items-center gap-2 px-3 sm:px-5 py-3 border-b border-white/10 text-white">
         <FileText className="w-5 h-5 opacity-70" />
         <p className="text-sm font-semibold mr-auto">{isPdf ? "PDF чек" : "Чек"}</p>
@@ -138,12 +139,20 @@ export const ReceiptViewer = ({ src, onClose }) => {
 };
 
 export const ReceiptThumb = ({ src, onOpen, testid }) => {
-  const kind = receiptKind(src);
+  const [broken, setBroken] = useState(false);
+  const kind = broken ? "unknown" : receiptKind(src);
+  if (!src) {
+    return (
+      <div data-testid={testid ? `${testid}-missing` : undefined} className="w-24 h-24 flex-shrink-0 rounded-xl bg-muted flex flex-col items-center justify-center text-muted-foreground">
+        <AlertTriangle className="w-6 h-6" /><span className="text-[10px] font-semibold mt-1 text-center px-1">Файл не приложен</span>
+      </div>
+    );
+  }
   return (
     <div className="flex flex-col gap-1.5 flex-shrink-0">
       <button data-testid={testid} onClick={onOpen} className="w-24 h-24 rounded-xl overflow-hidden bg-muted flex items-center justify-center">
         {kind === "image" ? (
-          <img src={src} alt="receipt" className="w-full h-full object-cover" />
+          <img src={src} alt="receipt" onError={() => setBroken(true)} className="w-full h-full object-cover" />
         ) : (
           <div className="flex flex-col items-center text-rose-500"><FileText className="w-8 h-8" /><span className="text-[10px] font-bold mt-1">{kind === "pdf" ? "PDF" : "ФАЙЛ"}</span></div>
         )}

@@ -1,5 +1,6 @@
 """Admin dashboard, payments, user management, settings routes."""
-from fastapi import HTTPException, Depends, Request, Response
+from fastapi import HTTPException, Depends, Request
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field, EmailStr
 from typing import Optional
 from datetime import datetime, timedelta, timezone
@@ -185,7 +186,7 @@ async def admin_receipt_file(src: str, download: int = 0, _: dict = Depends(requ
     if not key or "/support_receipt/" not in f"/{key}" and "/refund_receipt/" not in f"/{key}":
         raise HTTPException(status_code=400, detail="Unsupported receipt URL")
     try:
-        obj = await _cloud.get_object(key)
+        obj = await _cloud.open_object(key)
     except Exception as e:
         code = getattr(e, "response", {}).get("Error", {}).get("Code", "")
         if code in ("NoSuchKey", "404", "NotFound"):
@@ -194,8 +195,10 @@ async def admin_receipt_file(src: str, download: int = 0, _: dict = Depends(requ
         raise HTTPException(status_code=502, detail="Unable to load receipt")
     name = key.rsplit("/", 1)[-1]
     disp = "attachment" if download else "inline"
-    return Response(content=obj["body"], media_type=obj["content_type"],
-                    headers={"Content-Disposition": f'{disp}; filename="receipt_{name}"', "Cache-Control": "private, max-age=300"})
+    headers = {"Content-Disposition": f'{disp}; filename="receipt_{name}"', "Cache-Control": "private, max-age=300"}
+    if obj.get("length"):
+        headers["Content-Length"] = str(obj["length"])
+    return StreamingResponse(obj["stream"], media_type=obj["content_type"], headers=headers)
 
 @api.get("/admin/support/pending")
 async def admin_pending(_: dict = Depends(require_admin)):

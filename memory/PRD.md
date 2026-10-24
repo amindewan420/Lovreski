@@ -126,3 +126,10 @@ Currently on Emergent (React + FastAPI + MongoDB). For amvera.cloud deployment, 
 - Direct push to one user (`POST /api/admin/push/user/{id}`, Push button on user cards) + in-app notification; push history log (`push_log`, `GET /api/admin/push/history`) for direct + announcements.
 - Payment result notifications to users now in Russian (receipt approve/reject, refund decision).
 - Tested: iteration_41 (backend 22/22, frontend 100%).
+
+## 2026-06 — Iteration 42: PDF receipts in Admin Panel
+- Root causes: viewer used `<img>` for PDFs; S3 uploads had `Content-Encoding: aws-chunked` (boto3 default checksums) — fixed via `request_checksum_calculation="when_required"` + `ContentDisposition=inline`.
+- `ReceiptViewer.jsx`: full-screen in-panel viewer (react-pdf/pdf.js canvas for PDF, image preview), loading % indicator, 'File not found' / 'Unable to load receipt' errors, Open-in-new-tab + Download; `ReceiptThumb` with PDF tile + "Скачать" fallback; used in Verification (pending + history) and Refund Requests.
+- `GET /api/admin/receipt-file?src=&download=` — admin-only same-origin streaming proxy for S3 receipts (404 File not found).
+- Upload validation (client `lib/receiptFile.js` + server `validate_receipt_data_url`): JPG/PNG/WEBP/PDF, ≤10 MB, PDF magic bytes. Refund form now accepts PDF.
+- Tested: iteration_42 (backend 20/20, frontend all flows incl. 9 MB PDF, mobile).

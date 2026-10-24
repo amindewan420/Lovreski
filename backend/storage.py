@@ -144,11 +144,20 @@ def key_from_public_url(url: str) -> Optional[str]:
     return None
 
 
-async def get_object(key: str) -> dict:
-    """Fetch an object → {body: bytes, content_type, length}. Raises on missing."""
+async def open_object(key: str) -> dict:
+    """Open an object for streaming → {stream: async iterator, content_type, length}. Raises on missing."""
     client = _client()
-    def _do():
-        r = client.get_object(Bucket=_bucket(), Key=key)
-        return {"body": r["Body"].read(), "content_type": r.get("ContentType") or "application/octet-stream",
-                "length": r.get("ContentLength")}
-    return await asyncio.to_thread(_do)
+    r = await asyncio.to_thread(client.get_object, Bucket=_bucket(), Key=key)
+    body = r["Body"]
+
+    async def _stream(chunk: int = 256 * 1024):
+        try:
+            while True:
+                data = await asyncio.to_thread(body.read, chunk)
+                if not data:
+                    break
+                yield data
+        finally:
+            body.close()
+    return {"stream": _stream(), "content_type": r.get("ContentType") or "application/octet-stream",
+            "length": r.get("ContentLength")}

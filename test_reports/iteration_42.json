@@ -1,0 +1,40 @@
+{
+  "summary": "Iteration 42: Tested the fix for PDF receipts not opening in the admin panel, backend and frontend. Backend: 20/20 pytest checks passed. They cover upload validation (txt 400, fake PDF 400, >10MB 413, refund txt 400), PDF/PNG/9MB PDF uploads, refund PDF+image, S3 headers (application/pdf, no aws-chunked), the admin proxy (inline/attachment, image, 9MB, refund PDF, user token 401, foreign URL 400, non-receipt kind 400, path traversal 400, missing object 404 'File not found') and the receipt rate limit of 5/hour. The proxy also serves an old aws-chunked PDF correctly. Frontend: found one CRITICAL crash and applied a one-line null-guard. A legacy pending receipt with receipt_data_url=null (sub_963ff6be3701, SBP webhook doc) made ReceiptThumb -> receiptKind(null) throw 'Cannot read properties of null (reading startsWith)', which blanked the whole Verification tab. After the fix, all of these were verified on desktop: PDF thumb tile, image thumb, Скачать buttons (PDF/JPG downloads), PDF rendered to canvas, open-tab popup, viewer download, close, image viewer, 9MB PDF with loading progress (3%..41%.. seen under CDP throttling), 'File not found' error state for a missing S3 object, error toast on thumb download of a missing file, history-receipt opening the viewer, and the Refunds tab (PDF + image thumbs, viewer, downloads). On mobile 390x800 the viewer is full screen (390x800), the PDF canvas is 374px wide with no horizontal overflow, and admin-mtab-support works. User side: on the Premium receipt-file-input and the Settings refund-file-input, .txt shows the toast 'Только JPG, PNG или PDF', 11MB shows 'Файл больше 10 МБ', and PDF submits with 200 plus a success UI.",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {"endpoint": "GET /api/admin/receipt-file", "issue": "Backend sets Cache-Control 'private, max-age=300' but the ingress overrides it to no-store, so there is no caching (cosmetic). The whole object is read into memory before responding, so there is no streaming for large files: about 2.5s TTFB for 9MB."},
+      {"endpoint": "RefundBody / AdminRejectBody", "issue": "Duplicate Pydantic models exist in both server.py and routers/admin.py (DRY violation)."}
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [
+      {"component": "ReceiptThumb/receiptKind", "issue": "FIXED by testing agent: receiptKind(src = '') default param does not handle null, so a legacy null receipt_data_url crashed the entire admin Verification tab with a runtime error overlay.", "selector": "[data-testid^=receipt-thumb-]", "priority": "CRITICAL"},
+      {"component": "ReceiptThumb (null src)", "issue": "Clicking the thumb of a submission with null receipt_data_url does nothing, because ReceiptViewer returns null for a falsy src. It should open the viewer with a 'File not found' error. The thumb's Скачать also only gives the generic 'Unable to load receipt'.", "selector": "[data-testid=receipt-thumb-sub_963ff6be3701]", "priority": "LOW"},
+      {"component": "ReceiptThumb image", "issue": "No onError fallback for broken image thumbnails. A legacy item (Legacy QA 1785849302) shows a broken image with alt text 'receipt'. Some legacy receipts render as solid black thumbs; this is a data issue.", "selector": "[data-testid^=receipt-thumb-] img", "priority": "LOW"}
+    ],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "ReceiptViewer overlay", "issues": ["bg-black/95 lets the admin header text ('Lovreski Admin') and the mobile bottom nav show faintly through, behind the 'PDF чек' title. Use solid bg-black or add backdrop-blur."]}
+    ]
+  },
+  "test_report_links": ["/app/backend/tests/test_receipt_pdf_iter42.py", "/app/test_reports/pytest/pytest_iter42.xml"],
+  "action_items": [
+    "Keep/verify the null-guard in receiptKind (ReceiptViewer.jsx). Also guard fetchReceiptBlob/fileName against a null src, and make thumb click/download on a null src show 'File not found'.",
+    "Add an onError fallback (FileText tile) to the image <img> in ReceiptThumb.",
+    "Optional: make the viewer background fully opaque to avoid header bleed-through.",
+    "Optional: deduplicate RefundBody/AdminRejectBody between server.py and routers/admin.py."
+  ],
+  "critical_code_review_comments": [
+    "receiptKind default parameter '= \"\"' does not cover null values coming from Mongo. Any null field crashed the admin tab (fixed).",
+    "admin_receipt_file buffers the entire S3 body in memory (r['Body'].read()). This is acceptable at a 10MB cap, but StreamingResponse would be better.",
+    "The operator precedence in `if not key or A not in x and B not in x` is correct but hard to read. Add parentheses."
+  ],
+  "updated_files": ["/app/frontend/src/components/admin/ReceiptViewer.jsx", "/app/backend/tests/test_receipt_pdf_iter42.py"],
+  "success_rate": {"backend": "100% (20/20)", "frontend": "95% (1 critical crash fixed in place; 2 low issues remain)"},
+  "seed_data_creation": "All test_rcpt_* users and their receipts/refunds were deleted after testing, as was the inserted sub_TESTmissing01 doc. One legacy test submission was rejected via API to create history (it was deleted with the cleanup).",
+  "retest_needed": false,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "Run the pytest with `-n 0` (pytest.ini enables xdist; the tests share module STATE). Files: /tmp/receipt.pdf, /tmp/big.pdf (9MB), /tmp/huge.pdf (11MB), /tmp/note.txt. S3 public base: https://s3.twcstorage.ru/600faa0a-6355-47f3-8485-fb1ee59ea330. Legacy pending sub_963ff6be3701 has a null receipt_data_url; keep it as a regression case. Old aws-chunked PDF: lovreski/support_receipt/e1fe790df92748648211b6b3a9fdf4cb.pdf (the proxy serves it OK).",
+  "rca of the issue": "Null crash: AdminPage maps pendingSubs -> ReceiptThumb(src=s.receipt_data_url) -> receiptKind(null). The JS default param only applies to undefined, so null.startsWith threw during render and unmounted the tree. Mitigation: early return 'unknown' for a falsy or non-string src."
+}
