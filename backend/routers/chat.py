@@ -37,6 +37,19 @@ async def list_chats(user: dict = Depends(get_current_user)):
         {"$group": {"_id": "$chat_id", "n": {"$sum": 1}}},
     ]
     unread_by_chat = {row["_id"]: row["n"] async for row in db.messages.aggregate(pipeline)}
+    partner_counts = {}
+    if not user.get('is_premium'):
+        pc = [{"$match": {"to_user": uid, "chat_id": {"$in": list(chats.keys())}, "deleted": {"$ne": True}}},
+              {"$group": {"_id": "$chat_id", "n": {"$sum": 1}}}]
+        partner_counts = {row["_id"]: row["n"] async for row in db.messages.aggregate(pc)}
+    for cid, last in chats.items():
+        expire_location(last)
+        if last.get('deleted'):
+            last.update({"text": "", "media_url": None, "file_name": None, "gift_key": None, "location": None})
+        elif last.get('from_user') != uid and partner_counts.get(cid, 0) > FREE_MSGS:
+            last.update({"text": "", "media_url": None, "location": None, "locked": True})
+        if last.get('media_url'):
+            last['media_url'] = sign_file_url(last['media_url'])
     # 4) Assemble result
     result = []
     for cid, last in chats.items():

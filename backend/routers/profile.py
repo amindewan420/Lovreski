@@ -34,6 +34,10 @@ async def update_profile(body: ProfileUpdate, user: dict = Depends(get_current_u
             raise HTTPException(status_code=400, detail="Минимальный возраст не может быть больше максимального")
         if 'age_min' in update: update['age_min'] = amin
         if 'age_max' in update: update['age_max'] = amax
+    if 'notif_push' in update:
+        allowed = ("messages", "likes", "matches", "visits", "announcements")
+        current = user.get('notif_push') or {}
+        update['notif_push'] = {k: bool(update['notif_push'].get(k, current.get(k, True))) for k in allowed}
     update['last_active'] = iso(now_utc())
     await db.users.update_one({"user_id": user['user_id']}, {"$set": update})
     fresh = await db.users.find_one({"user_id": user['user_id']}, {"_id": 0, "password_hash": 0})

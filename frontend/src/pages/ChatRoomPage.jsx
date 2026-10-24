@@ -329,7 +329,7 @@ export default function ChatRoomPage() {
   const shareLocation = () => { setShowTray(false); setShowLocation(true); };
   const sendLocation = async ({ lat, lng, place }) => {
     setShowLocation(false);
-    await send({ kind: "location", lat, lng, place, text: place ? `📍 ${place}` : "" });
+    await send({ kind: "location", lat, lng, place });
   };
 
   // ─── Input auto-grow + typing broadcast ──────────────────────────────
@@ -365,7 +365,9 @@ export default function ChatRoomPage() {
           {other && (
             <>
               <div className="relative">
-                <img src={other.photos?.[0]} alt="" className="w-10 h-10 rounded-full object-cover" />
+                {other.photos?.[0]
+                  ? <img src={other.photos[0]} alt="" className="w-10 h-10 rounded-full object-cover" data-testid="chat-header-avatar" />
+                  : <div data-testid="chat-header-avatar" className="w-10 h-10 rounded-full bg-rose-100 text-rose-600 font-bold flex items-center justify-center no-translate">{(other.name || "?")[0]}</div>}
                 {other.online && <span className="absolute bottom-0 right-0 w-2.5 h-2.5 rounded-full bg-emerald-500 border-2 border-white" />}
               </div>
               <div className="flex-1 min-w-0" onClick={() => nav(`/profile/${other.user_id}`)}>

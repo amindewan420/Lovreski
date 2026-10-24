@@ -93,3 +93,16 @@ Build a complete, production-ready dating web app called "Lovreski" — mobile-f
 
 ## Deploy
 Currently on Emergent (React + FastAPI + MongoDB). For amvera.cloud deployment, see `/app/backend/requirements.txt` + `/app/frontend/package.json`.
+
+## 2026-06 — Iteration 38: Admin-configured Push + Map Location Sharing
+- Firebase config moved from .env to Admin Panel → tab "Push" (`PushConfigTab.jsx`): upload service-account JSON (encrypted in `settings{key:"firebase"}`, validated by real firebase_admin init before saving), Web config fields (Project ID auto-filled, API key, App ID, Sender ID, VAPID, auth domain) with Firebase Console hints, status pill, device count, admin announcement broadcast (in-app + background push).
+- `push.py` now DB-backed (named firebase_admin app, re-inits on config change), data-only messages, per-user prefs (`notif_push`: messages/likes/matches/visits/announcements) checked before each send.
+- Triggers: new like (`discover.py`), match, chat message (offline only), profile visit (`profile_visits`, 6h cooldown), announcements.
+- Frontend: `lib/firebase.js` loads config from `GET /api/push/config`; `PushManager.jsx` (global) silently re-syncs FCM token on login, foreground toasts, SW tap-to-navigate via postMessage, one-time enable prompt. SW updated.
+- Fixed: `notif_push` toggles were never saved (missing in ProfileUpdate) — now whitelisted & persisted.
+- Chat location: `LocationShare.jsx` (Leaflet/OSM picker with draggable pin, place name, safety note), `kind:"location"` messages (1 coin), expire after 24h or immediately on block; expired pins stripped server-side in messages + chat list. Chat list preview also no longer leaks locked/deleted content.
+- Tested: iteration_38 (backend 21/21, frontend all flows) + follow-up fixes verified via curl.
+
+## Backlog
+- P1: Voice hold-to-record button in chat
+- P2: Admin panel mobile polish

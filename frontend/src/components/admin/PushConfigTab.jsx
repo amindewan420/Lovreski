@@ -4,12 +4,12 @@ import { toast } from "sonner";
 import { BellRing, Upload, CheckCircle2, AlertCircle, Trash2, Send, KeyRound } from "lucide-react";
 
 const FIELDS = [
-  { k: "project_id", label: "Project ID", ph: "Firebase Console → ⚙ Project settings → General → Project ID (заполняется из JSON автоматически)" },
-  { k: "api_key", label: "Web API Key", ph: "Project settings → General → Your apps → Web app → SDK setup → apiKey" },
-  { k: "app_id", label: "App ID", ph: "Project settings → General → Your apps → Web app → appId (1:123…:web:abc…)" },
-  { k: "sender_id", label: "Sender ID", ph: "Project settings → Cloud Messaging → Sender ID (messagingSenderId)" },
-  { k: "vapid_key", label: "VAPID key (Web Push certificate)", ph: "Project settings → Cloud Messaging → Web configuration → Web Push certificates → Key pair" },
-  { k: "auth_domain", label: "Auth domain (необязательно)", ph: "<project-id>.firebaseapp.com — по умолчанию подставляется автоматически" },
+  { k: "project_id", ex: "lovreski-12345", label: "Project ID", ph: "Firebase Console → ⚙ Project settings → General → Project ID (заполняется из JSON автоматически)" },
+  { k: "api_key", ex: "AIzaSy…", label: "Web API Key", ph: "Project settings → General → Your apps → Web app → SDK setup → apiKey" },
+  { k: "app_id", ex: "1:1234567890:web:abc123…", label: "App ID", ph: "Project settings → General → Your apps → Web app → appId (1:123…:web:abc…)" },
+  { k: "sender_id", ex: "1234567890", label: "Sender ID", ph: "Project settings → Cloud Messaging → Sender ID (messagingSenderId)" },
+  { k: "vapid_key", ex: "BKx…(длинный ключ)", label: "VAPID key (Web Push certificate)", ph: "Project settings → Cloud Messaging → Web configuration → Web Push certificates → Key pair" },
+  { k: "auth_domain", ex: "lovreski-12345.firebaseapp.com", label: "Auth domain (необязательно)", ph: "<project-id>.firebaseapp.com — по умолчанию подставляется автоматически" },
 ];
 
 const errMsg = (e) => e?.response?.data?.detail || e.message || "Ошибка";
@@ -37,9 +37,11 @@ const ServiceAccountCard = ({ cfg, onSaved }) => {
   };
   const remove = async () => {
     if (!window.confirm("Удалить service account? Push-уведомления перестанут отправляться.")) return;
-    const { data } = await api.delete("/admin/push/service-account");
-    onSaved(data);
-    toast.success("Service account удалён");
+    try {
+      const { data } = await api.delete("/admin/push/service-account");
+      onSaved(data);
+      toast.success("Service account удалён");
+    } catch (err) { toast.error(errMsg(err)); }
   };
   return (
     <div className="p-5 rounded-2xl bg-card border border-border">
@@ -81,8 +83,9 @@ const WebConfigCard = ({ cfg, onSaved }) => {
         {FIELDS.map((f) => (
           <label key={f.k} className="block">
             <span className="text-xs font-semibold text-muted-foreground">{f.label}</span>
-            <input data-testid={`push-field-${f.k}`} value={form[f.k] || ""} placeholder={f.ph} onChange={(e) => setForm({ ...form, [f.k]: e.target.value })}
+            <input data-testid={`push-field-${f.k}`} value={form[f.k] || ""} placeholder={f.ex} title={f.ph} onChange={(e) => setForm({ ...form, [f.k]: e.target.value })}
               className="mt-1 w-full px-3 py-2 rounded-xl bg-muted border border-border text-sm placeholder:text-[11px] placeholder:text-muted-foreground/70 focus:outline-none focus:ring-2 focus:ring-primary/40" />
+            <span data-testid={`push-hint-${f.k}`} className="block mt-1 text-[11px] leading-snug text-muted-foreground">{f.ph}</span>
           </label>
         ))}
       </div>
@@ -101,7 +104,7 @@ const AnnounceCard = ({ ready }) => {
     setBusy(true);
     try {
       const { data } = await api.post("/admin/push/announce", { title, body, url: "/home" });
-      toast.success(`Отправлено: в приложении ${data.in_app}, push ${data.sent} устройств`);
+      toast.success(`Отправлено: в приложении ${data.in_app}, push в очереди для ${data.queued_devices} устройств`);
       setTitle(""); setBody("");
     } catch (err) { toast.error(errMsg(err)); } finally { setBusy(false); }
   };

@@ -107,10 +107,12 @@ def validate_service_account(svc: dict) -> Optional[str]:
         if not svc.get(k):
             return f"В файле отсутствует поле {k}"
     try:
+        import firebase_admin
         from firebase_admin import credentials
-        credentials.Certificate(svc)
+        tmp = firebase_admin.initialize_app(credentials.Certificate(svc), name=f"validate-{id(svc)}")
+        firebase_admin.delete_app(tmp)
     except Exception as e:
-        return f"Некорректный ключ: {e}"
+        return f"Не удалось инициализировать Firebase с этим ключом: {e}"
     return None
 
 

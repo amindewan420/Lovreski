@@ -1,0 +1,43 @@
+{
+  "summary": "Iter-38: Tested the Firebase push config in the Admin Panel, announcements, push token and test endpoints, notif_push preferences, profile-visit tracking, and chat location pins on both backend and frontend. Backend: 21/21 pytest pass. Frontend: Admin Push tab (status pill, uploading the fake service-account file auto-fills project_id, Firebase Console hint placeholders, save turns the pill to 'Активны', settings persist after reload, announcement toast), Settings notif toggles (persist after reload and on the server), push-prompt banner ('Позже' dismisses it permanently), and the chat location flow (Leaflet picker, click on the map moves the pin, place name, safety note, send, bubble with mini map and yandex link, expired placeholder, reply preview and chat-list preview '📍 Локация') all work. The fake Firebase config was removed afterwards (settings{key:'firebase'} deleted; /api/push/config -> {configured:false}).",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {"endpoint": "GET /api/chats", "issue": "Privacy leak: last_message is returned raw, without expire_location(). Expired pins (24h passed or chat ended by block) still return lat/lng in the chat list. Verified: last_message.location={'lat':55.76,'lng':37.62} with location_expires_at=2020-01-01. The same raw return also leaks the content of locked (non-premium) messages and of messages deleted for everyone in the list preview."},
+      {"endpoint": "POST /api/chats/{id}/send kind=location", "issue": "The frontend sends text='📍 <place>'. The message text is never cleared on expiry, so the place name stays visible (API text field, reply snippet, chat-list preview) after the pin expires."},
+      {"endpoint": "PUT /api/admin/push/config", "issue": "save_config() writes the service account to the DB before get_app() validation. If Firebase init fails, a 400 is returned but the bad SA stays stored (has_service_account=true). Validate or initialize first, then persist."},
+      {"endpoint": "POST /api/admin/push/announce", "issue": "broadcast_announcement sends to every token one after another inside the request. With real keys and many devices the admin request can be slow or time out. Consider a background task or messaging.send_each."},
+      {"endpoint": "PUT /api/profile notif_push", "issue": "The whole dict is replaced and arbitrary keys are accepted. Consider a Pydantic model limited to the 5 allowed keys."}
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [
+      {"component": "PushConfigTab ServiceAccountCard.remove", "issue": "The delete call has no try/catch, so an API error is unhandled and no error toast is shown.", "selector": "[data-testid='push-sa-remove']", "priority": "LOW"},
+      {"component": "ChatRoomPage location message", "issue": "The 'Перевести' (translate) action shows on incoming location messages because m.text='📍 place'.", "selector": "[data-testid^='translate-']", "priority": "LOW"}
+    ],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "Admin > Push", "issues": ["Long Firebase Console hint placeholders (project_id, vapid_key) are cut off in a single-line input at 1920px. Consider showing the hint as helper text under the field, or a smaller text / tooltip."]},
+      {"screen": "Chat header", "issues": ["The partner avatar in the chat header looks broken/empty for match_a/match_b (likely pre-existing)."]}
+    ]
+  },
+  "test_report_links": ["/app/backend/tests/test_push_location_iter38.py", "/app/test_reports/pytest/pytest_iter38.xml"],
+  "action_items": [
+    "Apply expire_location() (and locked/deleted masking) to last_message in GET /api/chats",
+    "Clear or replace message text for location messages on expiry, or stop putting the place in text",
+    "In PUT /api/admin/push/config, validate firebase init before persisting service_account_enc",
+    "Optional: move announcement push fan-out to a background task",
+    "Minor: try/catch in the SA remove handler; hide translate for location messages; improve long placeholder display"
+  ],
+  "critical_code_review_comments": [
+    "routers/chat.py list_chats returns the raw message doc as last_message: expired coordinates and locked content leak",
+    "push.save_config persists the SA before validating that init succeeds",
+    "Real FCM delivery not verified (fake keys). With a token present, send_to_user fails gracefully with invalid_grant, is logged, and returns sent=0"
+  ],
+  "updated_files": ["/app/backend/tests/test_push_location_iter38.py"],
+  "success_rate": {"backend": "100% (21/21)", "frontend": "100% of requested flows"},
+  "seed_data_creation": "Registered several test_*@lovreski.ru users (like, location and block tests). Sent location/text messages in the match_a<->match_b chat (match_a coins 5->3). Announcement TEST notifications were deleted. Fake firebase settings doc deleted.",
+  "retest_needed": false,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "Run with `pytest -o addopts='' /app/backend/tests/test_push_location_iter38.py`. The fixture backs up and restores any real settings{key:'firebase'} doc. Headless Notification.permission is 'denied'. To test push-prompt, use add_init_script overriding Notification.permission to 'default'. match_b is non-premium, so match_a's messages beyond the 2 free ones are locked for her. match_a was not blocked. Location expiry was simulated by setting location_expires_at in mongo."
+}

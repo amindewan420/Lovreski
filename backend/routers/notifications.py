@@ -2,7 +2,7 @@
 from fastapi import HTTPException, Depends, Request
 from pydantic import BaseModel, Field
 from typing import Optional
-import json, uuid
+import asyncio, json, uuid
 from server import (
     api, db, logger, now_utc, iso, fcm,
     get_current_user, require_admin,
@@ -101,8 +101,6 @@ async def admin_push_config_save(body: FirebaseConfigBody, admin: dict = Depends
             raise HTTPException(status_code=400, detail=err)
     fields = body.model_dump(exclude={"service_account_json"}, exclude_none=True)
     cfg = await fcm.save_config(db, fields, svc)
-    if svc is not None and await fcm.get_app(db) is None:
-        raise HTTPException(status_code=400, detail="Не удалось инициализировать Firebase с этим ключом")
     await db.admin_audit.insert_one({"id": f"au_{uuid.uuid4().hex[:10]}", "admin": admin['user_id'],
                                      "action": "firebase_config_update", "created_at": iso(now_utc())})
     return _admin_view(cfg)
@@ -131,6 +129,13 @@ async def admin_push_announce(body: AnnouncementBody, admin: dict = Depends(requ
             "message": f"📣 {body.title}: {body.body}", "kind": "announcement",
             "read": False, "created_at": now,
         } for u in users])
-    r = await fcm.broadcast_announcement(db, title=f"📣 {body.title}", body=body.body, url=url)
-    logger.info(f"[push] announcement by {admin['user_id']}: {r}")
-    return {"ok": True, "in_app": len(users), **r}
+    devices = await db.push_tokens.count_documents({})
+
+    async def _run():
+        try:
+            r = await fcm.broadcast_announcement(db, title=f"📣 {body.title}", body=body.body, url=url)
+            logger.info(f"[push] announcement by {admin['user_id']}: {r}")
+        except Exception as e:
+            logger.warning(f"[push] announcement failed: {e}")
+    asyncio.create_task(_run())
+    return {"ok": True, "in_app": len(users), "queued_devices": devices}
