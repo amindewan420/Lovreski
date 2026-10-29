@@ -1,0 +1,29 @@
+{
+  "summary": "Display-time translation of profile fields (name/about/job/education/language) tested end-to-end. Backend: /api/translate/batch name mode transliterates (Мария->Maria en, মারিয়া bn, मारिया hi, মাৰিয়া as; Alex->Алекс ru; Любовь->Lyubov in name mode vs 'Love' in text mode, separately cached), default text mode translates, invalid mode 422, unauthenticated 401/403. /api/i18n/bn|as|hi return full bundles (lang matches, no error, 288/288 native-script); cold new language (ta) built in 8.7s. Chat translation regression OK (gpt-4.1-mini). Frontend: own profile edit inputs show translated values in en and bn, focus shows original, blur without change leaves DB untouched, editing job saves original ('Учитель музыки') and shows translation ('Music teacher') after blur; preview view-name/view-about translated; other profile, Home cards + greeting, Discover cards, chats list, chat room header all transliterated in bn/en; Settings switch to Russian translates English profile (Al Amin Dewan -> Ал Амин Деуан, 'I am a student' -> 'Я студент'); /premium fully translated in en and ru (only intentional recipient name 'Ал Амин Д.' stays Cyrillic).",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [
+      {"flow": "Toasts with names", "issue": "Toasts like HomePage 'Симпатия отправлена ${u.name}' and Landing/AuthCallback welcome toasts use raw stored name (not transliterated)", "affected_selectors": ["HomePage.jsx:80", "Landing.jsx:77", "AuthCallback.jsx:32"]}
+    ],
+    "design_issues": [
+      {"screen": "Home grid cards (bn)", "issues": ["Long Bengali 'liked' badge label wraps and overlaps the name/age line on profile cards (pre-existing layout, visible with longer locales)"]},
+      {"screen": "Own profile edit", "issues": ["Char counters (e.g. name 5/50) show length of original stored text while input displays translated text - minor mismatch"]}
+    ]
+  },
+  "test_report_links": ["/app/backend/tests/test_profile_content_tx_iter49.py", "/app/test_reports/pytest/pytest_iter49.xml"],
+  "action_items": [
+    "Optional: wrap names in toasts with transliteration (HomePage like toast, welcome toasts)",
+    "Optional: fix Home card badge overlap for long locales (bn)"
+  ],
+  "critical_code_review_comments": [
+    "contentTranslate.jsx: on network/API failure the original text is cached permanently in the in-memory map for the session (no retry) - acceptable fail-open but consider not caching failures",
+    "ProfilePage counters use original length while showing translation"
+  ],
+  "updated_files": ["/app/backend/tests/test_profile_content_tx_iter49.py"],
+  "success_rate": {"backend": "100% (15/15)", "frontend": "100% of requested flows"},
+  "seed_data_creation": "None. testuser1 job edited temporarily and restored to 'Программист'; testuser1 and match_b language_pref reset to 'ru'.",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Profile language_pref overrides localStorage lovreski_lang. Translations cached in content_translations (name mode under 'xx#name'). user_2d67cbc96035 (Al Amin Dewan) has English profile text useful for ru tests. Match celebration not triggered in this run (requires new mutual like)."
+}

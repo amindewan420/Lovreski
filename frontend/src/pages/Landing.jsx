@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { Tx } from "@/lib/contentTranslate";
 import { useNavigate, Link } from "react-router-dom";
 import { useAuth } from "@/context/AuthContext";
 import { api } from "@/lib/api";
@@ -74,7 +75,7 @@ export default function Landing() {
     try {
       if (mode === "login") {
         const u = await login(form.email, form.password);
-        toast.success(`С возвращением, ${u.name}!`);
+        toast.success(<span>С возвращением, <Tx text={u.name} mode="name" />!</span>);
         nav("/home");
       } else {
         const u = await register(form);

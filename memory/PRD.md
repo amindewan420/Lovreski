@@ -178,3 +178,7 @@ Currently on Emergent (React + FastAPI + MongoDB). For amvera.cloud deployment, 
 - All Premium page + My Applications + receipt errors moved to i18n keys (premium.*, apps.*, receipt.err.*) in server.py I18N_BASE_RU with exact EN in routers/i18n.py overrides
 - Recipient name = premium.recipient_name "Ал Амин Д." (same in all langs, no-translate); 7 activation rules premium.rule_1..7
 - Backlog P1: chat voice recording (hold-to-record + audio player)
+
+## 2026-06 Profile content translation
+- Display-time AI translation of name (transliterated, mode=name), about, job, education, language everywhere profiles show (lib/contentTranslate.jsx useContentTx/<Tx>); stored data unchanged; edit inputs show original on focus
+- /api/translate/batch accepts mode text|name; translation model gpt-4.1-mini with language names in prompt; /api/i18n/{lang} now built via chunked translate_texts (fixes 45s timeout for bn/as/hi)

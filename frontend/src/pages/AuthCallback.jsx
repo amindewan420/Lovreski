@@ -1,4 +1,5 @@
 import { useEffect, useRef } from "react";
+import { Tx } from "@/lib/contentTranslate";
 import { useNavigate } from "react-router-dom";
 import { api, setToken } from "@/lib/api";
 import { useAuth } from "@/context/AuthContext";
@@ -29,7 +30,7 @@ export default function AuthCallback() {
         const { data } = await api.post("/auth/session", { session_id: sid });
         if (data.token) setToken(data.token);
         setUser(data.user);
-        toast.success(`Добро пожаловать, ${data.user.name}!`);
+        toast.success(<span>Добро пожаловать, <Tx text={data.user.name} mode="name" />!</span>);
         nav("/home", { replace: true, state: { user: data.user } });
       } catch (e) {
         toast.error("Не удалось войти через Google");

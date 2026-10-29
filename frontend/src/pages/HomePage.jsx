@@ -77,7 +77,7 @@ export default function HomePage() {
       // Card stays visible — only the like button switches to the "Liked ✓" state.
       setFeed((f) => f.map((x) => x.user_id === u.user_id ? { ...x, liked: true } : x));
       if (data.match) setMatchUser(data.target || u);
-      else toast.success(`Симпатия отправлена ${u.name}`);
+      else toast.success(<span>Симпатия отправлена <Tx text={u.name} mode="name" /></span>);
     } catch { toast.error("Ошибка"); }
   };
   const doPass = async (u) => {
