@@ -9,7 +9,7 @@ import { useI18n, getLangMeta } from "@/lib/i18n";
 import LanguageSheet from "@/components/lovreski/LanguageSheet";
 import { Slider } from "@/components/ui/slider";
 import { usePushNotifications } from "@/hooks/usePushNotifications";
-import { RECEIPT_ACCEPT, receiptFileError, readReceipt } from "@/lib/receiptFile";
+import { RECEIPT_ACCEPT, RECEIPT_MAX_MB, receiptFileError, readReceipt } from "@/lib/receiptFile";
 import { FILTER_SIG_KEY } from "@/lib/filterSync";
 import { useLegalDocs, LegalDocView } from "@/components/lovreski/LegalDoc";
 
@@ -244,6 +244,7 @@ const Row = ({ label, children }) => (
 );
 
 function RefundForm() {
+  const { t } = useI18n();
   const [f, setF] = useState({ full_name: "", email: "", reason: "" });
   const [receipt, setReceipt] = useState("");
   const [fileName, setFileName] = useState("");
@@ -253,7 +254,7 @@ function RefundForm() {
   const pick = (file) => {
     if (!file) return;
     const err = receiptFileError(file);
-    if (err) { toast.error(err); return; }
+    if (err) { toast.error(t(err, { mb: RECEIPT_MAX_MB })); return; }
     setFileName(file.name);
     readReceipt(file).then(setReceipt).catch(() => toast.error("Не удалось прочитать файл"));
   };

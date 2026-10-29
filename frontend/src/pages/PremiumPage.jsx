@@ -7,7 +7,8 @@ import {
   Check, Clock, HeartHandshake, Building2,
 } from "lucide-react";
 import { toast } from "sonner";
-import { RECEIPT_ACCEPT, receiptFileError, readReceipt } from "@/lib/receiptFile";
+import { RECEIPT_ACCEPT, RECEIPT_MAX_MB, receiptFileError, readReceipt } from "@/lib/receiptFile";
+import { useI18n } from "@/lib/i18n";
 import { MyApplications } from "@/components/lovreski/MyApplications";
 import { useNavigate } from "react-router-dom";
 import { motion, AnimatePresence } from "framer-motion";
@@ -15,9 +16,9 @@ import { motion, AnimatePresence } from "framer-motion";
 export default function PremiumPage() {
   const { user, refresh } = useAuth();
   const nav = useNavigate();
+  const { t } = useI18n();
   const [packages, setPackages] = useState([]);
   const [sbpPhone, setSbpPhone] = useState("");
-  const [recipientName, setRecipientName] = useState("");
   const [selectedPkg, setSelectedPkg] = useState(null); // visual only
   const [supportOpen, setSupportOpen] = useState(false);
   const [receiptFile, setReceiptFile] = useState(null);
@@ -34,15 +35,14 @@ export default function PremiumPage() {
     ]);
     setPackages(pkgRes.data.packages);
     setSbpPhone(pkgRes.data.sbp_phone || "");
-    setRecipientName(pkgRes.data.recipient_name || "");
     setMySubs(mineRes.data || []);
   };
   useEffect(() => { load(); }, []);
 
   const copyPhone = async () => {
     // Always copy raw digits — banking apps expect E.164 without spaces
-    try { await navigator.clipboard.writeText(sbpPhone); toast.success("Номер скопирован ✓"); }
-    catch { toast.error("Не удалось скопировать"); }
+    try { await navigator.clipboard.writeText(sbpPhone); toast.success(t("premium.toast.copied")); }
+    catch { toast.error(t("premium.toast.copy_failed")); }
   };
 
   // Human-readable formatting for RU mobile numbers: +7 XXX XXX XX XX
@@ -58,13 +58,13 @@ export default function PremiumPage() {
   const onPickFile = (file) => {
     if (!file) return;
     const err = receiptFileError(file);
-    if (err) return toast.error(err);
+    if (err) return toast.error(t(err, { mb: RECEIPT_MAX_MB }));
     setReceiptFile(file);
-    readReceipt(file).then(setReceiptDataUrl).catch(() => toast.error("Не удалось прочитать файл"));
+    readReceipt(file).then(setReceiptDataUrl).catch(() => toast.error(t("premium.toast.read_failed")));
   };
 
   const submitReceipt = async () => {
-    if (!receiptDataUrl) return toast.error("Загрузите чек");
+    if (!receiptDataUrl) return toast.error(t("premium.toast.need_receipt"));
     setSubmitting(true);
     try {
       await api.post("/support/receipt", {
@@ -72,41 +72,41 @@ export default function PremiumPage() {
         receipt_data_url: receiptDataUrl,
         message: message || null,
       });
-      toast.success("✅ Чек отправлен! Администратор проверит и активирует Premium.");
+      toast.success(t("premium.toast.sent"));
       setSupportOpen(false); setReceiptFile(null); setReceiptDataUrl(""); setMessage("");
       load();
     } catch (e) {
-      toast.error(e.response?.data?.detail || "Ошибка отправки");
+      toast.error(e.response?.data?.detail || t("premium.toast.send_error"));
     } finally { setSubmitting(false); }
   };
 
   return (
     <MobileShell>
       <header className="sticky top-0 z-40 bg-background/85 backdrop-blur-xl px-4 pt-4 pb-3 border-b border-border/50 flex items-center gap-2">
-        <button onClick={() => nav(-1)} className="text-sm text-muted-foreground">← Назад</button>
-        <h1 className="font-display font-black text-xl flex items-center gap-2"><Crown className="w-6 h-6 text-accent" /> Premium & Монеты</h1>
+        <button onClick={() => nav(-1)} className="text-sm text-muted-foreground" data-testid="premium-back-btn">{t("premium.back")}</button>
+        <h1 className="font-display font-black text-xl flex items-center gap-2"><Crown className="w-6 h-6 text-accent" /> {t("premium.title")}</h1>
       </header>
 
       <div className="p-4 space-y-5">
         {/* Live balance */}
         <div className="p-5 rounded-2xl bg-gradient-to-br from-primary via-primary to-rose-700 text-primary-foreground relative overflow-hidden grain">
-          <p className="text-xs uppercase tracking-widest opacity-80">Ваш баланс</p>
+          <p className="text-xs uppercase tracking-widest opacity-80">{t("premium.balance")}</p>
           <p data-testid="coin-balance" className="font-display font-black text-4xl mt-1">{user?.coins || 0} 🪙</p>
           <p className="text-sm mt-2 opacity-90 flex items-center gap-2">
-            {user?.is_premium ? <><Crown className="w-4 h-4" /> Premium активен</> : "Активируйте Premium для всех функций"}
+            {user?.is_premium ? <><Crown className="w-4 h-4" /> {t("premium.active")}</> : t("premium.activate_hint")}
           </p>
           <button
             onClick={() => nav("/purchase-history")}
             data-testid="link-purchase-history"
             className="mt-3 text-xs bg-white/15 backdrop-blur px-3 py-1.5 rounded-full font-semibold hover:bg-white/25"
           >
-            История покупок →
+            {t("premium.purchase_history")}
           </button>
         </div>
 
         {/* Coin packages — visual selection ONLY (no auto-payment) */}
         <div>
-          <h3 className="font-display font-bold text-lg mb-3">Выберите пакет</h3>
+          <h3 className="font-display font-bold text-lg mb-3">{t("premium.choose_package")}</h3>
           <div className="grid grid-cols-2 gap-3">
             {packages.map((p) => (
               <button
@@ -117,7 +117,7 @@ export default function PremiumPage() {
               >
                 {p.popular && (
                   <div className="absolute -top-2 -right-2 rotate-6 bg-accent text-accent-foreground text-[9px] font-black px-2 py-0.5 rounded-full uppercase tracking-widest shadow-md">
-                    Popular
+                    {t("premium.popular")}
                   </div>
                 )}
                 {selectedPkg?.id === p.id && (
@@ -128,20 +128,20 @@ export default function PremiumPage() {
                 <div className="text-4xl">🪙</div>
                 <div className="flex items-baseline gap-1 mt-2">
                   <span className="font-display font-black text-3xl">{p.coins}</span>
-                  <span className="text-xs text-muted-foreground">монет</span>
+                  <span className="text-xs text-muted-foreground">{t("premium.coins_unit")}</span>
                 </div>
                 <p className="text-lg font-bold text-primary mt-1">{p.price.toLocaleString("ru")} ₽</p>
-                <p className="text-[10px] text-muted-foreground mt-1">{(p.price / p.coins).toFixed(1)} ₽ / монета</p>
+                <p className="text-[10px] text-muted-foreground mt-1">{(p.price / p.coins).toFixed(1)} {t("premium.per_coin")}</p>
               </button>
             ))}
           </div>
-          <p className="text-[11px] text-muted-foreground mt-2 text-center">Выбор пакета не активирует оплату автоматически — оплатите вручную и отправьте чек ниже.</p>
+          <p className="text-[11px] text-muted-foreground mt-2 text-center">{t("premium.package_note")}</p>
         </div>
 
         {/* SBP payment info card */}
         <div className="p-4 rounded-2xl bg-card border border-border" data-testid="sbp-info-card">
           <p className="text-xs uppercase tracking-widest text-muted-foreground flex items-center gap-1">
-            <Phone className="w-3.5 h-3.5" /> Номер СБП для оплаты
+            <Phone className="w-3.5 h-3.5" /> {t("premium.sbp_label")}
           </p>
           <div className="mt-2 flex items-center gap-2">
             <p data-testid="sbp-phone" className="flex-1 font-display font-semibold text-xl tracking-wide select-all">{formatSbpPhone(sbpPhone)}</p>
@@ -150,31 +150,28 @@ export default function PremiumPage() {
               onClick={copyPhone}
               className="inline-flex items-center gap-1 px-3 py-2 rounded-full bg-primary text-primary-foreground text-xs font-bold hover:opacity-90"
             >
-              <Copy className="w-3.5 h-3.5" /> Копировать
+              <Copy className="w-3.5 h-3.5" /> {t("premium.copy")}
             </button>
           </div>
           <div className="mt-3 flex items-center gap-2 text-sm">
             <User className="w-4 h-4 text-primary" />
-            <span className="text-muted-foreground">Получатель:</span>
-            <span data-testid="sbp-recipient" className="font-semibold">{recipientName || "Al Amin Dewan"}</span>
+            <span className="text-muted-foreground">{t("premium.recipient_label")}</span>
+            <span data-testid="sbp-recipient" data-no-translate className="font-semibold no-translate">{t("premium.recipient_name")}</span>
           </div>
           <div data-testid="any-bank-note" className="mt-3 flex items-center gap-2 text-xs text-muted-foreground">
-            <Building2 className="w-4 h-4" /> Any bank choose — оплатите из любого банка (Сбер, T-Bank, Альфа, ВТБ и др.)
+            <Building2 className="w-4 h-4" /> {t("premium.any_bank")}
           </div>
         </div>
 
         {/* Rules Box — amber border */}
         <div data-testid="rules-box" className="p-4 rounded-2xl border-2 border-amber-400 bg-amber-50 dark:bg-amber-950/30">
           <p className="font-display font-black text-sm flex items-center gap-1.5 text-amber-700 dark:text-amber-400 mb-2">
-            <AlertTriangle className="w-4 h-4" /> PREMIUM ACTIVATION RULES
+            <AlertTriangle className="w-4 h-4" /> {t("premium.rules_title")}
           </p>
           <ol className="space-y-1.5 text-[11px] leading-relaxed text-amber-900 dark:text-amber-100 list-decimal pl-4">
-            <li data-testid="rule-1">Before making a premium payment, the user must verify that the recipient's banking name is <b>"Al Amin Dewan"</b>.</li>
-            <li data-testid="rule-2">The user can select their preferred bank (e.g., Sberbank, T-Bank) before proceeding with payment.</li>
-            <li data-testid="rule-3">After making the payment, you MUST send the payment receipt/screenshot to the Support Section.</li>
-            <li data-testid="rule-4">Premium activation time is strictly: 🕗 <b>Moscow time 9 PM — 11:59 PM</b> (daily).</li>
-            <li data-testid="rule-5">Admin will verify every receipt manually. ⚠️ If payment is NOT received in the account, premium will NOT be activated — even if a receipt is submitted.</li>
-            <li data-testid="rule-6">💡 Admin advice: add new coins / renew your Premium BEFORE it expires to avoid interruption.</li>
+            {[1, 2, 3, 4, 5, 6, 7].map((n) => (
+              <li key={n} data-testid={`rule-${n}`} data-no-translate className="no-translate">{t(`premium.rule_${n}`, { name: t("premium.recipient_name") })}</li>
+            ))}
           </ol>
         </div>
 
@@ -185,7 +182,7 @@ export default function PremiumPage() {
           className="w-full btn-pill bg-primary text-primary-foreground shadow-lg shadow-primary/25"
         >
           <HeartHandshake className="w-4 h-4 mr-2" />
-          📩 Premium Activation Support
+          📩 {t("premium.support_button")}
         </button>
 
         {/* My previous submissions (long-press → delete from my history) */}
@@ -208,10 +205,10 @@ export default function PremiumPage() {
             >
               <div className="flex items-start justify-between">
                 <div>
-                  <h3 className="font-display font-black text-lg">Premium Activation Support</h3>
-                  <p className="text-xs text-muted-foreground">Загрузите чек для проверки администратором</p>
+                  <h3 className="font-display font-black text-lg">{t("premium.support_button")}</h3>
+                  <p className="text-xs text-muted-foreground">{t("premium.support_subtitle")}</p>
                 </div>
-                <button onClick={() => setSupportOpen(false)} className="p-1 rounded-full hover:bg-muted"><X className="w-5 h-5" /></button>
+                <button onClick={() => setSupportOpen(false)} data-testid="btn-close-support" className="p-1 rounded-full hover:bg-muted"><X className="w-5 h-5" /></button>
               </div>
 
               <input
@@ -228,7 +225,7 @@ export default function PremiumPage() {
                 className={`mt-4 w-full p-6 rounded-2xl border-2 border-dashed flex flex-col items-center justify-center transition-colors duration-200 ${receiptFile ? "border-emerald-500 bg-emerald-500/5" : "border-border hover:border-primary"}`}
               >
                 <Upload className="w-8 h-8 text-primary mb-2" />
-                <p className="text-sm font-semibold">{receiptFile ? `✓ ${receiptFile.name}` : "📎 Upload Receipt"}</p>
+                <p className="text-sm font-semibold">{receiptFile ? `✓ ${receiptFile.name}` : `📎 ${t("premium.upload_receipt")}`}</p>
                 <p className="text-[11px] text-muted-foreground mt-1">JPG · PNG · PDF</p>
               </button>
 
@@ -237,11 +234,11 @@ export default function PremiumPage() {
               )}
 
               <div className="mt-4">
-                <label className="text-xs font-semibold text-muted-foreground flex items-center gap-1"><MessageSquare className="w-3 h-3" /> Сообщение (необязательно)</label>
+                <label className="text-xs font-semibold text-muted-foreground flex items-center gap-1"><MessageSquare className="w-3 h-3" /> {t("premium.message_label")}</label>
                 <textarea
                   data-testid="receipt-message"
                   rows={2} maxLength={500}
-                  placeholder="Короткое сообщение..."
+                  placeholder={t("premium.message_placeholder")}
                   value={message} onChange={(e) => setMessage(e.target.value)}
                   className="mt-1 w-full px-3 py-2 rounded-xl bg-muted outline-none text-sm"
                 />
@@ -253,9 +250,9 @@ export default function PremiumPage() {
                 disabled={!receiptDataUrl || submitting}
                 className="mt-4 w-full btn-pill bg-primary text-primary-foreground disabled:opacity-50"
               >
-                {submitting ? "..." : "📤 Submit to Admin"}
+                {submitting ? "..." : `📤 ${t("premium.submit_button")}`}
               </button>
-              <p className="text-[11px] text-muted-foreground mt-2 text-center">Файл обязателен. Сообщение — по желанию.</p>
+              <p className="text-[11px] text-muted-foreground mt-2 text-center">{t("premium.file_required_note")}</p>
             </motion.div>
           </motion.div>
         )}

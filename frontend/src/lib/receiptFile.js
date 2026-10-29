@@ -2,12 +2,12 @@ export const RECEIPT_ACCEPT = "image/jpeg,image/jpg,image/png,image/webp,applica
 const OK_TYPES = ["image/jpeg", "image/jpg", "image/png", "image/webp", "application/pdf"];
 export const RECEIPT_MAX_MB = 10;
 
-// Returns an error message, or "" when the file is acceptable.
+// Returns an i18n key for the error, or "" when the file is acceptable.
 export function receiptFileError(file) {
   const type = file.type || (/\.pdf$/i.test(file.name) ? "application/pdf" : "");
-  if (!OK_TYPES.includes(type)) return "Только JPG, PNG или PDF";
-  if (file.size > RECEIPT_MAX_MB * 1024 * 1024) return `Файл больше ${RECEIPT_MAX_MB} МБ`;
-  if (file.size === 0) return "Файл пустой";
+  if (!OK_TYPES.includes(type)) return "receipt.err.type";
+  if (file.size > RECEIPT_MAX_MB * 1024 * 1024) return "receipt.err.size";
+  if (file.size === 0) return "receipt.err.empty";
   return "";
 }
 

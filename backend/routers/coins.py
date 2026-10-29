@@ -27,7 +27,7 @@ async def coin_packages():
         "packages": packages,
         "currency": "RUB",
         "sbp_phone": sbp_phone,
-        "recipient_name": os.environ.get('SBP_RECIPIENT_NAME', 'Al Amin Dewan'),
+        "recipient_name": os.environ.get('SBP_RECIPIENT_NAME', 'Ал Амин Д.'),
         "banks": [
             {"id": "sberbank", "name": "Сбербанк"},
             {"id": "tbank", "name": "T-Bank (Тинькофф)"},

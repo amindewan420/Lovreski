@@ -173,3 +173,8 @@ Currently on Emergent (React + FastAPI + MongoDB). For amvera.cloud deployment, 
 ## 2026-06 — Iteration 49: Profile options localized
 - 86 keys (`profile.goal.*`, `profile.relationship|kids|smoking|alcohol.*`, `profile.interests.<cat>` + `.<item>`) added to the base RU dictionary (server.py); exact English wording via `I18N_EN_OVERRIDES` in routers/i18n.py; other languages auto-translated.
 - Stored values unchanged (English); labels via helpers in `lib/profileConstants.js` (interestLabel/optionLabel/goalLabel/tr) in ProfilePage, OtherProfilePage, DiscoverPage. Self-verified (RU screenshot, EN API).
+
+## 2026-06 Premium & Coins localization
+- All Premium page + My Applications + receipt errors moved to i18n keys (premium.*, apps.*, receipt.err.*) in server.py I18N_BASE_RU with exact EN in routers/i18n.py overrides
+- Recipient name = premium.recipient_name "Ал Амин Д." (same in all langs, no-translate); 7 activation rules premium.rule_1..7
+- Backlog P1: chat voice recording (hold-to-record + audio player)
