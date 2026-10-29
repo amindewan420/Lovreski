@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
+import { Tx, useContentTx } from "@/lib/contentTranslate";
 import { useAuth } from "@/context/AuthContext";
 import { api } from "@/lib/api";
 import { MobileShell } from "@/components/lovreski/Shell";
@@ -38,6 +39,11 @@ export default function ProfilePage() {
   const { user, refresh, logout } = useAuth();
   const { theme, toggle } = useTheme();
   const { t } = useI18n();
+  const ctx = useContentTx();
+  const [focused, setFocused] = useState(null);
+  // Translated text while reading; the original stored text while editing.
+  const shown = (k) => (focused === k ? form[k] || "" : ctx(form[k] || "", k === "name" ? "name" : "text"));
+  const focusProps = (k) => ({ onFocus: () => setFocused(k), className: "flex-1 bg-transparent outline-none text-right no-translate" });
   const nav = useNavigate();
   const [mode, setMode] = useState("edit"); // 'edit' | 'view'
   const [form, setForm] = useState({});
@@ -170,14 +176,14 @@ export default function ProfilePage() {
             <div className="absolute inset-x-0 bottom-0 h-1/2 bg-gradient-to-t from-black/85 to-transparent pointer-events-none" />
             <div className="absolute inset-x-0 bottom-0 p-5 text-white">
               <div className="flex items-center gap-2 flex-wrap">
-                <h2 className="font-display font-black text-3xl">{user.name}, {age}</h2>
+                <h2 className="font-display font-black text-3xl"><Tx text={user.name} mode="name" data-testid="view-name" />, {age}</h2>
                 {user.verified && <ShieldCheck className="w-6 h-6 text-sky-400" />}
                 {user.is_premium && <Crown className="w-5 h-5 text-accent" />}
               </div>
               {user.city && <p className="text-sm mt-1 flex items-center gap-1"><MapPin className="w-4 h-4" /> {user.city}</p>}
             </div>
           </div>
-          {user.about && <p className="mt-4 p-4 bg-muted rounded-2xl text-sm">{user.about}</p>}
+          {user.about && <p data-testid="view-about" className="mt-4 p-4 bg-muted rounded-2xl text-sm"><Tx text={user.about} /></p>}
           {user.interests?.length > 0 && (
             <div className="mt-3 flex flex-wrap gap-1.5">
               {user.interests.map((i) => <span key={i} className="px-3 py-1.5 bg-primary text-primary-foreground rounded-full text-xs font-semibold no-translate">{interestLabel(t, i)}</span>)}
@@ -200,7 +206,7 @@ export default function ProfilePage() {
               alt="" className="w-9 h-9 rounded-full object-cover"
             />
             <div className="min-w-0">
-              <p className="font-display font-black text-sm leading-none truncate">{user.name}, {age}</p>
+              <p className="font-display font-black text-sm leading-none truncate"><Tx text={user.name} mode="name" />, {age}</p>
               <p className="text-[10px] text-muted-foreground flex items-center gap-1">
                 <Circle className="w-2 h-2 text-emerald-500 fill-current" /> Онлайн
               </p>
@@ -260,7 +266,7 @@ export default function ProfilePage() {
           </button>
         </div>
         <div className="mt-3 flex items-center justify-center gap-2">
-          <h2 className="font-display font-black text-xl">{user.name}, {age}</h2>
+          <h2 className="font-display font-black text-xl"><Tx text={user.name} mode="name" />, {age}</h2>
           <Circle className="w-2.5 h-2.5 text-emerald-500 fill-current" />
         </div>
         {user.city && <p className="text-xs text-muted-foreground">{user.city}</p>}
@@ -379,10 +385,10 @@ export default function ProfilePage() {
           label="Имя" testid="field-name" saved={savedField === "name"}
           input={
             <input
-              value={form.name || ""} maxLength={50}
+              data-testid="input-name"
+              value={shown("name")} maxLength={50} {...focusProps("name")}
               onChange={(e) => setForm({ ...form, name: e.target.value })}
-              onBlur={() => form.name !== user.name && saveField({ name: form.name })}
-              className="flex-1 bg-transparent outline-none text-right"
+              onBlur={() => { setFocused(null); form.name !== user.name && saveField({ name: form.name }); }}
             />
           }
           counter={`${(form.name || "").length}/50`}
@@ -419,7 +425,8 @@ export default function ProfilePage() {
             data-testid="input-about"
             maxLength={500} rows={3}
             placeholder="Расскажите о себе..."
-            value={form.about || ""}
+            value={shown("about")}
+            onFocus={() => setFocused("about")}
             onChange={(e) => setForm({ ...form, about: e.target.value.slice(0, 500) })}
             onPaste={(e) => {
               // Truncate paste to remaining char budget
@@ -429,8 +436,8 @@ export default function ProfilePage() {
               e.preventDefault();
               setForm((f) => ({ ...f, about: ((f.about || "") + pasted).slice(0, 500) }));
             }}
-            onBlur={() => form.about !== user.about && saveField({ about: form.about })}
-            className="w-full bg-transparent outline-none text-sm resize-none"
+            onBlur={() => { setFocused(null); form.about !== user.about && saveField({ about: form.about }); }}
+            className="w-full bg-transparent outline-none text-sm resize-none no-translate"
           />
         </div>
 
@@ -439,10 +446,10 @@ export default function ProfilePage() {
           input={
             <input
               maxLength={80} placeholder="Ваша профессия..."
-              value={form.job || ""}
+              data-testid="input-job"
+              value={shown("job")} {...focusProps("job")}
               onChange={(e) => setForm({ ...form, job: e.target.value.slice(0, 80) })}
-              onBlur={() => form.job !== user.job && saveField({ job: form.job })}
-              className="flex-1 bg-transparent outline-none text-right"
+              onBlur={() => { setFocused(null); form.job !== user.job && saveField({ job: form.job }); }}
             />
           }
           counter={<CharCounter len={(form.job || "").length} max={80} testid="job-counter" />}
@@ -453,10 +460,10 @@ export default function ProfilePage() {
           input={
             <input
               maxLength={100} placeholder="Ваше образование..."
-              value={form.education || ""}
+              data-testid="input-education"
+              value={shown("education")} {...focusProps("education")}
               onChange={(e) => setForm({ ...form, education: e.target.value.slice(0, 100) })}
-              onBlur={() => form.education !== user.education && saveField({ education: form.education })}
-              className="flex-1 bg-transparent outline-none text-right"
+              onBlur={() => { setFocused(null); form.education !== user.education && saveField({ education: form.education }); }}
             />
           }
           counter={<CharCounter len={(form.education || "").length} max={100} testid="education-counter" />}
@@ -467,10 +474,10 @@ export default function ProfilePage() {
           input={
             <input
               maxLength={50} placeholder="English, Russian..."
-              value={form.language || ""}
+              data-testid="input-language"
+              value={shown("language")} {...focusProps("language")}
               onChange={(e) => setForm({ ...form, language: e.target.value.slice(0, 50) })}
-              onBlur={() => form.language !== user.language && saveField({ language: form.language })}
-              className="flex-1 bg-transparent outline-none text-right"
+              onBlur={() => { setFocused(null); form.language !== user.language && saveField({ language: form.language }); }}
             />
           }
           counter={<CharCounter len={(form.language || "").length} max={50} testid="language-counter" />}

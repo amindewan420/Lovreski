@@ -8,10 +8,11 @@ import hashlib
 import json
 import logging
 import os
+import uuid
 
 logger = logging.getLogger("lovreski.translation")
 
-MODEL = ("openai", "gpt-4o-mini")
+MODEL = ("openai", "gpt-4.1-mini")
 CHUNK = 40
 MAX_ITEM_CHARS = 6000
 
@@ -26,23 +27,44 @@ is it ja ka kk km kn ko ky lo lt lv mk ml mn mr ms my ne nl no pa pl ps pt ro ru
 tk tl tr uk ur uz vi zh zh-cn zh-tw pt-br as en-us fr-ca es-419 en-gb""".split())
 
 
+LANG_NAMES = {'af': 'Afrikaans', 'am': 'Amharic', 'ar': 'Arabic', 'az': 'Azerbaijani', 'be': 'Belarusian', 'bg': 'Bulgarian', 'bn': 'Bengali (Bengali script)', 'bs': 'Bosnian', 'ca': 'Catalan', 'cs': 'Czech', 'cy': 'Welsh', 'da': 'Danish', 'de': 'German', 'el': 'Greek', 'en': 'English', 'es': 'Spanish', 'et': 'Estonian', 'eu': 'Basque', 'fa': 'Persian', 'fi': 'Finnish', 'fil': 'Filipino', 'fr': 'French', 'ga': 'Irish', 'gl': 'Galician', 'gu': 'Gujarati', 'he': 'Hebrew', 'hi': 'Hindi (Devanagari script)', 'hr': 'Croatian', 'hu': 'Hungarian', 'hy': 'Armenian', 'id': 'Indonesian', 'is': 'Icelandic', 'it': 'Italian', 'ja': 'Japanese', 'ka': 'Georgian', 'kk': 'Kazakh', 'km': 'Khmer', 'kn': 'Kannada', 'ko': 'Korean', 'ky': 'Kyrgyz', 'lo': 'Lao', 'lt': 'Lithuanian', 'lv': 'Latvian', 'mk': 'Macedonian', 'ml': 'Malayalam', 'mn': 'Mongolian', 'mr': 'Marathi', 'ms': 'Malay', 'my': 'Burmese', 'ne': 'Nepali', 'nl': 'Dutch', 'no': 'Norwegian', 'pa': 'Punjabi', 'pl': 'Polish', 'ps': 'Pashto', 'pt': 'Portuguese', 'ro': 'Romanian', 'ru': 'Russian', 'si': 'Sinhala', 'sk': 'Slovak', 'sl': 'Slovenian', 'sq': 'Albanian', 'sr': 'Serbian', 'sv': 'Swedish', 'sw': 'Swahili', 'ta': 'Tamil', 'te': 'Telugu', 'tg': 'Tajik', 'th': 'Thai', 'tk': 'Turkmen', 'tl': 'Filipino', 'tr': 'Turkish', 'uk': 'Ukrainian', 'ur': 'Urdu', 'uz': 'Uzbek', 'vi': 'Vietnamese', 'zh': 'Chinese (Simplified)', 'zh-cn': 'Chinese (Simplified)', 'zh-tw': 'Chinese (Traditional)', 'pt-br': 'Brazilian Portuguese', 'as': 'Assamese (Bengali-Assamese script, NOT Kazakh)', 'en-us': 'English', 'fr-ca': 'Canadian French', 'es-419': 'Latin American Spanish', 'en-gb': 'British English'}
+
+
+def lang_label(code: str) -> str:
+    return f"{LANG_NAMES.get(code, code)} [code '{code}']"
+
+
 def norm_lang(lang: str) -> str:
     code = (lang or "").strip().lower()[:10]
     return code if code in SUPPORTED_LANGS else ""
 
 
-async def _llm_translate(items: list[str], lang: str) -> list[str]:
+def _system_prompt(lang: str, mode: str) -> str:
+    if mode == "name":
+        return (
+            "You transliterate people's first names for a dating app. You receive a JSON array of names in any script. "
+            f"Write EVERY name in the native script of {lang_label(lang)}, keeping its pronunciation "
+            "(e.g. 'Мария' -> 'Maria' for en, 'Alex' -> 'অ্যালেক্স' for bn, 'Alex' -> 'Алекс' for ru). Always convert names "
+            "written in a different script (Latin, Cyrillic, etc.). Never translate the meaning. Only if a name is already "
+            "in the target script, return it unchanged. Keep emojis and numbers. Return ONLY a JSON array of the same length "
+            "and order, no code fences, no comments."
+        )
+    return (
+        "You are a professional translator for a dating app. You receive a JSON array of texts in any language. "
+        f"Translate EVERY element into {lang_label(lang)}. "
+        "If an element is already in that language, return it unchanged. Keep the casual tone, emojis, numbers, "
+        "URLs, names, {placeholders}, line breaks and Markdown formatting. Acronyms written in another script "
+        "must be transliterated into the target script. Return ONLY a JSON array of the same length and order, "
+        "no code fences, no comments."
+    )
+
+
+async def _llm_translate(items: list[str], lang: str, mode: str = "text") -> list[str]:
     from emergentintegrations.llm.chat import LlmChat, UserMessage  # type: ignore
     chat = LlmChat(
         api_key=os.environ["EMERGENT_LLM_KEY"],
-        session_id=f"content_tr_{lang}_{_key(items[0])}",
-        system_message=(
-            "You are a professional translator for a dating app. You receive a JSON array of texts in any language. "
-            f"Translate EVERY element into the language with code '{lang}'. "
-            "If an element is already in that language, return it unchanged. Keep the casual tone, emojis, numbers, "
-            "URLs, names, line breaks and Markdown formatting. Return ONLY a JSON array of the same length and order, "
-            "no code fences, no comments."
-        ),
+        session_id=f"content_tr_{mode}_{lang}_{uuid.uuid4().hex}",
+        system_message=_system_prompt(lang, mode),
     ).with_model(*MODEL)
     raw = await asyncio.wait_for(chat.send_message(UserMessage(text=json.dumps(items, ensure_ascii=False))), timeout=45.0)
     txt = str(raw).strip()
@@ -56,12 +78,13 @@ async def _llm_translate(items: list[str], lang: str) -> list[str]:
     return [o if isinstance(o, str) and o.strip() else src for o, src in zip(out, items)]
 
 
-async def translate_texts(db, texts: list[str], lang: str) -> dict[str, str]:
+async def translate_texts(db, texts: list[str], lang: str, mode: str = "text") -> dict[str, str]:
     """Return {original: translated} for every text. Never raises; failures map to the original."""
-    lang = norm_lang(lang)
+    target = norm_lang(lang)
     uniq = [t for t in dict.fromkeys(texts) if isinstance(t, str) and t.strip()]
-    if not uniq or not lang:
+    if not uniq or not target:
         return {t: t for t in uniq}
+    lang = target if mode == "text" else f"{target}#{mode}"  # cache namespace
     keys = {t: _key(t) for t in uniq}
     docs = await db.content_translations.find(
         {"lang": lang, "key": {"$in": list(keys.values())}}, {"_id": 0, "key": 1, "value": 1}
@@ -72,7 +95,7 @@ async def translate_texts(db, texts: list[str], lang: str) -> dict[str, str]:
 
     async def run(chunk: list[str]):
         try:
-            translated = await _llm_translate([t[:MAX_ITEM_CHARS] for t in chunk], lang)
+            translated = await _llm_translate([t[:MAX_ITEM_CHARS] for t in chunk], target, mode)
         except Exception as e:
             logger.warning(f"[translate] {lang} chunk of {len(chunk)} failed: {e}")
             for t in chunk:

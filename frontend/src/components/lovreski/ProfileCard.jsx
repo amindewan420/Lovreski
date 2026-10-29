@@ -1,4 +1,5 @@
 import { MapPin, Circle, Crown, ShieldCheck } from "lucide-react";
+import { Tx } from "@/lib/contentTranslate";
 import { Link } from "react-router-dom";
 
 export const ProfileCard = ({ user, testid, onLike, onPass, compact = false }) => {
@@ -38,7 +39,7 @@ export const ProfileCard = ({ user, testid, onLike, onPass, compact = false }) =
         </div>
         <div className="absolute inset-x-0 bottom-0 p-3 text-white pointer-events-none">
           <h3 className="font-display font-bold text-lg leading-tight">
-            {user.name}, {user.age}
+            <Tx text={user.name} mode="name" />, {user.age}
           </h3>
           {user.distance_km != null && (
             <p className="flex items-center gap-1 text-xs opacity-90 mt-0.5">

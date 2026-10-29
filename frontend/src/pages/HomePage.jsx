@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { Tx } from "@/lib/contentTranslate";
 import { useAuth } from "@/context/AuthContext";
 import { api } from "@/lib/api";
 import { MobileShell } from "@/components/lovreski/Shell";
@@ -104,7 +105,7 @@ export default function HomePage() {
         <div className="flex items-center justify-between mb-3">
           <div>
             <h1 className="font-display font-black text-2xl tracking-tight">Главная</h1>
-            <p className="text-xs text-muted-foreground">Привет, {user?.name} 👋</p>
+            <p className="text-xs text-muted-foreground">Привет, <Tx text={user?.name} mode="name" /> 👋</p>
           </div>
           <div className="flex items-center gap-2">
             <button data-testid="btn-filters" onClick={() => nav("/settings/discovery")} className="p-2 rounded-full bg-muted hover:bg-muted/70 transition-colors duration-200">

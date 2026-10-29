@@ -1,5 +1,6 @@
 // Full-screen match celebration overlay — shown when both users like each other.
 import { motion } from "framer-motion";
+import { Tx } from "@/lib/contentTranslate";
 import { Heart, MessageCircle, X } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "@/context/AuthContext";
@@ -85,7 +86,7 @@ export const MatchCelebration = ({ matchUser, onClose }) => {
         animate={{ opacity: 1 }}
         transition={{ delay: 0.55 }}
       >
-        Вы и <span className="font-semibold text-white">{matchUser.name}</span> понравились друг другу
+        Вы и <span className="font-semibold text-white"><Tx text={matchUser.name} mode="name" /></span> понравились друг другу
       </motion.p>
 
       <motion.div

@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { Tx } from "@/lib/contentTranslate";
 import { useParams, useNavigate } from "react-router-dom";
 import { api } from "@/lib/api";
 import {
@@ -92,7 +93,7 @@ export default function OtherProfilePage() {
           <div className="absolute inset-x-0 bottom-0 h-1/2 bg-gradient-to-t from-black/85 to-transparent pointer-events-none" />
           <div className="absolute inset-x-0 bottom-0 p-4 text-white">
             <div className="flex items-center gap-2 flex-wrap">
-              <h1 data-testid="public-name-age" className="font-display font-black text-3xl">{p.name}, {p.age}</h1>
+              <h1 data-testid="public-name-age" className="font-display font-black text-3xl"><Tx text={p.name} mode="name" />, {p.age}</h1>
               {p.verified && <ShieldCheck className="w-6 h-6 text-sky-400" />}
               {p.is_premium && <Crown className="w-5 h-5 text-accent" />}
               <span data-testid="public-online-status" className={`text-xs px-2 py-0.5 rounded-full inline-flex items-center gap-1 ${p.online ? "bg-emerald-500" : "bg-gray-500"}`}>
@@ -112,13 +113,13 @@ export default function OtherProfilePage() {
         <div className="px-4 py-5 space-y-5">
           {/* Personal Information */}
           <Section title="Личная информация" testid="section-personal">
-            {p.about && <p data-testid="public-about" className="text-sm leading-relaxed p-4 bg-muted rounded-2xl">{p.about}</p>}
+            {p.about && <p data-testid="public-about" className="text-sm leading-relaxed p-4 bg-muted rounded-2xl"><Tx text={p.about} /></p>}
             <div className="grid grid-cols-1 gap-2">
               {genderLabel && <PubRow icon={Users2} label="Пол" value={genderLabel} testid="public-gender" />}
               {p.age != null && <PubRow icon={Circle} label="Возраст" value={`${p.age} лет`} testid="public-age" />}
-              {p.job && <PubRow icon={Briefcase} label="Работа" value={p.job} testid="public-job" />}
-              {p.education && <PubRow icon={GraduationCap} label="Образование" value={p.education} testid="public-education" />}
-              {p.language && <PubRow icon={Languages} label="Языки" value={p.language} testid="public-language" />}
+              {p.job && <PubRow icon={Briefcase} label="Работа" value={<Tx text={p.job} />} testid="public-job" />}
+              {p.education && <PubRow icon={GraduationCap} label="Образование" value={<Tx text={p.education} />} testid="public-education" />}
+              {p.language && <PubRow icon={Languages} label="Языки" value={<Tx text={p.language} />} testid="public-language" />}
               {p.height && <PubRow icon={Ruler} label="Рост" value={`${p.height} см · ${cmToFtIn(p.height)}`} testid="public-height" />}
             </div>
           </Section>

@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { Tx } from "@/lib/contentTranslate";
 import { api } from "@/lib/api";
 import { MobileShell } from "@/components/lovreski/Shell";
 import { MatchCelebration } from "@/components/lovreski/MatchCelebration";
@@ -41,9 +42,9 @@ const SwipeCard = ({ user, onSwipe, top }) => {
             {user.is_premium && <span className="inline-flex items-center gap-1 bg-accent text-accent-foreground text-[10px] font-bold px-2 py-0.5 rounded-full"><Crown className="w-3 h-3" />PREMIUM</span>}
             {user.online && <span className="inline-flex items-center gap-1 bg-emerald-500 text-white text-[10px] font-semibold px-2 py-0.5 rounded-full">онлайн</span>}
           </div>
-          <h2 className="font-display font-black text-3xl leading-tight">{user.name}, {user.age}</h2>
+          <h2 className="font-display font-black text-3xl leading-tight"><Tx text={user.name} mode="name" />, {user.age}</h2>
           {user.city && <p className="flex items-center gap-1 opacity-90 mt-1"><MapPin className="w-4 h-4" />{user.city}{user.distance_km != null ? ` · ${user.distance_km} км` : ""}</p>}
-          {user.about && <p className="mt-2 opacity-95 text-sm line-clamp-3">{user.about}</p>}
+          {user.about && <p className="mt-2 opacity-95 text-sm line-clamp-3"><Tx text={user.about} /></p>}
           {user.interests?.length > 0 && (
             <div className="flex gap-1.5 mt-3 flex-wrap">
               {user.interests.slice(0, 4).map((i) => (

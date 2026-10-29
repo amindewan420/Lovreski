@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { Tx } from "@/lib/contentTranslate";
 import { api } from "@/lib/api";
 import { createChatSocket } from "@/lib/ws";
 import { MobileShell } from "@/components/lovreski/Shell";
@@ -65,7 +66,7 @@ export default function ChatsListPage() {
                 </div>
                 <div className="flex-1 text-left min-w-0">
                   <div className="flex justify-between items-baseline gap-2">
-                    <p className="font-semibold truncate no-translate">{c.user.name}, {c.user.age}</p>
+                    <p className="font-semibold truncate no-translate"><Tx text={c.user.name} mode="name" />, {c.user.age}</p>
                     <p className="text-[10px] text-muted-foreground">{new Date(last.created_at).toLocaleTimeString("ru", { hour: "2-digit", minute: "2-digit" })}</p>
                   </div>
                   <p className={`text-sm text-muted-foreground truncate ${(last.kind === 'text' || last.kind === 'emoji') ? 'no-translate' : ''}`}>{preview}</p>

@@ -46,7 +46,7 @@ I18N_EN_OVERRIDES.update({
 def _apply_overrides(lang: str, strings: dict) -> dict:
     return {**strings, **I18N_EN_OVERRIDES} if (lang or "").lower().startswith("en") else strings
 
-from typing import List
+from typing import List, Literal
 import asyncio, hashlib, json as _json
 import os
 from server import (
@@ -65,13 +65,14 @@ async def translate(body: TranslateBody, user: dict = Depends(get_current_user))
 class ContentBatchBody(BaseModel):
     target: str = Field(min_length=2, max_length=10)
     texts: List[str] = Field(max_length=300)
+    mode: Literal["text", "name"] = "text"
 
 
 @api.post("/translate/batch")
 async def translate_batch(body: ContentBatchBody, user: dict = Depends(get_current_user)):
     """Translate many chat texts in one consistent pass. Returns {translations: {original: translated}}."""
     texts = [t[:4000] for t in body.texts if isinstance(t, str)]
-    return {"target": body.target, "translations": await translate_texts(db, texts, body.target)}
+    return {"target": body.target, "translations": await translate_texts(db, texts, body.target, body.mode)}
 
 class I18nBatchBody(BaseModel):
     lang: str
@@ -170,28 +171,14 @@ async def i18n_lang(lang: str):
     # Invalidate whenever the base dictionary version changes
     if cached and cached.get('version') == I18N_VERSION:
         return {"lang": lang, "strings": _apply_overrides(lang, cached['strings']), "cached": True, "version": I18N_VERSION}
-    # Translate via LLM in one shot
+    # Translate through the shared chunked engine (parallel, cached per string)
     try:
-        from emergentintegrations.llm.chat import LlmChat, UserMessage  # type: ignore
-        payload = _json.dumps(I18N_BASE_RU, ensure_ascii=False)
-        chat = LlmChat(
-            api_key=os.environ['EMERGENT_LLM_KEY'],
-            session_id=f"i18n_{lang}",
-            system_message=(
-                "You are a professional UI translator. You will receive a JSON object of Russian UI strings. "
-                f"Translate ALL values to the target language code '{lang}'. "
-                "Keep the JSON keys IDENTICAL. Preserve any {placeholders}, emojis, and punctuation. "
-                "Respond ONLY with the translated JSON object — no markdown, no commentary."
-            ),
-        ).with_model("openai", "gpt-4o-mini")
-        raw = await asyncio.wait_for(chat.send_message(UserMessage(text=payload)), timeout=45.0)
-        txt = str(raw).strip()
-        if txt.startswith("```"):
-            txt = txt.split("```", 2)[1].lstrip("json").strip()
-        translated = _json.loads(txt)
-        # Fill any missing keys with the Russian original
-        for k, v in I18N_BASE_RU.items():
-            translated.setdefault(k, v)
+        values = list(dict.fromkeys(I18N_BASE_RU.values()))
+        tr = await translate_texts(db, values, lang)
+        translated = {k: tr.get(v, v) for k, v in I18N_BASE_RU.items()}
+        unchanged = sum(1 for v in values if tr.get(v, v) == v)
+        if unchanged > len(values) * 0.3:
+            raise RuntimeError(f"{unchanged}/{len(values)} strings untranslated")
         await db.i18n_cache.update_one(
             {"lang": lang},
             {"$set": {"lang": lang, "strings": translated, "version": I18N_VERSION, "updated_at": iso(now_utc())}},

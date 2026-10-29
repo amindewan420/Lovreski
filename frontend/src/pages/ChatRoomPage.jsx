@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState, useMemo, useCallback } from "react";
+import { useContentTx } from "@/lib/contentTranslate";
 import { useParams, useNavigate } from "react-router-dom";
 import { api } from "@/lib/api";
 import { createChatSocket } from "@/lib/ws";
@@ -95,6 +96,7 @@ export default function ChatRoomPage() {
   const nav = useNavigate();
   const { user, refresh } = useAuth();
   const { t, lang, setLang } = useI18n();
+  const ptx = useContentTx();
   const langMeta = getLangMeta(lang);
 
   const [other, setOther] = useState(null);
@@ -422,7 +424,7 @@ export default function ChatRoomPage() {
                 {other.online && <span className="absolute bottom-0 right-0 w-2.5 h-2.5 rounded-full bg-emerald-500 border-2 border-white" />}
               </div>
               <div className="flex-1 min-w-0" onClick={() => nav(`/profile/${other.user_id}`)}>
-                <p className="font-semibold text-slate-900 truncate no-translate">{other.name}, {other.age}</p>
+                <p className="font-semibold text-slate-900 truncate no-translate">{ptx(other.name, "name")}, {other.age}</p>
                 <p className="text-[11px] text-emerald-600">
                   {typingPeer ? t("chat.typing") : (other.online ? t("chat.online") : t("chat.recent"))}
                 </p>
@@ -455,7 +457,7 @@ export default function ChatRoomPage() {
             const showHint = swiping && dx > 8;
             const highlighted = highlightId === m.message_id;
             const repliedSenderName = replied
-              ? (replied.from_user === user?.user_id ? t("chat.you") : (other?.name || ""))
+              ? (replied.from_user === user?.user_id ? t("chat.you") : ptx(other?.name || "", "name"))
               : "";
             const repliedSnippet = replied
               ? (tx(replied.text) || {
@@ -595,7 +597,7 @@ export default function ChatRoomPage() {
         {/* Reply preview — WhatsApp-style slide-up above the composer */}
         {reply && (() => {
           const replyMine = reply.from_user === user?.user_id;
-          const senderName = replyMine ? t("chat.you") : (other?.name || "");
+          const senderName = replyMine ? t("chat.you") : ptx(other?.name || "", "name");
           const snippet = tx(reply.text) || {
             image: "🖼 " + t("chat.gift_gallery"),
             video: "🎬 " + t("chat.gift_camera"),
