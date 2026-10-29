@@ -2,6 +2,14 @@
 from fastapi import Depends, HTTPException
 from pydantic import BaseModel, Field
 from translation import translate_texts
+
+# Exact English wording for profile options (source of truth for stored values)
+I18N_EN_OVERRIDES = {"profile.interests.romance": "Romance & Passion", "profile.interests.romance.kisses": "Kisses", "profile.interests.romance.hugs": "Hugs", "profile.interests.romance.flirt": "Flirt", "profile.interests.romance.romantic_dinners": "Romantic dinners", "profile.interests.romance.compliments": "Compliments", "profile.interests.romance.massage": "Massage", "profile.interests.romance.touching": "Touching", "profile.interests.romance.watch_romantic_movies": "Watch romantic movies", "profile.interests.romance.underwear": "Underwear", "profile.interests.romance.deep_conversations": "Deep conversations", "profile.interests.romance.dramas": "Dramas", "profile.interests.romance.spontaneous_surprises": "Spontaneous surprises", "profile.interests.romance.video_games": "Video Games", "profile.interests.romance.fashion_and_beauty": "Fashion and Beauty", "profile.interests.romance.cars": "Cars", "profile.interests.romance.it_and_tech": "IT and Tech", "profile.interests.romance.psychology": "Psychology", "profile.interests.romance.meditation": "Meditation", "profile.interests.romance.language_learning": "Language Learning", "profile.interests.romance.dancing": "Dancing", "profile.interests.romance.make_love": "Make Love", "profile.interests.romance.fan_fiction": "Fan Fiction", "profile.interests.social": "Social Life", "profile.interests.social.travel": "Travel", "profile.interests.social.shopping": "Shopping", "profile.interests.social.camping": "Camping", "profile.interests.social.museums_and_galleries": "Museums and Galleries", "profile.interests.social.partying_and_clubbing": "Partying and Clubbing", "profile.interests.social.meeting_with_friends": "Meeting with Friends", "profile.interests.social.active_recreation": "Active Recreation", "profile.interests.social.karaoke": "Karaoke", "profile.interests.social.art": "Art", "profile.interests.creative": "Quizzes & Creativity", "profile.interests.creative.photography": "Photography", "profile.interests.creative.music": "Music", "profile.interests.creative.design": "Design", "profile.interests.creative.makeup": "Makeup", "profile.interests.creative.blogging": "Blogging", "profile.interests.creative.painting": "Painting", "profile.interests.active": "Active Lifestyle", "profile.interests.active.running": "Running", "profile.interests.active.yoga": "Yoga", "profile.interests.active.fitness": "Fitness", "profile.interests.active.walks": "Walks", "profile.interests.active.mountain_climbing": "Mountain Climbing", "profile.interests.active.swimming": "Swimming", "profile.interests.active.horseback_riding": "Horseback Riding", "profile.interests.food": "Food & Drinks", "profile.interests.food.healthy_eating": "Healthy Eating", "profile.interests.food.coffee_and_tea": "Coffee and Tea", "profile.interests.food.drink_with_friends": "Drink with Friends", "profile.interests.food.spicy_food": "Spicy Food", "profile.interests.sports": "Sports", "profile.interests.sports.football": "Football", "profile.interests.sports.basketball": "Basketball", "profile.interests.sports.hockey": "Hockey", "profile.interests.sports.swimming": "Swimming", "profile.interests.home": "Home Time", "profile.interests.home.cooking": "Cooking", "profile.interests.home.board_games": "Board Games", "profile.interests.home.books": "Books", "profile.interests.personal": "Personal Development", "profile.interests.personal.online_learning": "Online Learning", "profile.interests.personal.travel": "Travel", "profile.interests.personal.cartoons": "Cartoons", "profile.goal.long_term": "Long-term commitment", "profile.goal.chat": "To chat and meet new people", "profile.goal.friendship": "Friendship", "profile.goal.experience": "New Experience", "profile.relationship.single": "Single", "profile.relationship.multiple": "Multiple", "profile.relationship.complicated": "Complicated", "profile.relationship.taken": "Taken", "profile.relationship.not_to_answer": "Not to answer", "profile.kids.no_kids": "No kids", "profile.kids.i_have_kids": "I have kids", "profile.kids.no_answer": "No answer", "profile.smoking.dont_smoke": "Don't smoke", "profile.smoking.rarely": "Rarely", "profile.smoking.smoke": "Smoke", "profile.smoking.not_to_answer": "Not to answer", "profile.alcohol.dont_drink": "Don't drink", "profile.alcohol.rarely": "Rarely", "profile.alcohol.drink": "Drink", "profile.alcohol.not_to_answer": "Not to answer"}
+
+
+def _apply_overrides(lang: str, strings: dict) -> dict:
+    return {**strings, **I18N_EN_OVERRIDES} if (lang or "").lower().startswith("en") else strings
+
 from typing import List
 import asyncio, hashlib, json as _json
 import os
@@ -125,7 +133,7 @@ async def i18n_lang(lang: str):
     cached = await db.i18n_cache.find_one({"lang": lang}, {"_id": 0})
     # Invalidate whenever the base dictionary version changes
     if cached and cached.get('version') == I18N_VERSION:
-        return {"lang": lang, "strings": cached['strings'], "cached": True, "version": I18N_VERSION}
+        return {"lang": lang, "strings": _apply_overrides(lang, cached['strings']), "cached": True, "version": I18N_VERSION}
     # Translate via LLM in one shot
     try:
         from emergentintegrations.llm.chat import LlmChat, UserMessage  # type: ignore
@@ -153,7 +161,7 @@ async def i18n_lang(lang: str):
             {"$set": {"lang": lang, "strings": translated, "version": I18N_VERSION, "updated_at": iso(now_utc())}},
             upsert=True,
         )
-        return {"lang": lang, "strings": translated, "cached": False, "version": I18N_VERSION}
+        return {"lang": lang, "strings": _apply_overrides(lang, translated), "cached": False, "version": I18N_VERSION}
     except Exception as e:
         logger.exception("i18n translate failed")
         # Fail-open: return Russian so UI is at least legible

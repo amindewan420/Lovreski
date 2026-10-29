@@ -8,7 +8,8 @@ import {
 import { toast } from "sonner";
 import { AnimatePresence } from "framer-motion";
 import { MatchCelebration } from "@/components/lovreski/MatchCelebration";
-import { INTEREST_CATEGORIES, GENDER_OPTIONS } from "@/lib/profileConstants";
+import { INTEREST_CATEGORIES, GENDER_OPTIONS, interestLabel, optionLabel, goalLabel, interestCategoryKey, tr } from "@/lib/profileConstants";
+import { useI18n } from "@/lib/i18n";
 
 const cmToFtIn = (cm) => {
   const totalIn = cm / 2.54;
@@ -33,6 +34,7 @@ const groupInterests = (chosen = []) => {
 
 export default function OtherProfilePage() {
   const { id } = useParams();
+  const { t } = useI18n();
   const nav = useNavigate();
   const [p, setP] = useState(null);
   const [photoIdx, setPhotoIdx] = useState(0);
@@ -125,11 +127,11 @@ export default function OtherProfilePage() {
           {(p.goal || p.relationship || p.kids || p.smoking || p.alcohol) && (
             <Section title="Образ жизни и цели" testid="section-lifestyle">
               <div className="grid grid-cols-1 gap-2">
-                {p.goal && <PubRow icon={Target} label="Цель" value={p.goal} testid="public-goal" />}
-                {p.relationship && <PubRow icon={Heart} label="Статус" value={p.relationship} testid="public-relationship" />}
-                {p.kids && <PubRow icon={Baby} label="Дети" value={p.kids} testid="public-kids" />}
-                {p.smoking && <PubRow icon={Cigarette} label="Курение" value={p.smoking} testid="public-smoking" />}
-                {p.alcohol && <PubRow icon={Wine} label="Алкоголь" value={p.alcohol} testid="public-alcohol" />}
+                {p.goal && <PubRow icon={Target} label="Цель" value={goalLabel(t, p.goal)} testid="public-goal" />}
+                {p.relationship && <PubRow icon={Heart} label="Статус" value={optionLabel(t, "relationship", p.relationship)} testid="public-relationship" />}
+                {p.kids && <PubRow icon={Baby} label="Дети" value={optionLabel(t, "kids", p.kids)} testid="public-kids" />}
+                {p.smoking && <PubRow icon={Cigarette} label="Курение" value={optionLabel(t, "smoking", p.smoking)} testid="public-smoking" />}
+                {p.alcohol && <PubRow icon={Wine} label="Алкоголь" value={optionLabel(t, "alcohol", p.alcohol)} testid="public-alcohol" />}
               </div>
             </Section>
           )}
@@ -141,11 +143,11 @@ export default function OtherProfilePage() {
                 {interestGroups.map((cat) => (
                   <div key={cat.key}>
                     <p className="text-[10px] font-black uppercase tracking-widest text-muted-foreground mb-1.5">
-                      {cat.emoji} {cat.label}
+                      {cat.emoji} <span className="no-translate">{cat.key === "other" ? cat.label : tr(t, interestCategoryKey(cat.key), cat.label)}</span>
                     </p>
                     <div className="flex flex-wrap gap-1.5">
                       {cat.items.map((i) => (
-                        <span key={i} data-testid={`public-interest-${i.replace(/\s/g, "_")}`} className="px-3 py-1.5 bg-primary text-primary-foreground rounded-full text-xs font-semibold">{i}</span>
+                        <span key={i} data-testid={`public-interest-${i.replace(/\s/g, "_")}`} className="px-3 py-1.5 bg-primary text-primary-foreground rounded-full text-xs font-semibold no-translate">{interestLabel(t, i, cat.key === "other" ? undefined : cat.key)}</span>
                       ))}
                     </div>
                   </div>

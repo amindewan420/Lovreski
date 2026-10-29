@@ -7,6 +7,10 @@ import { Heart, X, Star, MessageCircle, MapPin, ShieldCheck, Crown, RefreshCw } 
 import { toast } from "sonner";
 import { FILTER_SIG_KEY } from "@/lib/filterSync";
 import { Link } from "react-router-dom";
+import { useI18n } from "@/lib/i18n";
+import { interestLabel } from "@/lib/profileConstants";
+
+const InterestText = ({ i }) => { const { t } = useI18n(); return interestLabel(t, i); };
 
 const SwipeCard = ({ user, onSwipe, top }) => {
   const x = useMotionValue(0);
@@ -43,7 +47,7 @@ const SwipeCard = ({ user, onSwipe, top }) => {
           {user.interests?.length > 0 && (
             <div className="flex gap-1.5 mt-3 flex-wrap">
               {user.interests.slice(0, 4).map((i) => (
-                <span key={i} className="text-[10px] font-semibold px-2 py-1 rounded-full bg-white/15 backdrop-blur-sm border border-white/20">{i}</span>
+                <span key={i} className="text-[10px] font-semibold px-2 py-1 rounded-full bg-white/15 backdrop-blur-sm border border-white/20 no-translate"><InterestText i={i} /></span>
               ))}
             </div>
           )}

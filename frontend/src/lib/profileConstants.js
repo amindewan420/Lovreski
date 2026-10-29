@@ -47,3 +47,24 @@ export const GENDER_OPTIONS = [
   { value: "non_binary", label: "Небинарный" },
   { value: "prefer_not", label: "Не указывать" },
 ];
+
+// ─── i18n keys (stored values stay English; labels come from t()) ───
+const slug = (s) => String(s).toLowerCase().replace(/'/g, "").replace(/[^a-z0-9]+/g, "_").replace(/^_|_$/g, "");
+
+export const interestCategoryKey = (catKey) => `profile.interests.${catKey}`;
+export const interestKey = (item, catKey) => {
+  const cat = catKey || INTEREST_CATEGORIES.find((c) => c.items.includes(item))?.key;
+  return cat ? `profile.interests.${cat}.${slug(item)}` : null;
+};
+export const optionKey = (section, value) => `profile.${section}.${slug(value)}`;
+export const goalOption = (v) => GOAL_OPTIONS.find((g) => g.value === v || g.label === v);
+
+// Translate with graceful fallback to the stored English value (custom/legacy values).
+export const tr = (t, key, fallback) => {
+  if (!key) return fallback;
+  const v = t(key);
+  return v && v !== key ? v : fallback;
+};
+export const interestLabel = (t, item, catKey) => tr(t, interestKey(item, catKey), item);
+export const optionLabel = (t, section, value) => (value ? tr(t, optionKey(section, value), value) : value);
+export const goalLabel = (t, v) => { const g = goalOption(v); return g ? tr(t, `profile.goal.${g.value}`, g.label) : v; };

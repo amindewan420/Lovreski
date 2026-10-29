@@ -169,3 +169,7 @@ Currently on Emergent (React + FastAPI + MongoDB). For amvera.cloud deployment, 
 ## 2026-06 — Iteration 48: My Applications soft delete
 - `PATCH /api/support/my/{id}/hide` sets `is_deleted_by_user` (+timestamp); `GET /api/support/my` excludes hidden. Admin pending/history unchanged, tagged "скрыто пользователем". Premium/coins untouched; hidden pending still reviewed.
 - `MyApplications.jsx`: long-press/right-click → red Удалить sheet → confirm → card animates out, toast. Tested iteration_48 (100%).
+
+## 2026-06 — Iteration 49: Profile options localized
+- 86 keys (`profile.goal.*`, `profile.relationship|kids|smoking|alcohol.*`, `profile.interests.<cat>` + `.<item>`) added to the base RU dictionary (server.py); exact English wording via `I18N_EN_OVERRIDES` in routers/i18n.py; other languages auto-translated.
+- Stored values unchanged (English); labels via helpers in `lib/profileConstants.js` (interestLabel/optionLabel/goalLabel/tr) in ProfilePage, OtherProfilePage, DiscoverPage. Self-verified (RU screenshot, EN API).

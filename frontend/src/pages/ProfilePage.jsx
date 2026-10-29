@@ -9,7 +9,9 @@ import { toast } from "sonner";
 import {
   INTEREST_CATEGORIES, GOAL_OPTIONS, RELATIONSHIP_OPTIONS, KIDS_OPTIONS,
   SMOKING_OPTIONS, ALCOHOL_OPTIONS, GENDER_OPTIONS,
+  interestLabel, optionLabel, goalLabel, interestCategoryKey, tr, goalOption,
 } from "@/lib/profileConstants";
+import { useI18n } from "@/lib/i18n";
 import {
   Settings, Coins, Crown, Pencil, Eye, LogOut, Camera, Sun, Moon, Trash2,
   ChevronRight, Check, Plus, Info, ShieldCheck, MapPin, Circle,
@@ -35,6 +37,7 @@ const CharCounter = ({ len, max, testid }) => (
 export default function ProfilePage() {
   const { user, refresh, logout } = useAuth();
   const { theme, toggle } = useTheme();
+  const { t } = useI18n();
   const nav = useNavigate();
   const [mode, setMode] = useState("edit"); // 'edit' | 'view'
   const [form, setForm] = useState({});
@@ -177,7 +180,7 @@ export default function ProfilePage() {
           {user.about && <p className="mt-4 p-4 bg-muted rounded-2xl text-sm">{user.about}</p>}
           {user.interests?.length > 0 && (
             <div className="mt-3 flex flex-wrap gap-1.5">
-              {user.interests.map((i) => <span key={i} className="px-3 py-1.5 bg-primary text-primary-foreground rounded-full text-xs font-semibold">{i}</span>)}
+              {user.interests.map((i) => <span key={i} className="px-3 py-1.5 bg-primary text-primary-foreground rounded-full text-xs font-semibold no-translate">{interestLabel(t, i)}</span>)}
             </div>
           )}
         </div>
@@ -486,13 +489,13 @@ export default function ProfilePage() {
 
         <FieldRow
           label="Цель" testid="field-goal" saved={savedField === "goal"}
-          input={<span className="text-right">{GOAL_OPTIONS.find((g) => g.value === form.goal || g.label === form.goal)?.emoji || ""} {form.goal || "—"}</span>}
+          input={<span className="text-right"><span className="no-translate">{goalOption(form.goal)?.emoji || ""} {form.goal ? goalLabel(t, form.goal) : "—"}</span></span>}
           rightArrow onClick={() => setSheet("goal")}
         />
-        <FieldRow label="Отношения" testid="field-relationship" saved={savedField === "relationship"} input={<span>{form.relationship || "—"}</span>} rightArrow onClick={() => setSheet("relationship")} />
-        <FieldRow label="Дети" testid="field-kids" saved={savedField === "kids"} input={<span>{form.kids || "—"}</span>} rightArrow onClick={() => setSheet("kids")} />
-        <FieldRow label="Курение" testid="field-smoking" saved={savedField === "smoking"} input={<span>{form.smoking || "—"}</span>} rightArrow onClick={() => setSheet("smoking")} />
-        <FieldRow label="Алкоголь" testid="field-alcohol" saved={savedField === "alcohol"} input={<span>{form.alcohol || "—"}</span>} rightArrow onClick={() => setSheet("alcohol")} />
+        <FieldRow label="Отношения" testid="field-relationship" saved={savedField === "relationship"} input={<span className="no-translate">{form.relationship ? optionLabel(t, "relationship", form.relationship) : "—"}</span>} rightArrow onClick={() => setSheet("relationship")} />
+        <FieldRow label="Дети" testid="field-kids" saved={savedField === "kids"} input={<span className="no-translate">{form.kids ? optionLabel(t, "kids", form.kids) : "—"}</span>} rightArrow onClick={() => setSheet("kids")} />
+        <FieldRow label="Курение" testid="field-smoking" saved={savedField === "smoking"} input={<span className="no-translate">{form.smoking ? optionLabel(t, "smoking", form.smoking) : "—"}</span>} rightArrow onClick={() => setSheet("smoking")} />
+        <FieldRow label="Алкоголь" testid="field-alcohol" saved={savedField === "alcohol"} input={<span className="no-translate">{form.alcohol ? optionLabel(t, "alcohol", form.alcohol) : "—"}</span>} rightArrow onClick={() => setSheet("alcohol")} />
       </section>
 
       {/* Interests */}
@@ -509,7 +512,7 @@ export default function ProfilePage() {
           {form.interests?.length ? (
             <div className="flex flex-wrap gap-1.5">
               {form.interests.map((i) => (
-                <span key={i} className="px-3 py-1 text-xs font-semibold bg-primary text-primary-foreground rounded-full">{i}</span>
+                <span key={i} className="px-3 py-1 text-xs font-semibold bg-primary text-primary-foreground rounded-full no-translate">{interestLabel(t, i)}</span>
               ))}
               <span className="px-3 py-1 text-xs font-semibold border-2 border-dashed border-border text-muted-foreground rounded-full">+ добавить</span>
             </div>
@@ -546,8 +549,8 @@ export default function ProfilePage() {
       <BottomSheet open={sheet === "goal"} onClose={() => setSheet(null)} title="Ваша цель" testId="sheet-goal">
         {GOAL_OPTIONS.map((g) => (
           <button key={g.value} data-testid={`opt-goal-${g.value}`} onClick={async () => { setForm((f) => ({ ...f, goal: g.label })); await saveField({ goal: g.label }); setSheet(null); }} className="w-full flex justify-between items-center px-4 py-3 rounded-xl hover:bg-muted">
-            <span>{g.emoji} {g.label}</span>
-            {form.goal === g.label && <Check className="w-5 h-5 text-primary" />}
+            <span className="no-translate">{g.emoji} {tr(t, `profile.goal.${g.value}`, g.label)}</span>
+            {(form.goal === g.label || form.goal === g.value) && <Check className="w-5 h-5 text-primary" />}
           </button>
         ))}
       </BottomSheet>
@@ -561,7 +564,7 @@ export default function ProfilePage() {
         <BottomSheet key={key} open={sheet === key} onClose={() => setSheet(null)} title={title} testId={`sheet-${key}`}>
           {opts.map((o) => (
             <button key={o} data-testid={`opt-${key}-${o.replace(/\s/g, "_")}`} onClick={async () => { setForm((f) => ({ ...f, [key]: o })); await saveField({ [key]: o }); setSheet(null); }} className="w-full flex justify-between items-center px-4 py-3 rounded-xl hover:bg-muted">
-              <span>{o}</span>
+              <span className="no-translate">{optionLabel(t, key, o)}</span>
               {form[key] === o && <Check className="w-5 h-5 text-primary" />}
             </button>
           ))}
@@ -593,7 +596,7 @@ export default function ProfilePage() {
           {INTEREST_CATEGORIES.map((cat) => (
             <div key={cat.key}>
               <h4 className="font-display font-bold text-sm mb-2 flex items-center gap-1">
-                <span>{cat.emoji}</span> {cat.label}
+                <span>{cat.emoji}</span> <span className="no-translate">{tr(t, interestCategoryKey(cat.key), cat.label)}</span>
               </h4>
               <div className="flex flex-wrap gap-1.5">
                 {cat.items.map((i) => {
@@ -613,7 +616,7 @@ export default function ProfilePage() {
                           : "border-2 border-border text-foreground hover:border-primary"
                       }`}
                     >
-                      {i}
+                      <span className="no-translate">{interestLabel(t, i, cat.key)}</span>
                     </button>
                   );
                 })}
