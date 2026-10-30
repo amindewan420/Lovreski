@@ -38,7 +38,12 @@ mongo_url = os.environ['MONGO_URL']
 client = AsyncIOMotorClient(mongo_url)
 db = client[os.environ['DB_NAME']]
 
-JWT_SECRET = os.environ['JWT_SECRET']
+print("=== DEBUG: All env vars with 'JWT' or 'SECRET' ===")
+for k in os.environ.keys():
+ if 'JWT' in k.upper() or 'SECRET' in k.upper():
+ print(f"Found key: '{k}' = len:{len(os.environ[k])}")
+print("=== END DEBUG ===")
+JWT_SECRET = os.environ.get('JWT_SECRET', 'temp-fallback-fix-later')
 JWT_ALG = 'HS256'
 # ── Encryption for admin SBP phone (at rest in DB) ──
 _ENC_KEY = os.environ.get('SBP_ENCRYPT_KEY')
