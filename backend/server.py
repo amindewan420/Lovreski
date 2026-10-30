@@ -67,8 +67,8 @@ def mask_phone(p: str) -> str:
     if len(digits) < 4: return "***"
     return f"+{digits[0]} (***) ***-**-{digits[-2:]}"
 
-ADMIN_EMAIL = os.environ['ADMIN_EMAIL'].strip()
-ADMIN_PASSWORD = os.environ['ADMIN_PASSWORD']
+ADMIN_EMAIL = os.environ.get('ADMIN_EMAIL', 'admin@example.com').strip()
+ADMIN_PASSWORD = os.environ.get('ADMIN_PASSWORD', 'change-this-password')
 
 app = FastAPI(title="Lovreski API")
 api = APIRouter(prefix="/api")
