@@ -1,3 +1,5 @@
+--extra-index-url https://d33sy5i8bnduwe.cloudfront.net/simple/
+emergentintegrations
 aiohappyeyeballs==2.7.1
 aiohttp==3.14.3
 aiosignal==1.4.0
