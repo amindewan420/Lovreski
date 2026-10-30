@@ -40,8 +40,8 @@ db = client[os.environ['DB_NAME']]
 
 print("=== DEBUG: All env vars with 'JWT' or 'SECRET' ===")
 for k in os.environ.keys():
- if 'JWT' in k.upper() or 'SECRET' in k.upper():
- print(f"Found key: '{k}' = len:{len(os.environ[k])}")
+    if 'JWT' in k.upper() or 'SECRET' in k.upper():
+        print(f"Found key: '{k}' = len:{len(os.environ[k])}")
 print("=== END DEBUG ===")
 JWT_SECRET = os.environ.get('JWT_SECRET', 'temp-fallback-fix-later')
 JWT_ALG = 'HS256'
