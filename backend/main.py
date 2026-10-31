@@ -16,6 +16,7 @@ import os
 from pathlib import Path
 
 from fastapi.responses import FileResponse
+from fastapi import Response
 from fastapi.staticfiles import StaticFiles
 
 # Import the fully-configured app instance. server.py already:
@@ -30,7 +31,14 @@ def health() -> dict:
     """Amvera / load-balancer health probe."""
     return {"status": "ok"}
 
+@app.head("/", include_in_schema=False)
+def root_head():
+ return Response(status_code=200)
 
+@app.get("/", include_in_schema=False)
+def root_get():
+ return {"status": "ok"}
+  
 # ────────── Static SPA (only when a build exists) ──────────
 # The Dockerfile copies the compiled React bundle into /app/frontend/build.
 _STATIC_DIR = Path(os.environ.get("FRONTEND_BUILD_DIR", "/app/frontend/build"))
