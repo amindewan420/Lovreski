@@ -182,3 +182,8 @@ Currently on Emergent (React + FastAPI + MongoDB). For amvera.cloud deployment, 
 ## 2026-06 Profile content translation
 - Display-time AI translation of name (transliterated, mode=name), about, job, education, language everywhere profiles show (lib/contentTranslate.jsx useContentTx/<Tx>); stored data unchanged; edit inputs show original on focus
 - /api/translate/batch accepts mode text|name; translation model gpt-4.1-mini with language names in prompt; /api/i18n/{lang} now built via chunked translate_texts (fixes 45s timeout for bn/as/hi)
+
+## 2026-06 Timeweb frontend blank page fix
+- Live frontend served raw public/index.html (no JS bundle): CI=true build failed on ESLint warnings; npm install failed on peer deps
+- Fixes: craco eslint enable only in dev; frontend/.npmrc legacy-peer-deps; .dockerignore no longer excludes docker/ (needed by Dockerfile.frontend)
+- Timeweb needs: frontend env REACT_APP_BACKEND_URL=https://amindewan420-lovreski-49f7.twc1.net (build-time), output dir build; backend CORS_ORIGINS must include https://amindewan420-lovreski-85a7.twc1.net

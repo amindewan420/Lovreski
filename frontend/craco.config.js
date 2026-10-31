@@ -71,6 +71,8 @@ if (config.enableHealthCheck) {
 
 let webpackConfig = {
   eslint: {
+    // Lint only in dev; CI hosts set CI=true, which turns lint warnings into build failures.
+    enable: isDevServer,
     configure: {
       extends: ["plugin:react-hooks/recommended"],
       rules: {

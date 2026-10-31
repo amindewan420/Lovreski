@@ -43,5 +43,4 @@ backend/tests/__pycache__
 .emergent
 memory
 docker-compose.yml
-docker/
 Dockerfile.frontend
