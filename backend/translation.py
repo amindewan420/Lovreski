@@ -77,47 +77,15 @@ async def _llm_translate(items: list[str], lang: str, mode: str = "text") -> lis
         raise ValueError("bad shape")
     return [o if isinstance(o, str) and o.strip() else src for o, src in zip(out, items)]
 
-
 async def translate_texts(db, texts: list[str], lang: str, mode: str = "text") -> dict[str, str]:
-    """Return {original: translated} for every text. Never raises; failures map to the original."""
-    target = norm_lang(lang)
+    # Backend translation disabled; browser will handle translation.
     uniq = [t for t in dict.fromkeys(texts) if isinstance(t, str) and t.strip()]
-    if not uniq or not target:
-        return {t: t for t in uniq}
-    lang = target if mode == "text" else f"{target}#{mode}"  # cache namespace
-    keys = {t: _key(t) for t in uniq}
-    docs = await db.content_translations.find(
-        {"lang": lang, "key": {"$in": list(keys.values())}}, {"_id": 0, "key": 1, "value": 1}
-    ).to_list(len(keys) + 10)
-    cached = {d["key"]: d["value"] for d in docs}
-    result = {t: cached[k] for t, k in keys.items() if k in cached}
-    missing = [t for t in uniq if t not in result]
-
-    async def run(chunk: list[str]):
-        try:
-            translated = await _llm_translate([t[:MAX_ITEM_CHARS] for t in chunk], target, mode)
-        except Exception as e:
-            logger.warning(f"[translate] {lang} chunk of {len(chunk)} failed: {e}")
-            for t in chunk:
-                result[t] = t
-            return
-        for src, dst in zip(chunk, translated):
-            result[src] = dst
-            await db.content_translations.update_one(
-                {"lang": lang, "key": keys[src]},
-                {"$set": {"lang": lang, "key": keys[src], "value": dst}}, upsert=True,
-            )
-
-    await asyncio.gather(*[run(missing[i:i + CHUNK]) for i in range(0, len(missing), CHUNK)])
-    return {t: result.get(t, t) for t in uniq}
-
+    return {t: t for t in uniq}
 
 def split_blocks(body: str) -> list[str]:
     """Paragraph blocks of a Markdown doc — small units give a granular cache."""
     return body.split("\n\n")
 
-
 async def translate_markdown(db, body: str, lang: str) -> str:
-    blocks = split_blocks(body or "")
-    tr = await translate_texts(db, [b for b in blocks if b.strip()], lang)
-    return "\n\n".join(tr.get(b, b) if b.strip() else b for b in blocks)
+    # Backend translation disabled; return original text.
+    return body or ""
