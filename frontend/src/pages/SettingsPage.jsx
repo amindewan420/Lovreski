@@ -4,7 +4,8 @@ import { api } from "@/lib/api";
 import { MobileShell } from "@/components/lovreski/Shell";
 import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
-import { ChevronRight, User, Search, Crown, Bell, Languages, FileText, Download, Shield, LogOut, BellRing, BellOff } from "lucide-react";
+import { ChevronRight, User, Search, Crown, Bell, Languages, FileText, Download, Shield, LogOut, BellRing, BellOff, Headphones } from "lucide-react";
+import { SoundSettings } from "@/components/lovreski/SoundSettings";
 import { useI18n, getLangMeta } from "@/lib/i18n";
 import LanguageSheet from "@/components/lovreski/LanguageSheet";
 import { Slider } from "@/components/ui/slider";
@@ -147,6 +148,10 @@ export default function SettingsPage() {
               <input type="checkbox" data-testid={`notif-toggle-${k}`} checked={form.notif_push?.[k] ?? true} onChange={(e) => { const np = { ...(form.notif_push||{}), [k]: e.target.checked }; setForm({ ...form, notif_push: np }); save({ notif_push: np }); }} className="accent-primary" />
             </Row>
           ))}
+        </Section>
+
+        <Section title={t("settings.section.sound")} icon={Headphones}>
+          <SoundSettings />
         </Section>
 
         <Section title={t("settings.section.push")} icon={BellRing}>

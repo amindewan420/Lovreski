@@ -1,4 +1,7 @@
 import { useEffect, useRef, useState, useMemo, useCallback } from "react";
+import { useSoundPrefs } from "@/components/lovreski/SoundManager";
+import { playSound } from "@/lib/sound";
+import { Volume2, VolumeX } from "lucide-react";
 import { useContentTx } from "@/lib/contentTranslate";
 import { useParams, useNavigate } from "react-router-dom";
 import { api } from "@/lib/api";
@@ -97,6 +100,7 @@ export default function ChatRoomPage() {
   const { user, refresh } = useAuth();
   const { t, lang, setLang } = useI18n();
   const ptx = useContentTx();
+  const [soundPrefs, updateSound] = useSoundPrefs();
   const langMeta = getLangMeta(lang);
 
   const [other, setOther] = useState(null);
@@ -203,6 +207,7 @@ export default function ChatRoomPage() {
     try {
       const { data } = await api.post(`/chats/${id}/send`, { ...payload, reply_to: reply?.message_id });
       setMsgs((prev) => prev.some((x) => x.message_id === data.message_id) ? prev : [...prev, data]);
+      playSound("outgoing");
       setText(""); setReply(null); setShowGifts(false); setShowEmoji(false); setShowTray(false);
       refresh(); refreshStatus();
       scrollBottom();
@@ -431,6 +436,11 @@ export default function ChatRoomPage() {
                   {typingPeer ? t("chat.typing") : (other.online ? t("chat.online") : t("chat.recent"))}
                 </p>
               </div>
+              <button data-testid="chat-mute-btn" onClick={() => updateSound({ soundEnabled: !soundPrefs.soundEnabled })}
+                aria-label={t(soundPrefs.soundEnabled ? "sound.mute" : "sound.unmute")} title={t(soundPrefs.soundEnabled ? "sound.mute" : "sound.unmute")}
+                className="p-2 rounded-full text-slate-600 hover:bg-slate-100">
+                {soundPrefs.soundEnabled ? <Volume2 className="w-4 h-4" /> : <VolumeX className="w-4 h-4" />}
+              </button>
               <div data-testid="chat-coins-header" className="flex items-center gap-1 text-xs text-slate-600 bg-slate-100 px-2 py-1 rounded-full">
                 <span>💰</span><span className="font-semibold">{status.coins}</span>
               </div>

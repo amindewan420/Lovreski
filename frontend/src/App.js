@@ -5,6 +5,7 @@ import { ThemeProvider } from "@/context/ThemeContext";
 import { I18nProvider } from "@/lib/i18n";
 import { Toaster } from "sonner";
 import { ProfileGate } from "@/lib/profileGate";
+import { SoundManager } from "@/components/lovreski/SoundManager";
 import Landing from "@/pages/Landing";
 import AuthCallback from "@/pages/AuthCallback";
 import HomePage from "@/pages/HomePage";
@@ -77,6 +78,7 @@ function App() {
             <AdminNotifier />
             <PushManager />
             <ProfileGate />
+            <SoundManager />
             <Toaster position="top-center" richColors />
           </BrowserRouter>
         </I18nProvider>

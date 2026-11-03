@@ -1,5 +1,7 @@
 // Full-screen match celebration overlay — shown when both users like each other.
 import { motion } from "framer-motion";
+import { useEffect } from "react";
+import { playSound } from "@/lib/sound";
 import { Tx } from "@/lib/contentTranslate";
 import { Heart, MessageCircle, X } from "lucide-react";
 import { useNavigate } from "react-router-dom";
@@ -8,6 +10,7 @@ import { useAuth } from "@/context/AuthContext";
 export const MatchCelebration = ({ matchUser, onClose }) => {
   const { user } = useAuth();
   const nav = useNavigate();
+  useEffect(() => { if (matchUser) playSound("match"); }, [matchUser]);
   if (!matchUser) return null;
 
   const myPhoto = user?.photos?.[0];

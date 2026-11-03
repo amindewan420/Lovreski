@@ -1200,6 +1200,11 @@ I18N_BASE_RU = {
     "apps.confirm_title": "Удалить эту заявку из истории?",
     "apps.confirm_body": "Это действие нельзя отменить. Ваш Premium и монеты не изменятся.",
     "apps.toast.removed": "Запись удалена из истории", "apps.toast.remove_failed": "Не удалось удалить",
+    # sound & audio settings
+    "settings.section.sound": "Звук и аудио", "sound.enable": "Звуки уведомлений", "sound.volume": "Громкость",
+    "sound.output": "Устройство вывода", "sound.test": "Проверить звук", "sound.device": "Устройство",
+    "sound.output_default": "Используется устройство по умолчанию (выбор доступен в Chrome и Edge при нескольких устройствах).",
+    "sound.mic": "Микрофон для голосовых", "sound.mute": "Выключить звук", "sound.unmute": "Включить звук",
     # profile completion gate
     "gate.title": "Заполните профиль",
     "gate.message": "Пожалуйста, заполните профиль (фото и данные «О себе»), прежде чем ставить лайки или писать другим пользователям.",

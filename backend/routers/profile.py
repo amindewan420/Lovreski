@@ -1,7 +1,7 @@
 """Profile routes — /profile/*"""
 from fastapi import HTTPException, Depends
-from typing import List
-from pydantic import BaseModel
+from typing import List, Optional
+from pydantic import BaseModel, Field
 import uuid
 from datetime import datetime, timedelta
 from server import (
@@ -175,3 +175,20 @@ async def _record_visit(viewer: dict, target_id: str) -> None:
     except Exception as e:
         logger.warning(f"[push] visit notify failed: {e}")
 
+
+
+class PreferencesBody(BaseModel):
+    soundEnabled: Optional[bool] = None
+    soundVolume: Optional[int] = Field(default=None, ge=0, le=100)
+    micEnabled: Optional[bool] = None
+
+
+PREF_DEFAULTS = {"soundEnabled": False, "soundVolume": 50, "micEnabled": False}
+
+
+@api.patch("/user/preferences")
+async def update_preferences(body: PreferencesBody, user: dict = Depends(get_current_user)):
+    changes = body.model_dump(exclude_none=True)
+    if changes:
+        await db.users.update_one({"user_id": user['user_id']}, {"$set": {f"preferences.{k}": v for k, v in changes.items()}})
+    return {**PREF_DEFAULTS, **(user.get('preferences') or {}), **changes}
