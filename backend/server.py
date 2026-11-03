@@ -623,6 +623,23 @@ async def _verify_gender_from_photo(image_data_url: str, user_gender: str) -> di
     except Exception as e:
         logger.warning(f"Gender verification failed-open: {e}")
         return {"ok": True, "reason": "verifier_error"}
+REQUIRED_PROFILE_FIELDS = ("photos", "goal", "relationship", "kids", "smoking", "alcohol")
+
+
+def missing_profile_fields(u: dict) -> list:
+    return [f for f in REQUIRED_PROFILE_FIELDS if not u.get(f)]
+
+
+def ensure_profile_complete(u: dict):
+    """403 when the user's own profile lacks the fields needed to like / start chats."""
+    missing = missing_profile_fields(u)
+    if missing:
+        raise HTTPException(status_code=403, detail={
+            "code": "profile_incomplete", "missing": missing,
+            "message": "Заполните профиль (фото и данные «О себе»), прежде чем ставить лайки или писать другим пользователям.",
+        })
+
+
 def _profile_completion(u: dict) -> int:
     """Percent completion — used to nudge users to fill the profile."""
     checks = [
@@ -732,6 +749,9 @@ async def _do_send_message(sender: dict, other_id: str, body: MessageBody) -> di
     if body.kind == 'location' and (body.lat is None or body.lng is None):
         raise HTTPException(status_code=400, detail="Location requires lat/lng")
     cid = chat_id(sender['user_id'], other_id)
+    # Starting a brand-new chat requires a complete profile; replies in existing chats stay allowed
+    if not sender.get('is_admin') and not await db.messages.find_one({"chat_id": cid}, {"_id": 1}):
+        ensure_profile_complete(sender)
     sent_count = await db.messages.count_documents({"chat_id": cid, "from_user": sender['user_id']})
     is_admin_sender = False
 
@@ -1180,6 +1200,14 @@ I18N_BASE_RU = {
     "apps.confirm_title": "Удалить эту заявку из истории?",
     "apps.confirm_body": "Это действие нельзя отменить. Ваш Premium и монеты не изменятся.",
     "apps.toast.removed": "Запись удалена из истории", "apps.toast.remove_failed": "Не удалось удалить",
+    # profile completion gate
+    "gate.title": "Заполните профиль",
+    "gate.message": "Пожалуйста, заполните профиль (фото и данные «О себе»), прежде чем ставить лайки или писать другим пользователям.",
+    "gate.missing": "Не заполнено:", "gate.button": "Заполнить профиль", "gate.required": "Обязательно",
+    "gate.banner": "Заполните отмеченные поля, чтобы ставить лайки и писать сообщения.",
+    "gate.done": "Профиль заполнен — теперь можно ставить лайки и писать!",
+    "gate.field.photos": "Фото профиля", "gate.field.goal": "Цель", "gate.field.relationship": "Отношения",
+    "gate.field.kids": "Дети", "gate.field.smoking": "Курение", "gate.field.alcohol": "Алкоголь",
 }
 
 I18N_VERSION = hashlib.sha256(_json.dumps(I18N_BASE_RU, sort_keys=True, ensure_ascii=False).encode()).hexdigest()[:12]

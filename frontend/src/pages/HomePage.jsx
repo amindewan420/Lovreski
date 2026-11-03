@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { useProfileGate } from "@/lib/profileGate";
 import { Tx } from "@/lib/contentTranslate";
 import { useAuth } from "@/context/AuthContext";
 import { api } from "@/lib/api";
@@ -29,6 +30,7 @@ const shouldShowInstallBanner = () => {
 export default function HomePage() {
   const { user } = useAuth();
   const nav = useNavigate();
+  const gate = useProfileGate();
   const [feed, setFeed] = useState([]);
   const [loading, setLoading] = useState(true);
   const [matchUser, setMatchUser] = useState(null);
@@ -72,13 +74,14 @@ export default function HomePage() {
   };
 
   const doLike = async (u) => {
+    if (!gate()) return;
     try {
       const { data } = await api.post(`/like/${u.user_id}`);
       // Card stays visible — only the like button switches to the "Liked ✓" state.
       setFeed((f) => f.map((x) => x.user_id === u.user_id ? { ...x, liked: true } : x));
       if (data.match) setMatchUser(data.target || u);
       else toast.success(<span>Симпатия отправлена <Tx text={u.name} mode="name" /></span>);
-    } catch { toast.error("Ошибка"); }
+    } catch (e) { if (!e.profileGate) toast.error("Ошибка"); }
   };
   const doPass = async (u) => {
     try {

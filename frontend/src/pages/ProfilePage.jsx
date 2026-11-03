@@ -4,7 +4,8 @@ import { useAuth } from "@/context/AuthContext";
 import { api } from "@/lib/api";
 import { MobileShell } from "@/components/lovreski/Shell";
 import { BottomSheet } from "@/components/lovreski/BottomSheet";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useSearchParams } from "react-router-dom";
+import { missingFields } from "@/lib/profileGate";
 import { useTheme } from "@/context/ThemeContext";
 import { toast } from "sonner";
 import {
@@ -15,7 +16,7 @@ import {
 import { useI18n } from "@/lib/i18n";
 import {
   Settings, Coins, Crown, Pencil, Eye, LogOut, Camera, Sun, Moon, Trash2,
-  ChevronRight, Check, Plus, Info, ShieldCheck, MapPin, Circle,
+  ChevronRight, Check, Plus, Info, ShieldCheck, MapPin, Circle, AlertCircle,
 } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 
@@ -47,6 +48,20 @@ export default function ProfilePage() {
   const nav = useNavigate();
   const [mode, setMode] = useState("edit"); // 'edit' | 'view'
   const [form, setForm] = useState({});
+  const [params, setParams] = useSearchParams();
+  const gateMode = params.get("complete") === "1";
+  const missing = gateMode && user ? missingFields(form) : [];
+  const req = (k) => (missing.includes(k) ? t("gate.required") : "");
+  const missingKey = missing.join(",");
+  const formReady = form.user_id !== undefined || Object.keys(form).length > 0;
+  useEffect(() => {
+    if (!gateMode || !user || !formReady) return;
+    if (!missingKey) { toast.success(t("gate.done")); setParams({}, { replace: true }); return; }
+    setMode("edit");
+    const first = missingKey.split(",")[0];
+    const el = document.querySelector(`[data-testid="${first === "photos" ? "section-photos" : `field-${first}`}"]`);
+    setTimeout(() => el?.scrollIntoView({ behavior: "smooth", block: "center" }), 300);
+  }, [gateMode, missingKey, formReady]); // eslint-disable-line react-hooks/exhaustive-deps
   const [stats, setStats] = useState({ popularity: "medium", polarity: 50, completion: 0, likes_received: 0 });
   const [savedField, setSavedField] = useState(null); // shows the "Saved ✓" tick
   const [sheet, setSheet] = useState(null); // active bottom sheet: 'height'|'goal'|'relationship'|'kids'|'smoking'|'alcohol'|'gender'|'interests'|'gallery'
@@ -279,8 +294,15 @@ export default function ProfilePage() {
         </button>
       </section>
 
+      {gateMode && missing.length > 0 && (
+        <div data-testid="profile-gate-banner" className="mx-4 mb-3 p-3 rounded-2xl bg-rose-500/10 border border-rose-500/30 text-rose-700 dark:text-rose-300 text-sm font-medium flex gap-2">
+          <AlertCircle className="w-4 h-4 mt-0.5 flex-shrink-0" /> {t("gate.banner")}
+        </div>
+      )}
+
       {/* Photo gallery — up to 4, drag-reorder + delete */}
-      <section className="px-4 pb-4">
+      <section data-testid="section-photos" className={req("photos") ? "mx-4 mb-4 p-2 rounded-2xl ring-2 ring-rose-500" : "px-4 pb-4"}>
+        {req("photos") && <p data-testid="required-photos" className="text-xs font-semibold text-rose-600 mb-2">{t("gate.field.photos")} · {t("gate.required")}</p>}
         <div className="grid grid-cols-4 gap-2">
           {[0,1,2,3].map((i) => {
             const p = photos[i];
@@ -495,14 +517,14 @@ export default function ProfilePage() {
         <SectionTitle>Обо мне</SectionTitle>
 
         <FieldRow
-          label="Цель" testid="field-goal" saved={savedField === "goal"}
+          label="Цель" testid="field-goal" required={req("goal")} saved={savedField === "goal"}
           input={<span className="text-right"><span className="no-translate">{goalOption(form.goal)?.emoji || ""} {form.goal ? goalLabel(t, form.goal) : "—"}</span></span>}
           rightArrow onClick={() => setSheet("goal")}
         />
-        <FieldRow label="Отношения" testid="field-relationship" saved={savedField === "relationship"} input={<span className="no-translate">{form.relationship ? optionLabel(t, "relationship", form.relationship) : "—"}</span>} rightArrow onClick={() => setSheet("relationship")} />
-        <FieldRow label="Дети" testid="field-kids" saved={savedField === "kids"} input={<span className="no-translate">{form.kids ? optionLabel(t, "kids", form.kids) : "—"}</span>} rightArrow onClick={() => setSheet("kids")} />
-        <FieldRow label="Курение" testid="field-smoking" saved={savedField === "smoking"} input={<span className="no-translate">{form.smoking ? optionLabel(t, "smoking", form.smoking) : "—"}</span>} rightArrow onClick={() => setSheet("smoking")} />
-        <FieldRow label="Алкоголь" testid="field-alcohol" saved={savedField === "alcohol"} input={<span className="no-translate">{form.alcohol ? optionLabel(t, "alcohol", form.alcohol) : "—"}</span>} rightArrow onClick={() => setSheet("alcohol")} />
+        <FieldRow label="Отношения" testid="field-relationship" required={req("relationship")} saved={savedField === "relationship"} input={<span className="no-translate">{form.relationship ? optionLabel(t, "relationship", form.relationship) : "—"}</span>} rightArrow onClick={() => setSheet("relationship")} />
+        <FieldRow label="Дети" testid="field-kids" required={req("kids")} saved={savedField === "kids"} input={<span className="no-translate">{form.kids ? optionLabel(t, "kids", form.kids) : "—"}</span>} rightArrow onClick={() => setSheet("kids")} />
+        <FieldRow label="Курение" testid="field-smoking" required={req("smoking")} saved={savedField === "smoking"} input={<span className="no-translate">{form.smoking ? optionLabel(t, "smoking", form.smoking) : "—"}</span>} rightArrow onClick={() => setSheet("smoking")} />
+        <FieldRow label="Алкоголь" testid="field-alcohol" required={req("alcohol")} saved={savedField === "alcohol"} input={<span className="no-translate">{form.alcohol ? optionLabel(t, "alcohol", form.alcohol) : "—"}</span>} rightArrow onClick={() => setSheet("alcohol")} />
       </section>
 
       {/* Interests */}
@@ -661,9 +683,12 @@ const SectionTitle = ({ children }) => (
   <h3 className="font-display font-bold text-xs uppercase tracking-widest text-muted-foreground">{children}</h3>
 );
 
-const FieldRow = ({ label, input, counter, saved, rightArrow, onClick, testid }) => (
-  <div data-testid={testid} onClick={onClick} className={`p-3 bg-card border border-border rounded-2xl flex items-center gap-3 ${onClick ? "cursor-pointer hover:bg-muted/40" : ""}`}>
-    <span className="text-sm font-semibold text-muted-foreground w-24 flex-shrink-0">{label}</span>
+const FieldRow = ({ label, input, counter, saved, rightArrow, onClick, testid, required }) => (
+  <div data-testid={testid} data-required={required ? "true" : undefined} onClick={onClick} className={`p-3 bg-card border rounded-2xl flex items-center gap-3 ${required ? "border-rose-500 ring-2 ring-rose-500/40" : "border-border"} ${onClick ? "cursor-pointer hover:bg-muted/40" : ""}`}>
+    <span className="text-sm font-semibold text-muted-foreground w-24 flex-shrink-0">
+      {label}
+      {required && <span data-testid={`${testid}-required`} className="block text-[10px] font-bold text-rose-600">{required}</span>}
+    </span>
     <div className="flex-1 text-sm text-right truncate">{input}</div>
     <div className="flex items-center gap-1">
       {saved && <SavedTick />}

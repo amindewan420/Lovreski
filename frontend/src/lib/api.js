@@ -23,6 +23,16 @@ api.interceptors.request.use((config) => {
   return config;
 });
 
+// Server-side profile-completion gate → let <ProfileGate/> redirect + explain
+api.interceptors.response.use(undefined, (error) => {
+  const d = error.response?.data?.detail;
+  if (error.response?.status === 403 && d?.code === "profile_incomplete") {
+    error.profileGate = true;
+    window.dispatchEvent(new CustomEvent("lovreski:profile-incomplete", { detail: d.missing || [] }));
+  }
+  return Promise.reject(error);
+});
+
 export const setToken = (t) => {
   if (t) localStorage.setItem("lovreski_token", t);
   else localStorage.removeItem("lovreski_token");

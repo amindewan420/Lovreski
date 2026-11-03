@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { useProfileGate } from "@/lib/profileGate";
 import { Tx } from "@/lib/contentTranslate";
 import { api } from "@/lib/api";
 import { MobileShell } from "@/components/lovreski/Shell";
@@ -60,6 +61,7 @@ const SwipeCard = ({ user, onSwipe, top }) => {
 };
 
 export default function DiscoverPage() {
+  const gate = useProfileGate();
   const [feed, setFeed] = useState([]);
   const [loading, setLoading] = useState(true);
   const [matchUser, setMatchUser] = useState(null);
@@ -90,7 +92,7 @@ export default function DiscoverPage() {
 
   const act = async (kind) => {
     const u = feed[feed.length - 1];
-    if (!u) return;
+    if (!u || (kind === "like" && !gate())) return;
     setFeed((f) => f.slice(0, -1));
     try {
       if (kind === "like") {
@@ -99,7 +101,7 @@ export default function DiscoverPage() {
       } else {
         await api.post(`/pass/${u.user_id}`);
       }
-    } catch { toast.error("Ошибка"); }
+    } catch (e) { if (!e.profileGate) toast.error("Ошибка"); }
     if (feed.length <= 3) load();  // cycle: skipped users come back, liked stay out
   };
 

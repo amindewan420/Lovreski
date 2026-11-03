@@ -187,3 +187,7 @@ Currently on Emergent (React + FastAPI + MongoDB). For amvera.cloud deployment, 
 - Live frontend served raw public/index.html (no JS bundle): CI=true build failed on ESLint warnings; npm install failed on peer deps
 - Fixes: craco eslint enable only in dev; frontend/.npmrc legacy-peer-deps; .dockerignore no longer excludes docker/ (needed by Dockerfile.frontend)
 - Timeweb needs: frontend env REACT_APP_BACKEND_URL=https://amindewan420-lovreski-49f7.twc1.net (build-time), output dir build; backend CORS_ORIGINS must include https://amindewan420-lovreski-85a7.twc1.net
+
+## 2026-06 Profile completion gate
+- Backend: ensure_profile_complete() in server.py used by POST /api/like and _do_send_message when chat has no messages yet
+- Frontend: lib/profileGate.jsx (useProfileGate guard + <ProfileGate/> dialog, redirect /profile?complete=1), api.js 403 interceptor, ProfilePage highlights missing rows/photo section

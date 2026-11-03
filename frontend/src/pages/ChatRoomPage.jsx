@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState, useMemo, useCallback } from "react";
+import { useProfileGate } from "@/lib/profileGate";
 import { useContentTx } from "@/lib/contentTranslate";
 import { useParams, useNavigate } from "react-router-dom";
 import { api } from "@/lib/api";
@@ -94,6 +95,7 @@ const MediaBubble = ({ m, onOpen, t }) => {
 export default function ChatRoomPage() {
   const { id } = useParams();
   const nav = useNavigate();
+  const gate = useProfileGate();
   const { user, refresh } = useAuth();
   const { t, lang, setLang } = useI18n();
   const ptx = useContentTx();
@@ -200,6 +202,7 @@ export default function ChatRoomPage() {
 
   // ─── Send ────────────────────────────────────────────────────────────
   const send = async (payload) => {
+    if (!msgs.length && !gate()) return;
     try {
       const { data } = await api.post(`/chats/${id}/send`, { ...payload, reply_to: reply?.message_id });
       setMsgs((prev) => prev.some((x) => x.message_id === data.message_id) ? prev : [...prev, data]);
@@ -210,6 +213,7 @@ export default function ChatRoomPage() {
       const detail = e.response?.data?.detail;
       const isBlocked = typeof detail === 'object' && detail?.blocked;
       if (isBlocked || e.response?.status === 402) { setShowBlockPopup(true); refreshStatus(); return; }
+      if (e.profileGate) return;
       toast.error(typeof detail === 'string' ? detail : (detail?.message || t("common.error")));
     }
   };
@@ -361,6 +365,7 @@ export default function ChatRoomPage() {
   };
   const shareLocation = () => {
     setShowTray(false);
+    if (!msgs.length && !gate()) return;
     if ((status.coins || 0) < LOCATION_COST) return noCoinsForLocation();
     setShowLocation(true);
   };
@@ -375,6 +380,7 @@ export default function ChatRoomPage() {
       refreshStatus(); refresh(); scrollBottom();
     } catch (e) {
       if (e.response?.status === 402) { refreshStatus(); return noCoinsForLocation(); }
+      if (e.profileGate) return;
       const d = e.response?.data?.detail;
       toast.error(typeof d === "string" ? d : d?.message || t("common.error"));
     } finally { setLocBusy(false); }

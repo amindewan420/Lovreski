@@ -4,6 +4,7 @@ import { AuthProvider, useAuth } from "@/context/AuthContext";
 import { ThemeProvider } from "@/context/ThemeContext";
 import { I18nProvider } from "@/lib/i18n";
 import { Toaster } from "sonner";
+import { ProfileGate } from "@/lib/profileGate";
 import Landing from "@/pages/Landing";
 import AuthCallback from "@/pages/AuthCallback";
 import HomePage from "@/pages/HomePage";
@@ -75,6 +76,7 @@ function App() {
             <AppRouter />
             <AdminNotifier />
             <PushManager />
+            <ProfileGate />
             <Toaster position="top-center" richColors />
           </BrowserRouter>
         </I18nProvider>

@@ -3,7 +3,7 @@ from fastapi import HTTPException, Depends
 from server import (
     api, db, logger, now_utc, iso, fcm,
     get_current_user, user_public,
-    _is_online, _parse_dt, _dist_km, _base_candidates,
+    _is_online, _parse_dt, _dist_km, _base_candidates, ensure_profile_complete,
 )
 
 @api.get("/discover/feed")
@@ -116,6 +116,7 @@ async def home_feed(user: dict = Depends(get_current_user), limit: int = 6, skip
 async def like_user(target_id: str, user: dict = Depends(get_current_user)):
     if target_id == user['user_id']:
         raise HTTPException(status_code=400, detail="Нельзя лайкнуть себя")
+    ensure_profile_complete(user)
     target = await db.users.find_one({"user_id": target_id}, {"_id": 0})
     if not target:
         raise HTTPException(status_code=404, detail="User not found")

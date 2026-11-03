@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { useProfileGate } from "@/lib/profileGate";
 import { Tx } from "@/lib/contentTranslate";
 import { useParams, useNavigate } from "react-router-dom";
 import { api } from "@/lib/api";
@@ -37,6 +38,7 @@ export default function OtherProfilePage() {
   const { id } = useParams();
   const { t } = useI18n();
   const nav = useNavigate();
+  const gate = useProfileGate();
   const [p, setP] = useState(null);
   const [photoIdx, setPhotoIdx] = useState(0);
   const [matchUser, setMatchUser] = useState(null);
@@ -51,12 +53,13 @@ export default function OtherProfilePage() {
   if (!p) return <div className="min-h-screen flex items-center justify-center">Загрузка...</div>;
 
   const doLike = async () => {
+    if (!gate()) return;
     try {
       const { data } = await api.post(`/like/${id}`);
       if (data.match) setMatchUser(data.target || p);
       else toast.success("Симпатия отправлена");
     }
-    catch { toast.error("Ошибка"); }
+    catch (e) { if (!e.profileGate) toast.error("Ошибка"); }
   };
   const doReport = async () => {
     const reason = window.prompt("Причина жалобы:", "Спам");

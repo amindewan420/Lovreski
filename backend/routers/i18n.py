@@ -40,6 +40,13 @@ I18N_EN_OVERRIDES.update({
     "apps.confirm_title": "Remove this application from history?",
     "apps.confirm_body": "This can't be undone. Your Premium and coins won't change.",
     "apps.toast.removed": "Removed from history", "apps.toast.remove_failed": "Couldn't delete",
+    "gate.title": "Complete your profile",
+    "gate.message": "Please complete your profile (photo and About me details) before you can like or message other users.",
+    "gate.missing": "Missing:", "gate.button": "Complete profile", "gate.required": "Required",
+    "gate.banner": "Fill in the highlighted fields to like and message other users.",
+    "gate.done": "Profile complete — you can now like and message!",
+    "gate.field.photos": "Profile photo", "gate.field.goal": "Goal", "gate.field.relationship": "Relationship",
+    "gate.field.kids": "Children", "gate.field.smoking": "Smoking", "gate.field.alcohol": "Alcohol",
 })
 
 
