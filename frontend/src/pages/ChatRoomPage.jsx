@@ -239,6 +239,7 @@ export default function ChatRoomPage() {
   };
   const startRecording = async () => {
     if (recording || status.is_blocked) return;
+    if (!soundPrefs.micEnabled) return toast.error(t("sound.mic_off"), { action: { label: t("sound.open_settings"), onClick: () => nav("/settings") } });
     if (!navigator.mediaDevices?.getUserMedia) return toast.error("Микрофон недоступен");
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });

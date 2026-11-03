@@ -1,0 +1,29 @@
+{
+  "summary": "Tested the Sound & Audio feature on the backend and frontend (mobile 390x844). Backend: 15 of 15 pytest tests pass for PATCH /api/user/preferences (partial updates, merge with defaults, persistence visible in /api/auth/me, 422 for volume -1/101/1000 and for a non-bool value, 0 and 100 accepted, unknown fields ignored, null does not overwrite, 401 without auth). Frontend: the Settings section renders with default-off state (toggle off, 50%, slider/output/test disabled, mic off). The sound toggle, volume (keyboard and click) and mic toggle all persist after a page reload. Turning the mic on called getUserMedia 0 times. No AudioContext and no extra /api/ws socket exist until sound is enabled; after enabling, exactly one extra /api/ws socket opens. The device list shows 3 fake devices in Chromium, so the radio list renders instead of the unsupported text. The test sound creates an AudioContext with no JS errors. In the chat header, chat-mute-btn toggles soundEnabled in the DB, and the icon and aria-label change. Sending works with sound on (outgoing tone played) and off (no tones). An incoming message from match_b played the incoming tone once while on and nothing while muted. English translations are correct. MatchCelebration was NOT tested end to end: pp-like is blocked by the profile-completion gate for match_a (expected), and the change there is a one-line useEffect(playSound('match')), checked by code review only. No page errors seen.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [
+      {"flow": "micEnabled preference vs existing voice recorder", "issue": "ChatRoomPage already has a working voice-message recorder (mic button in the composer, navigator.mediaDevices.getUserMedia at ChatRoomPage.jsx:244), but micEnabled is never read there. The 'Microphone for voice messages' toggle therefore has no effect; recording works even with micEnabled=false. The brief says voice messages are not built yet, which does not match the code. Decide whether micEnabled should gate or hide the recorder button.", "affected_selectors": ["mic-toggle"]}
+    ],
+    "design_issues": []
+  },
+  "test_report_links": ["/app/backend/tests/test_sound_prefs_iter51.py", "/app/test_reports/pytest/pytest_iter51.xml"],
+  "action_items": [
+    "Minor: connect micEnabled to the existing chat voice recorder (hide/disable the mic button or show a hint when micEnabled=false), or relabel the setting.",
+    "Minor: useSoundPrefs.update() calls setSoundPrefs optimistically but has no try/catch. If PATCH fails, the in-memory sound prefs are left out of sync with the UI and no error toast appears. Revert and show a toast on error.",
+    "Minor: switches only flip after PATCH and refresh() round-trip (no optimistic UI state), so there is a short lag on slow networks."
+  ],
+  "critical_code_review_comments": [
+    "Backend PreferencesBody uses Pydantic Field(ge=0, le=100) and exclude_none with dotted $set: correct, no _id leak.",
+    "WSManager keeps a set of sockets per user, so SoundManager's second socket does not break ChatRoom realtime, and is_online is handled correctly on disconnect.",
+    "Incoming sound plays only from SoundManager (not duplicated in ChatRoom): verified, one tone per incoming message.",
+    "sound.js getCtx is lazy, so nothing loads before the first playSound with sound enabled (or a forced test): verified."
+  ],
+  "updated_files": ["/app/backend/tests/test_sound_prefs_iter51.py"],
+  "success_rate": {"backend": "100%", "frontend": "100% of tested flows (MatchCelebration sound checked by code review only)"},
+  "seed_data_creation": "Sent 4 chat messages between match_a and match_b (TEST_sound_on msg, TEST_incoming reply, TEST_sound_off msg, TEST_incoming muted); match_a's coins went from 252 to 250. Temporarily set testuser1 language_pref=en and restored it to ru. Preferences for testuser1, match_a and match_b were reset to soundEnabled=false, soundVolume=50, micEnabled=false.",
+  "retest_needed": false,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "Language comes from user.language_pref, which overrides localStorage lovreski_lang; set it with PUT /api/profile {language_pref} to test English. Chromium headless exposes fake audio output devices, so sound-device-0..2 radios render. To test the match sound, the liker's profile must be complete because of the gate, or the gate must be bypassed. user_ids: match_a=user_4a6c98d1eb2b, match_b=user_3e49e86330a7, testuser1=user_456842c460d5."
+}

@@ -191,3 +191,8 @@ Currently on Emergent (React + FastAPI + MongoDB). For amvera.cloud deployment, 
 ## 2026-06 Profile completion gate
 - Backend: ensure_profile_complete() in server.py used by POST /api/like and _do_send_message when chat has no messages yet
 - Frontend: lib/profileGate.jsx (useProfileGate guard + <ProfileGate/> dialog, redirect /profile?complete=1), api.js 403 interceptor, ProfilePage highlights missing rows/photo section
+
+## 2026-06 Sound & Audio settings
+- PATCH /api/user/preferences {soundEnabled, soundVolume 0-100, micEnabled} -> user.preferences (defaults off/50/off)
+- lib/sound.js WebAudio synthesized tones (incoming/outgoing/match), setSinkId output picker, Test sound; SoundManager opens WS only when sound on; chat header mute button; micEnabled gates the existing voice recorder
+- Timeweb console errors (jivosite CSP, sentry 403, /api/v2/vpcs, /api/v1/accounts avatar) are from Timeweb control panel, not app
