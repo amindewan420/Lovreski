@@ -16,6 +16,7 @@ import os
 from pathlib import Path
 
 from fastapi.responses import FileResponse
+from fastapi import Response
 from fastapi.staticfiles import StaticFiles
 
 # Import the fully-configured app instance. server.py already:
@@ -29,6 +30,11 @@ from server import app  # noqa: E402,F401
 def health() -> dict:
     """Amvera / load-balancer health probe."""
     return {"status": "ok"}
+
+
+@app.api_route("/", methods=["GET", "HEAD"], include_in_schema=False)
+def root():
+ return {"status": "ok"}
 
 
 # ────────── Static SPA (only when a build exists) ──────────
