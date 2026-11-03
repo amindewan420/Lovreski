@@ -1,0 +1,31 @@
+{
+  "summary": "Tested the profile completion gate from end to end. Backend (9/9 pytest pass): POST /api/like/{id} returns 403 with detail {code: profile_incomplete, missing: [...], message} when the user's own profile lacks any of photos/goal/relationship/kids/smoking/alcohol. The 'missing' list only names the fields still empty. The 400 for liking yourself is still checked before the gate, and an unknown target returns 404 once the profile is complete. Pass and the home feed are not gated. The first message of a new chat gets 403 when the sender is incomplete; it goes through once the profile is complete. A reply in an existing chat goes through even when the replier is incomplete. Frontend (mobile 390x844, fresh TEST_ users): with an incomplete profile, the Home card heart, the OtherProfile pp-like button, the Discover btn-swipe-like button and the first chat message each open profile-gate-dialog and redirect to /profile?complete=1. None of these sent an API request, because the client-side guard stops them first. The dialog lists the 6 missing fields as Russian chips. Clicking 'Заполнить профиль' closes it, and the profile page then shows the banner, the 'Фото профиля · Обязательно' ring and red 'Обязательно' markers on the 5 About-me fields. Filling the 5 fields through the bottom sheets (photo set by API) clears each marker live and shows the 'Профиль заполнен' toast; ?complete=1 is then removed from the URL. After that, the like (200) and the first chat message (200) both succeeded with no dialog. The English i18n bundle contains all 13 gate.* keys.",
+  "backend_issues": {"critical": [], "minor": [
+    {"endpoint": "PUT /api/profile", "issue": "photos can be set to any URL strings, which skips POST /profile/photo and its AI face/gender check. Users can get past the photo requirement with a fake URL. This behaviour existed before this feature."}
+  ]},
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [
+      {"flow": "ChatRoomPage reply gate", "issue": "The client guard uses `!msgs.length`, but the messages list leaves out messages the user hid with 'delete for me' (hidden_for). The server checks for any message in the chat (db.messages.find_one({chat_id})). An incomplete user who hid every message in an existing chat is blocked in the UI even though the server would accept the reply. Edge case.", "affected_selectors": ["[data-testid='chat-input']"]}
+    ],
+    "design_issues": [
+      {"screen": "Home grid card", "issues": ["The heart like button overlaps the 'Name, age' text at the bottom of each card. This existed before this feature."]}
+    ]
+  },
+  "test_report_links": ["/app/backend/tests/test_profile_gate_iter50.py", "/app/backend/tests/setup_ui_iter50.py", "/app/test_reports/pytest/pytest_iter50.xml"],
+  "action_items": [
+    "Optional: in ChatRoomPage, base the first-message gate on a server-side flag (e.g. chat status has_messages) instead of msgs.length, so it matches how the backend treats hidden messages",
+    "Optional: check or limit the photos URLs accepted by PUT /api/profile (and PUT /profile/photos) so users cannot get past the photo requirement or the AI check"
+  ],
+  "critical_code_review_comments": [
+    "ensure_profile_complete runs on the user doc from get_current_user. That is fine as long as get_current_user loads the user fresh from the DB on each request; the test showed a profile update unlocked liking straight away.",
+    "missingFields on the client treats photos as an array; the server's `not u.get('photos')` gives the same result for [] and None, so the two agree.",
+    "like_user also gates admin accounts, while _do_send_message exempts is_admin. Small inconsistency; probably intended."
+  ],
+  "updated_files": ["/app/backend/tests/test_profile_gate_iter50.py", "/app/backend/tests/setup_ui_iter50.py"],
+  "success_rate": {"backend": "100%", "frontend": "100%"},
+  "seed_data_creation": "TEST_gate_* and test_gateui_* users were created with /api/auth/register and then deleted by user_id, together with their likes and messages. No seeded data or existing users were touched.",
+  "retest_needed": false,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "Gate tests: test_profile_gate_iter50.py (run with -n 0; it creates and cleans up its own users). For UI, run setup_ui_iter50.py to get tokens, then set localStorage lovreski_token. OtherProfile route is /profile/:id. The Home card like button is like-btn-{user_id}."
+}

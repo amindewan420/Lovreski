@@ -19,6 +19,9 @@ async def update_profile(body: ProfileUpdate, user: dict = Depends(get_current_u
         raise HTTPException(status_code=400, detail="Максимум 10 интересов")
     if 'photos' in update and len(update['photos']) > 4:
         raise HTTPException(status_code=400, detail="Максимум 4 фотографии")
+    # Photos can only be reordered/removed here; new ones must go through POST /profile/photo (face check)
+    if 'photos' in update and not set(update['photos']) <= set(user.get('photos') or []):
+        raise HTTPException(status_code=400, detail="Загрузите фото через форму загрузки")
     # DOB → must be 18+
     if 'dob' in update:
         age = calc_age(update['dob'])
@@ -83,6 +86,8 @@ class PhotosReorderBody(BaseModel):
 async def reorder_photos(body: PhotosReorderBody, user: dict = Depends(get_current_user)):
     if len(body.photos) > 4:
         raise HTTPException(status_code=400, detail="Максимум 4 фотографии")
+    if not set(body.photos) <= set(user.get('photos') or []):
+        raise HTTPException(status_code=400, detail="Загрузите фото через форму загрузки")
     await db.users.update_one({"user_id": user['user_id']}, {"$set": {"photos": body.photos}})
     return {"photos": body.photos}
 

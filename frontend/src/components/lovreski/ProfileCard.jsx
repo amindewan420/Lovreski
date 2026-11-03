@@ -9,7 +9,7 @@ export const ProfileCard = ({ user, testid, onLike, onPass, compact = false }) =
       data-testid={testid || `profile-card-${user.user_id}`}
       className="relative overflow-hidden rounded-2xl bg-card shadow-sm border border-border/60 group"
     >
-      <Link to={`/profile/${user.user_id}`}>
+      <Link to={`/profile/${user.user_id}`} className="block relative">
         <div className="aspect-[3/4] w-full overflow-hidden bg-muted">
           <img
             src={photo}
@@ -68,7 +68,7 @@ export const ProfileCard = ({ user, testid, onLike, onPass, compact = false }) =
                 : "bg-primary text-primary-foreground hover:opacity-90 transition-opacity"
             }`}
           >
-            {user.liked ? "✓ Лайкнуто" : "❤"}
+            {user.liked ? "✓" : "❤"}
           </button>
         </div>
       )}
