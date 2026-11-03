@@ -1,6 +1,6 @@
 """Profile routes — /profile/*"""
 from fastapi import HTTPException, Depends
-from typing import List, Optional
+from typing import List, Optional, Literal
 from pydantic import BaseModel, Field
 import uuid
 from datetime import datetime, timedelta
@@ -181,9 +181,10 @@ class PreferencesBody(BaseModel):
     soundEnabled: Optional[bool] = None
     soundVolume: Optional[int] = Field(default=None, ge=0, le=100)
     micEnabled: Optional[bool] = None
+    ringtone: Optional[Literal["chime", "bubble", "bell", "ping", "harp"]] = None
 
 
-PREF_DEFAULTS = {"soundEnabled": False, "soundVolume": 50, "micEnabled": False}
+PREF_DEFAULTS = {"soundEnabled": False, "soundVolume": 50, "micEnabled": False, "ringtone": "chime"}
 
 
 @api.patch("/user/preferences")

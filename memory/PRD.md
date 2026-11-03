@@ -196,3 +196,4 @@ Currently on Emergent (React + FastAPI + MongoDB). For amvera.cloud deployment, 
 - PATCH /api/user/preferences {soundEnabled, soundVolume 0-100, micEnabled} -> user.preferences (defaults off/50/off)
 - lib/sound.js WebAudio synthesized tones (incoming/outgoing/match), setSinkId output picker, Test sound; SoundManager opens WS only when sound on; chat header mute button; micEnabled gates the existing voice recorder
 - Timeweb console errors (jivosite CSP, sentry 403, /api/v2/vpcs, /api/v1/accounts avatar) are from Timeweb control panel, not app
+- 2026-06: Custom ringtones (chime/bubble/bell/ping/harp) for incoming messages, preferences.ringtone, preview on tap

@@ -44,6 +44,8 @@ I18N_EN_OVERRIDES.update({
     "sound.output": "Output device", "sound.test": "Test sound", "sound.device": "Device",
     "sound.output_default": "Using the default device (selection is available in Chrome and Edge when several devices are connected).",
     "sound.mic": "Microphone for voice messages", "sound.mute": "Mute sounds", "sound.unmute": "Unmute sounds",
+    "sound.ringtone": "Message ringtone", "sound.tone.chime": "Chime", "sound.tone.bubble": "Bubble",
+    "sound.tone.bell": "Bell", "sound.tone.ping": "Ping", "sound.tone.harp": "Harp",
     "sound.mic_off": "Microphone is off. Turn it on in Sound & Audio settings.", "sound.open_settings": "Settings",
     "gate.title": "Complete your profile",
     "gate.message": "Please complete your profile (photo and About me details) before you can like or message other users.",

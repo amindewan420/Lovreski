@@ -1205,6 +1205,8 @@ I18N_BASE_RU = {
     "sound.output": "Устройство вывода", "sound.test": "Проверить звук", "sound.device": "Устройство",
     "sound.output_default": "Используется устройство по умолчанию (выбор доступен в Chrome и Edge при нескольких устройствах).",
     "sound.mic": "Микрофон для голосовых", "sound.mute": "Выключить звук", "sound.unmute": "Включить звук",
+    "sound.ringtone": "Мелодия сообщений", "sound.tone.chime": "Звон", "sound.tone.bubble": "Пузырь",
+    "sound.tone.bell": "Колокол", "sound.tone.ping": "Пинг", "sound.tone.harp": "Арфа",
     "sound.mic_off": "Микрофон выключен. Включите его в настройках «Звук и аудио».", "sound.open_settings": "Настройки",
     # profile completion gate
     "gate.title": "Заполните профиль",

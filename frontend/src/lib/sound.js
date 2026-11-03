@@ -1,6 +1,6 @@
 // App sounds (incoming / outgoing / match), synthesized with Web Audio — nothing loads until sound is enabled.
 const SINK_KEY = "lovreski_sink";
-export const DEFAULT_PREFS = { soundEnabled: false, soundVolume: 50, micEnabled: false };
+export const DEFAULT_PREFS = { soundEnabled: false, soundVolume: 50, micEnabled: false, ringtone: "chime" };
 
 let prefs = { ...DEFAULT_PREFS };
 let ctx = null;
@@ -33,24 +33,33 @@ export const listOutputDevices = async () => {
   } catch { return []; }
 };
 
+// [freq Hz, start s, duration s, wave]
+export const RINGTONES = {
+  chime: [[660, 0, 0.12], [880, 0.12, 0.18]],
+  bubble: [[400, 0, 0.06], [600, 0.06, 0.06], [900, 0.12, 0.09]],
+  bell: [[1046, 0, 0.55, "triangle"], [1568, 0, 0.4, "triangle"]],
+  ping: [[1320, 0, 0.16]],
+  harp: [[392, 0, 0.22, "triangle"], [494, 0.07, 0.22, "triangle"], [587, 0.14, 0.22, "triangle"], [784, 0.21, 0.32, "triangle"]],
+};
+
 const TONES = {
-  incoming: [[660, 0, 0.12], [880, 0.12, 0.18]],
   outgoing: [[520, 0, 0.08]],
   match: [[523, 0, 0.12], [659, 0.1, 0.12], [784, 0.2, 0.12], [1047, 0.3, 0.3]],
 };
 
 // `force` plays regardless of the toggle (used by the "Test sound" button).
-export async function playSound(kind, { force = false, volume } = {}) {
+export async function playSound(kind, { force = false, volume, ringtone } = {}) {
   if (!force && !prefs.soundEnabled) return;
   const vol = (volume ?? prefs.soundVolume) / 100;
   if (vol <= 0) return;
   const ac = await getCtx();
   if (!ac) return;
   const t0 = ac.currentTime + 0.01;
-  for (const [freq, at, dur] of TONES[kind] || TONES.incoming) {
+  const seq = kind === "incoming" ? RINGTONES[ringtone || prefs.ringtone] || RINGTONES.chime : TONES[kind];
+  for (const [freq, at, dur, wave = "sine"] of seq) {
     const osc = ac.createOscillator();
     const gain = ac.createGain();
-    osc.type = "sine";
+    osc.type = wave;
     osc.frequency.value = freq;
     gain.gain.setValueAtTime(0, t0 + at);
     gain.gain.linearRampToValueAtTime(0.35 * vol, t0 + at + 0.015);

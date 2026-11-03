@@ -1,11 +1,11 @@
 // Settings → Sound & Audio: master toggle, volume, output device (🎧), test sound, mic preference.
 import { useEffect, useState } from "react";
-import { Headphones, Volume2, Mic, Play } from "lucide-react";
+import { Headphones, Volume2, Mic, Play, Music } from "lucide-react";
 import { Switch } from "@/components/ui/switch";
 import { Slider } from "@/components/ui/slider";
 import { useI18n } from "@/lib/i18n";
 import { useSoundPrefs } from "@/components/lovreski/SoundManager";
-import { canPickOutput, getSinkId, listOutputDevices, playSound, setOutputDevice } from "@/lib/sound";
+import { RINGTONES, canPickOutput, getSinkId, listOutputDevices, playSound, setOutputDevice } from "@/lib/sound";
 
 export const SoundSettings = () => {
   const { t } = useI18n();
@@ -59,6 +59,21 @@ export const SoundSettings = () => {
           ))}
         </div>
       )}
+      <div className={`px-4 py-3 text-sm ${off ? "opacity-50" : ""}`}>
+        <p className="flex items-center gap-2 mb-2"><Music className="w-4 h-4" /> {t("sound.ringtone")}</p>
+        <div className="grid grid-cols-3 sm:grid-cols-5 gap-1.5" data-testid="ringtone-list">
+          {Object.keys(RINGTONES).map((k) => {
+            const active = prefs.ringtone === k;
+            return (
+              <button key={k} data-testid={`ringtone-${k}`} disabled={off} aria-pressed={active}
+                onClick={() => { playSound("incoming", { force: true, volume: vol, ringtone: k }); if (!active) update({ ringtone: k }); }}
+                className={`py-2 px-1 truncate rounded-xl text-xs font-semibold border transition-colors duration-200 disabled:cursor-not-allowed ${active ? "bg-primary text-primary-foreground border-primary" : "bg-muted border-transparent hover:border-primary/40"}`}>
+                {t(`sound.tone.${k}`)}
+              </button>
+            );
+          })}
+        </div>
+      </div>
       <div className="flex justify-between items-center px-4 py-3 text-sm">
         <span className="flex items-center gap-2"><Mic className="w-4 h-4" /> {t("sound.mic")}</span>
         <Switch data-testid="mic-toggle" checked={prefs.micEnabled} onCheckedChange={(v) => update({ micEnabled: v })} />
